@@ -163,14 +163,19 @@ def main() -> int:
             self.selection_rect = None
             self.selection_start: float | None = None
             self.selection_end: float | None = None
+            self.selected_chord: ChordRegion | None = None
             self.on_position_changed = None
             self.on_selection_changed = None
+            self.on_chord_edited = None
+            self.on_chord_deleted = None
+            self.on_chord_selected = None
             self.on_redraw_started = None
             self.on_redraw_finished = None
             self.pending_pixels_per_second: float | None = None
             self.pending_vertical_zoom: float | None = None
             self.pending_zoom_center_seconds: float | None = None
             self.pending_zoom_center_y: float | None = None
+            self._chord_drag = None
             self._selecting = False
             self._selection_anchor: float | None = None
             self._panning = False
@@ -200,6 +205,8 @@ def main() -> int:
             self.selection_start = None
             self.selection_end = None
             self._selecting = False
+            self._chord_drag = None
+            self.selected_chord = None
             self.redraw()
 
         def _index_project(self) -> None:
@@ -365,23 +372,27 @@ def main() -> int:
             for chord in self.project.chords:
                 x = self._x(chord.start)
                 width = max(18, chord.duration * self.pixels_per_second)
+                is_selected = chord == self.selected_chord
                 rect = self.scene.addRect(
                     x,
                     7,
                     width,
                     24,
-                    QPen(QColor("#7c3aed"), 1),
-                    QBrush(QColor("#ede9fe")),
+                    QPen(QColor("#1d4ed8" if is_selected else "#7c3aed"), 2 if is_selected else 1),
+                    QBrush(QColor("#dbeafe" if is_selected else "#ede9fe")),
                 )
                 self._make_sticky_y(rect, 28)
+                rect.setData(0, chord)
                 rect.setToolTip(
                     f"{chord.label}  {_format_time(chord.start)} - {_format_time(chord.end)}\n"
-                    f"Estimated from overlapping MIDI notes. Confidence: {chord.confidence:.0%}"
+                    f"Confidence: {chord.confidence:.0%}\n"
+                    "Drag the middle to move, drag an edge to resize, Delete removes the selected chord."
                 )
                 if width > 30:
                     text = self.scene.addText(chord.label)
                     text.setDefaultTextColor(QColor("#4c1d95"))
                     text.setPos(x + 5, 6)
+                    text.setData(0, chord)
                     self._make_sticky_y(text, 34)
 
         def _draw_tracks(self) -> None:
@@ -611,6 +622,9 @@ def main() -> int:
                 self.setCursor(Qt.ClosedHandCursor)
                 event.accept()
                 return
+            if event.button() == Qt.LeftButton and self._start_chord_edit_from_event(event):
+                event.accept()
+                return
             if event.button() == Qt.LeftButton and self._start_selection_from_event(event):
                 event.accept()
                 return
@@ -625,6 +639,9 @@ def main() -> int:
                 self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
                 self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
                 self._last_pan_pos = event.pos()
+                event.accept()
+                return
+            if self._chord_drag and self._update_chord_edit_from_event(event):
                 event.accept()
                 return
             if self._selecting and self._update_selection_from_event(event):
@@ -642,12 +659,27 @@ def main() -> int:
                 self.unsetCursor()
                 event.accept()
                 return
+            if self._chord_drag and event.button() == Qt.LeftButton:
+                self._finish_chord_edit_from_event(event)
+                event.accept()
+                return
             if self._selecting and event.button() == Qt.LeftButton:
                 self._selecting = False
                 self._update_selection_from_event(event, notify=True)
                 event.accept()
                 return
             super().mouseReleaseEvent(event)
+
+        def keyPressEvent(self, event) -> None:
+            if event.key() in {Qt.Key_Delete, Qt.Key_Backspace} and self.selected_chord is not None:
+                chord = self.selected_chord
+                self.selected_chord = None
+                self._chord_drag = None
+                if self.on_chord_deleted:
+                    self.on_chord_deleted(chord)
+                event.accept()
+                return
+            super().keyPressEvent(event)
 
         def wheelEvent(self, event) -> None:
             modifiers = event.modifiers()
@@ -687,6 +719,97 @@ def main() -> int:
             else:
                 self.set_position(seconds)
             return True
+
+        def _start_chord_edit_from_event(self, event) -> bool:
+            if self.project is None:
+                return False
+            chord = self._chord_at_event(event)
+            if chord is None:
+                if event.pos().y() <= self.chord_height:
+                    self.selected_chord = None
+                    if self.on_chord_selected:
+                        self.on_chord_selected(None)
+                    self.redraw()
+                return False
+            seconds = self._seconds_from_event(event)
+            edge = max(0.04, 8 / self.pixels_per_second)
+            if abs(seconds - chord.start) <= edge:
+                mode = "resize_start"
+            elif abs(seconds - chord.end) <= edge:
+                mode = "resize_end"
+            else:
+                mode = "move"
+            self.selected_chord = chord
+            self._chord_drag = {
+                "chord": chord,
+                "mode": mode,
+                "press_seconds": seconds,
+                "preview": chord,
+            }
+            self.setCursor(Qt.SizeHorCursor if mode != "move" else Qt.ClosedHandCursor)
+            if self.on_chord_selected:
+                self.on_chord_selected(chord)
+            self.redraw()
+            return True
+
+        def _update_chord_edit_from_event(self, event) -> bool:
+            if self.project is None or not self._chord_drag:
+                return False
+            preview = self._dragged_chord_from_event(event)
+            self._chord_drag["preview"] = preview
+            if self.on_chord_selected:
+                self.on_chord_selected(preview)
+            return True
+
+        def _finish_chord_edit_from_event(self, event) -> None:
+            if not self._chord_drag:
+                return
+            original = self._chord_drag["chord"]
+            edited = self._dragged_chord_from_event(event)
+            self._chord_drag = None
+            self.unsetCursor()
+            self.selected_chord = edited
+            if self.on_chord_edited:
+                self.on_chord_edited(original, edited)
+
+        def _dragged_chord_from_event(self, event) -> ChordRegion:
+            original = self._chord_drag["chord"]
+            mode = self._chord_drag["mode"]
+            seconds = self._seconds_from_event(event)
+            duration = max(0.0, self.project.duration if self.project else original.end)
+            minimum = max(0.08, 4 / self.pixels_per_second)
+            if mode == "move":
+                delta = seconds - self._chord_drag["press_seconds"]
+                length = original.duration
+                start = max(0.0, min(original.start + delta, max(0.0, duration - length)))
+                end = start + length
+            elif mode == "resize_start":
+                end = original.end
+                start = max(0.0, min(seconds, end - minimum))
+            else:
+                start = original.start
+                end = min(duration, max(seconds, start + minimum))
+            return ChordRegion(start=start, end=end, label=original.label, confidence=original.confidence)
+
+        def _chord_at_event(self, event) -> ChordRegion | None:
+            if self.project is None:
+                return None
+            point = self.mapToScene(event.pos())
+            if point.x() < self.label_width:
+                return None
+            in_chord_lane = point.y() <= self.chord_height or event.pos().y() <= self.chord_height
+            if not in_chord_lane:
+                return None
+            seconds = self._seconds_from_event(event)
+            for chord in reversed(self.project.chords):
+                edge_slop = max(0.04, 5 / self.pixels_per_second)
+                if chord.start - edge_slop <= seconds <= chord.end + edge_slop:
+                    return chord
+            return None
+
+        def _seconds_from_event(self, event) -> float:
+            point = self.mapToScene(event.pos())
+            return max(0.0, (point.x() - self.label_width) / self.pixels_per_second)
 
         def _start_selection_from_event(self, event) -> bool:
             if self.project is None:
@@ -750,6 +873,7 @@ def main() -> int:
             self.track_midi_sliders: dict[str, QSlider] = {}
             self.activity_depth = 0
             self.manual_chords: list[ChordRegion] = []
+            self.removed_chord_ranges: list[tuple[float, float]] = []
 
             self.drop_zone = DropZone()
             self.drop_zone.on_path_changed = self.reset_stage_state
@@ -862,6 +986,9 @@ def main() -> int:
             self.timeline = TimelineView()
             self.timeline.on_position_changed = self.set_editor_position_seconds
             self.timeline.on_selection_changed = self.set_editor_selection
+            self.timeline.on_chord_edited = self.edit_timeline_chord
+            self.timeline.on_chord_deleted = self.delete_timeline_chord
+            self.timeline.on_chord_selected = self.show_timeline_chord_status
             self.timeline.on_redraw_started = lambda: self.begin_activity("Redrawing timeline...")
             self.timeline.on_redraw_finished = lambda: self.end_activity("Timeline ready")
             self.timeline_slider = QSlider(Qt.Horizontal)
@@ -1413,6 +1540,7 @@ def main() -> int:
             self.editor_project = build_editor_project(result)
             editor_state = self.load_editor_state(result)
             self.manual_chords = self.chord_overrides_from_editor_state(editor_state)
+            self.removed_chord_ranges = self.chord_removals_from_editor_state(editor_state)
             self.apply_manual_chords()
             self.logger.info(
                 "Editor model built: tracks=%d notes=%d chords=%d",
@@ -1461,10 +1589,24 @@ def main() -> int:
                     chords.append(ChordRegion(start=start, end=end, label=label, confidence=confidence))
             return sorted(chords, key=lambda chord: (chord.start, chord.end, chord.label))
 
+        def chord_removals_from_editor_state(self, editor_state: dict) -> list[tuple[float, float]]:
+            ranges: list[tuple[float, float]] = []
+            for item in editor_state.get("chord_removals", []):
+                try:
+                    start = float(item.get("start", 0.0))
+                    end = float(item.get("end", 0.0))
+                except (TypeError, ValueError):
+                    continue
+                if end > start:
+                    ranges.append((start, end))
+            return sorted(ranges)
+
         def apply_manual_chords(self) -> None:
-            if self.editor_project is None or not self.manual_chords:
+            if self.editor_project is None or (not self.manual_chords and not self.removed_chord_ranges):
                 return
             chords = list(self.editor_project.chords)
+            for start, end in self.removed_chord_ranges:
+                chords = [chord for chord in chords if chord.end <= start or chord.start >= end]
             for manual in self.manual_chords:
                 chords = [chord for chord in chords if chord.end <= manual.start or chord.start >= manual.end]
                 chords.append(manual)
@@ -1472,6 +1614,24 @@ def main() -> int:
                 self.editor_project,
                 chords=sorted(chords, key=lambda chord: (chord.start, chord.end, chord.label)),
             )
+
+        def refresh_editor_project_from_chord_edits(self, selected_chord: ChordRegion | None = None) -> None:
+            if self.current_result is None:
+                return
+            self.editor_project = build_editor_project(self.current_result)
+            self.apply_manual_chords()
+            self.timeline.set_project(self.editor_project)
+            self.timeline.set_visible_tracks(
+                {
+                    stem_name
+                    for stem_name, checkbox in self.track_visibility_checks.items()
+                    if checkbox.isChecked()
+                }
+            )
+            self.timeline.selected_chord = selected_chord
+            self.timeline.redraw()
+            self.refresh_detected_chord_list()
+            self.save_editor_state()
 
         def load_editor_state(self, result: PipelineResult) -> dict:
             try:
@@ -1946,28 +2106,62 @@ def main() -> int:
                 return
             start, end = selection
             manual = ChordRegion(start=start, end=end, label=label, confidence=confidence)
-            self.manual_chords = [
-                chord
-                for chord in self.manual_chords
-                if chord.end <= start or chord.start >= end
-            ]
-            self.manual_chords.append(manual)
-            self.editor_project = build_editor_project(self.current_result)
-            self.apply_manual_chords()
-            self.timeline.set_project(self.editor_project)
-            self.timeline.set_visible_tracks(
-                {
-                    stem_name
-                    for stem_name, checkbox in self.track_visibility_checks.items()
-                    if checkbox.isChecked()
-                }
-            )
-            self.refresh_detected_chord_list()
-            self.save_editor_state()
+            self.insert_manual_chord(manual)
+            self.refresh_editor_project_from_chord_edits(manual)
             self.statusBar().showMessage(
                 f"Assigned {label} to {_format_time(start)} - {_format_time(end)}.",
                 5000,
             )
+
+        def insert_manual_chord(self, chord: ChordRegion) -> None:
+            self.manual_chords = [
+                existing
+                for existing in self.manual_chords
+                if existing.end <= chord.start or existing.start >= chord.end
+            ]
+            self.removed_chord_ranges = self._merge_chord_ranges(
+                [*self.removed_chord_ranges, (chord.start, chord.end)]
+            )
+            self.manual_chords.append(chord)
+            self.manual_chords.sort(key=lambda item: (item.start, item.end, item.label))
+
+        def edit_timeline_chord(self, original: ChordRegion, edited: ChordRegion) -> None:
+            self.removed_chord_ranges = self._merge_chord_ranges(
+                [*self.removed_chord_ranges, (original.start, original.end), (edited.start, edited.end)]
+            )
+            self.manual_chords = [chord for chord in self.manual_chords if chord != original]
+            self.insert_manual_chord(edited)
+            self.refresh_editor_project_from_chord_edits(edited)
+            self.statusBar().showMessage(
+                f"Moved {edited.label} to {_format_time(edited.start)} - {_format_time(edited.end)}.",
+                5000,
+            )
+
+        def delete_timeline_chord(self, chord: ChordRegion) -> None:
+            self.removed_chord_ranges = self._merge_chord_ranges(
+                [*self.removed_chord_ranges, (chord.start, chord.end)]
+            )
+            self.manual_chords = [manual for manual in self.manual_chords if manual != chord]
+            self.refresh_editor_project_from_chord_edits(None)
+            self.statusBar().showMessage(f"Deleted {chord.label}.", 4000)
+
+        def show_timeline_chord_status(self, chord: ChordRegion | None) -> None:
+            if chord is None:
+                return
+            self.statusBar().showMessage(
+                f"Selected {chord.label}: drag middle to move, drag edges to resize, Delete removes it.",
+                6000,
+            )
+
+        def _merge_chord_ranges(self, ranges: list[tuple[float, float]]) -> list[tuple[float, float]]:
+            valid = sorted((start, end) for start, end in ranges if end > start)
+            merged: list[tuple[float, float]] = []
+            for start, end in valid:
+                if not merged or start > merged[-1][1]:
+                    merged.append((start, end))
+                else:
+                    merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+            return merged
 
         def refresh_visible_tracks(self) -> None:
             visible = {
@@ -2009,6 +2203,10 @@ def main() -> int:
                 }
                 for chord in self.manual_chords
             ]
+            chord_removals = [
+                {"start": start, "end": end}
+                for start, end in self.removed_chord_ranges
+            ]
             save_project_manifest(
                 self.current_result,
                 track_visibility=visibility,
@@ -2018,6 +2216,7 @@ def main() -> int:
                 track_midi_volume=midi_volume,
                 playhead_seconds=self.timeline.position,
                 chord_overrides=chord_overrides,
+                chord_removals=chord_removals,
             )
 
         def reset_stage_state(self, _path: Path | None = None) -> None:
@@ -2029,6 +2228,7 @@ def main() -> int:
             self.current_input_stem = None
             self.editor_project = None
             self.manual_chords = []
+            self.removed_chord_ranges = []
             self.clear_transport_players()
             self.track_audio_checks.clear()
             self.track_audio_sliders.clear()

@@ -49,6 +49,7 @@ def test_save_and_load_project_manifest_round_trip(tmp_path: Path) -> None:
         chord_overrides=[
             {"start": 10.0, "end": 12.0, "label": "Gmaj9", "confidence": 0.93}
         ],
+        chord_removals=[{"start": 8.0, "end": 9.5}],
     )
     loaded = load_pipeline_result(manifest_path)
     manifest = load_project_manifest(manifest_path)
@@ -64,3 +65,4 @@ def test_save_and_load_project_manifest_round_trip(tmp_path: Path) -> None:
     assert manifest["editor"]["chord_overrides"] == [
         {"start": 10.0, "end": 12.0, "label": "Gmaj9", "confidence": 0.93}
     ]
+    assert manifest["editor"]["chord_removals"] == [{"start": 8.0, "end": 9.5}]
