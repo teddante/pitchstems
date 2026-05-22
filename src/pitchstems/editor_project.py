@@ -11,6 +11,10 @@ from pitchstems.pipeline import PipelineResult
 
 DEFAULT_TEMPO = 500000
 PITCH_NAMES = ("C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B")
+PLAIN_CHORD_THRESHOLD = 0.70
+WEIGHTED_CHORD_THRESHOLD = 0.56
+PLAIN_CANDIDATE_MARGIN = 0.18
+WEIGHTED_CANDIDATE_MARGIN = 0.22
 
 
 @dataclass(frozen=True)
@@ -240,7 +244,7 @@ def analyze_chord(pitches: list[int]) -> ChordAnalysis:
     candidates = [
         (label, score)
         for label, score, _root, _explanation in scored_roots
-        if score >= 0.72 and score >= best_score - 0.18
+        if score >= PLAIN_CHORD_THRESHOLD and score >= best_score - PLAIN_CANDIDATE_MARGIN
     ][:6]
     candidate_notes = {
         label: chord_tones_for_label(label)
@@ -252,7 +256,7 @@ def analyze_chord(pitches: list[int]) -> ChordAnalysis:
         if (label, score) in candidates
     }
 
-    if best_label is None or best_score < 0.72:
+    if best_label is None or best_score < PLAIN_CHORD_THRESHOLD:
         return ChordAnalysis(None, best_score, active_note_names, pitch_classes, best_root, bass)
     return ChordAnalysis(
         best_label,
@@ -283,7 +287,7 @@ def _analyze_weighted_pitch_classes(
     candidates = [
         (label, score)
         for label, score, _explanation, _root in scored_roots
-        if score >= 0.58 and score >= best_score - 0.22
+        if score >= WEIGHTED_CHORD_THRESHOLD and score >= best_score - WEIGHTED_CANDIDATE_MARGIN
     ][:6]
     candidate_notes = {
         label: chord_tones_for_label(label)
@@ -294,7 +298,7 @@ def _analyze_weighted_pitch_classes(
         for label, score, explanation, _root in scored_roots
         if (label, score) in candidates
     }
-    if best_score < 0.58:
+    if best_score < WEIGHTED_CHORD_THRESHOLD:
         return ChordAnalysis(
             None,
             best_score,
@@ -361,7 +365,6 @@ def chord_tones_for_label(label: str) -> list[str]:
 def _score_root(root: int, pitch_classes: set[int], bass: int) -> tuple[str, float, list[str]]:
     intervals = {(pitch - root) % 12 for pitch in pitch_classes}
     qualities = _chord_qualities()
-    root_bonus = 0.12 if bass == root else 0.04 if root in pitch_classes else 0.0
     best_quality = ""
     best_score = 0.0
     best_explanation: list[str] = []
@@ -370,13 +373,19 @@ def _score_root(root: int, pitch_classes: set[int], bass: int) -> tuple[str, flo
         matched = len(intervals & required_set)
         extras = len(intervals - required_set)
         missing = len(required_set - intervals)
-        exact_bonus = 0.18 if intervals == required_set else 0.0
+        coverage = matched / len(required_set)
+        purity = matched / max(1, len(intervals))
+        bass_bonus = _bass_root_bonus(root, bass, pitch_classes)
+        exact_bonus = 0.10 if intervals == required_set else 0.0
+        missing_penalty = 0.08 * missing
+        complexity_penalty = _complexity_penalty(required)
         score = (
-            (matched / len(required_set))
-            - (extras * 0.10)
-            - (missing * 0.22)
-            + root_bonus
+            coverage * 0.62
+            + purity * 0.30
+            + bass_bonus
             + exact_bonus
+            - missing_penalty
+            - complexity_penalty
         )
         if score > best_score:
             best_quality = suffix
@@ -390,11 +399,15 @@ def _score_root(root: int, pitch_classes: set[int], bass: int) -> tuple[str, flo
                 required=required,
                 intervals=intervals,
                 bass=bass,
-                root_bonus=root_bonus,
+                bass_bonus=bass_bonus,
                 exact_bonus=exact_bonus,
                 matched=matched,
                 extras=extras,
                 missing=missing,
+                coverage=coverage,
+                purity=purity,
+                missing_penalty=missing_penalty,
+                complexity_penalty=complexity_penalty,
                 score=score,
             )
     label = f"{PITCH_NAMES[root]}{best_quality}"
@@ -410,32 +423,31 @@ def _score_weighted_root(root: int, pitch_weights: dict[int, float], bass: int) 
     }
     total_weight = max(0.0001, sum(interval_weights.values()))
     max_weight = max(interval_weights.values())
-    root_bonus = 0.12 if bass == root else 0.04 if root in pitch_weights else 0.0
+    bass_bonus = _bass_root_bonus(root, bass, set(pitch_weights))
     best_quality = ""
     best_score = 0.0
     best_explanation: list[str] = []
     for suffix, required in _chord_qualities():
         required_set = set(required)
-        required_weight = sum(interval_weights.get(interval, 0.0) for interval in required) / total_weight
-        extra_weight = sum(
-            weight
-            for interval, weight in interval_weights.items()
-            if interval not in required_set
-        ) / total_weight
+        template_weight = sum(interval_weights.get(interval, 0.0) for interval in required)
+        required_weight = template_weight / total_weight
+        extra_weight = 1.0 - required_weight
         missing = sum(1 for interval in required_set if interval not in interval_weights)
-        presence = sum(
+        coverage = sum(
             min(1.0, interval_weights.get(interval, 0.0) / max_weight)
             for interval in required
         ) / len(required)
-        exact_bonus = 0.10 if extra_weight < 0.04 and missing == 0 else 0.0
-        complexity_penalty = max(0, len(required) - 3) * 0.025
+        purity = required_weight
+        exact_bonus = 0.08 if extra_weight < 0.04 and missing == 0 else 0.0
+        missing_penalty = 0.10 * missing
+        complexity_penalty = _complexity_penalty(required)
         score = (
-            required_weight * 0.62
-            + presence * 0.32
-            - extra_weight * 0.16
-            - missing * 0.18
-            + root_bonus
+            coverage * 0.48
+            + purity * 0.38
+            - extra_weight * 0.12
+            + bass_bonus
             + exact_bonus
+            - missing_penalty
             - complexity_penalty
         )
         if score > best_score:
@@ -450,13 +462,14 @@ def _score_weighted_root(root: int, pitch_weights: dict[int, float], bass: int) 
                 required=required,
                 interval_weights=interval_weights,
                 bass=bass,
-                root_bonus=root_bonus,
+                bass_bonus=bass_bonus,
                 required_weight=required_weight,
                 extra_weight=extra_weight,
                 missing=missing,
-                presence=presence,
+                coverage=coverage,
                 exact_bonus=exact_bonus,
                 complexity_penalty=complexity_penalty,
+                missing_penalty=missing_penalty,
                 score=score,
             )
     label = f"{PITCH_NAMES[root]}{best_quality}"
@@ -465,17 +478,33 @@ def _score_weighted_root(root: int, pitch_weights: dict[int, float], bass: int) 
     return label, max(0.0, min(1.0, best_score)), best_explanation
 
 
+def _bass_root_bonus(root: int, bass: int, pitch_classes: set[int]) -> float:
+    if bass == root:
+        return 0.10
+    if root in pitch_classes:
+        return 0.035
+    return 0.0
+
+
+def _complexity_penalty(required: tuple[int, ...]) -> float:
+    return max(0, len(required) - 3) * 0.02
+
+
 def _plain_score_explanation(
     label: str,
     root: int,
     required: tuple[int, ...],
     intervals: set[int],
     bass: int,
-    root_bonus: float,
+    bass_bonus: float,
     exact_bonus: float,
     matched: int,
     extras: int,
     missing: int,
+    coverage: float,
+    purity: float,
+    missing_penalty: float,
+    complexity_penalty: float,
     score: float,
 ) -> list[str]:
     required_set = set(required)
@@ -487,9 +516,10 @@ def _plain_score_explanation(
         f"Chord tones expected: {' - '.join(_interval_names(root, required))}.",
         f"Matched tones: {', '.join(matched_notes) or 'none'} ({matched}/{len(required_set)}).",
         f"Missing tones: {', '.join(missing_notes) or 'none'}. Extra active tones: {', '.join(extra_notes) or 'none'}.",
-        f"Bass evidence: {PITCH_NAMES[bass]} gives +{root_bonus:.2f}. Exact-match bonus: +{exact_bonus:.2f}.",
-        "Formula: matched/required - 0.10*extras - 0.22*missing + bass/root bonus + exact-match bonus.",
-        f"Raw score {score:.2f}, displayed confidence {max(0.0, min(1.0, score)):.0%}.",
+        f"Coverage: {coverage:.0%}. Purity: {purity:.0%}. Bass/root evidence: +{bass_bonus:.2f}.",
+        f"Bonuses/penalties: exact +{exact_bonus:.2f}, missing -{missing_penalty:.2f}, complexity -{complexity_penalty:.2f}.",
+        "Formula: 0.62*coverage + 0.30*purity + bass/root bonus + exact bonus - missing penalty - complexity penalty.",
+        f"Raw score {score:.2f}; displayed confidence is a ranking score, not a statistical probability.",
     ]
 
 
@@ -499,13 +529,14 @@ def _weighted_score_explanation(
     required: tuple[int, ...],
     interval_weights: dict[int, float],
     bass: int,
-    root_bonus: float,
+    bass_bonus: float,
     required_weight: float,
     extra_weight: float,
     missing: int,
-    presence: float,
+    coverage: float,
     exact_bonus: float,
     complexity_penalty: float,
+    missing_penalty: float,
     score: float,
 ) -> list[str]:
     required_set = set(required)
@@ -525,10 +556,10 @@ def _weighted_score_explanation(
         f"Chord tones expected: {' - '.join(_interval_names(root, required))}.",
         f"Matched weighted tones: {', '.join(matched_notes) or 'none'}; required-tone weight {required_weight:.0%}.",
         f"Missing tones: {', '.join(missing_notes) or 'none'}. Extra weighted tones: {', '.join(extra_notes) or 'none'} ({extra_weight:.0%}).",
-        f"Presence balance: {presence:.0%}. Bass evidence: {PITCH_NAMES[bass]} gives +{root_bonus:.2f}.",
-        f"Bonuses/penalties: exact +{exact_bonus:.2f}, complexity -{complexity_penalty:.2f}, missing -{missing * 0.18:.2f}.",
-        "Formula: 0.62*required-weight + 0.32*presence - 0.16*extra-weight - 0.18*missing + bass/root bonus + exact bonus - complexity penalty.",
-        f"Raw score {score:.2f}, displayed confidence {max(0.0, min(1.0, score)):.0%}.",
+        f"Coverage: {coverage:.0%}. Purity: {required_weight:.0%}. Bass/root evidence: +{bass_bonus:.2f}.",
+        f"Bonuses/penalties: exact +{exact_bonus:.2f}, extra-weight -{extra_weight * 0.12:.2f}, missing -{missing_penalty:.2f}, complexity -{complexity_penalty:.2f}.",
+        "Formula: 0.48*coverage + 0.38*purity - 0.12*extra-weight + bass/root bonus + exact bonus - missing penalty - complexity penalty.",
+        f"Raw score {score:.2f}; displayed confidence is a ranking score, not a statistical probability.",
     ]
 
 

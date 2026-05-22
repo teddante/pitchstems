@@ -1237,7 +1237,13 @@ def main() -> int:
             self.note_filter_list.setMaximumHeight(150)
             self.note_filter_list.setAlternatingRowColors(True)
             self.note_filter_list.setToolTip("Tick notes to include them in the current Chord Inspector calculation. Untick detected notes to ignore them; tick missing notes to force them in.")
-            self.reset_note_filter_button = QPushButton("Reset Notes")
+            self.note_filter_help = QLabel(
+                "Checked notes are used for this chord guess. Untick a detected note to ignore it; "
+                "tick a missing note to force it in for this playhead/selection."
+            )
+            self.note_filter_help.setWordWrap(True)
+            self.note_filter_help.setStyleSheet("color: #64748b;")
+            self.reset_note_filter_button = QPushButton("Reset Evidence")
             self.reset_note_filter_button.setToolTip("Clear manual include/exclude note choices for the current chord analysis.")
             self.timeline = TimelineView()
             self.timeline.on_position_changed = self.set_editor_position_seconds
@@ -1450,6 +1456,7 @@ def main() -> int:
             editor_side.addWidget(_section_label("Chord Inspector"))
             editor_side.addWidget(self.chord_context)
             editor_side.addWidget(_section_label("Note Evidence"))
+            editor_side.addWidget(self.note_filter_help)
             editor_side.addWidget(self.note_filter_list)
             chord_action_row = QHBoxLayout()
             chord_action_row.setSpacing(6)
@@ -2474,7 +2481,8 @@ def main() -> int:
                         detail += " excluded"
                     elif self.chord_note_overrides.get(pitch_class) is True and pitch_class not in weights:
                         detail = "forced in"
-                    item = QListWidgetItem(f"{PITCH_NAMES[pitch_class]}  {detail}")
+                    state = "Use" if included else "Ignore"
+                    item = QListWidgetItem(f"{state} {PITCH_NAMES[pitch_class]}  -  {detail}")
                     item.setData(Qt.UserRole, pitch_class)
                     item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
                     item.setCheckState(Qt.Checked if included else Qt.Unchecked)
