@@ -29,7 +29,7 @@ from pitchstems.transcription import MidiOptions
 def main() -> int:
     try:
         from PySide6.QtCore import QTimer, Qt, QUrl
-        from PySide6.QtGui import QAction, QColor, QBrush, QKeySequence, QPainter, QPen
+        from PySide6.QtGui import QAction, QColor, QBrush, QKeySequence, QPen
         from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
         from PySide6.QtWidgets import (
             QApplication,
@@ -123,7 +123,8 @@ def main() -> int:
             self.scene = QGraphicsScene(self)
             self.setScene(self.scene)
             self.setMinimumHeight(320)
-            self.setRenderHint(QPainter.Antialiasing)
+            self.setOptimizationFlag(QGraphicsView.DontSavePainterState, True)
+            self.setOptimizationFlag(QGraphicsView.DontAdjustForAntialiasing, True)
             self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
             self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
             self.setMouseTracking(True)
@@ -197,6 +198,7 @@ def main() -> int:
         def _draw_time_grid(self, duration: float, width: float, height: float) -> None:
             self.scene.addRect(0, 0, self.label_width, height, QPen(Qt.NoPen), QBrush(QColor("#eef2f7")))
             tick = 0
+            tick_step = 1 if self.pixels_per_second >= 48 else 5
             while tick <= int(duration) + 1:
                 x = self._x(tick)
                 color = QColor("#cbd5e1") if tick % 5 == 0 else QColor("#e5e7eb")
@@ -205,7 +207,7 @@ def main() -> int:
                     text = self.scene.addText(_format_time(tick))
                     text.setDefaultTextColor(QColor("#475569"))
                     text.setPos(x + 4, 3)
-                tick += 1
+                tick += tick_step
             self.scene.addLine(self.label_width, 0, self.label_width, height, QPen(QColor("#cbd5e1"), 1))
             self.scene.addLine(0, self.chord_height, width, self.chord_height, QPen(QColor("#cbd5e1"), 1))
 
@@ -253,6 +255,7 @@ def main() -> int:
                 )
                 self._draw_pitch_guides(y, height, low_pitch, high_pitch)
 
+            draw_note_labels = self.pixels_per_second >= 150 and len(self.project.notes) <= 900
             for note in self.project.notes:
                 if note.stem.lower() not in self.visible_tracks:
                     continue
@@ -274,7 +277,7 @@ def main() -> int:
                     QBrush(color),
                 )
                 rect.setToolTip(f"{note.stem}: {note.name}  {_format_time(note.start)} - {_format_time(note.end)}")
-                if width >= 24:
+                if draw_note_labels and width >= 36:
                     label = self.scene.addText(note.name)
                     label.setDefaultTextColor(QColor("#0f172a"))
                     label.setPos(x + 3, pitch_y - 3)
@@ -541,7 +544,7 @@ def main() -> int:
             self.create_zip = QCheckBox("Create ZIP export")
             self.create_zip.setChecked(True)
             self.open_when_done = QCheckBox("Open output folder when finished")
-            self.open_when_done.setChecked(True)
+            self.open_when_done.setChecked(False)
 
             self.run_full = QPushButton("Run separation + MIDI")
             self.run_midi = QPushButton("Rerun MIDI only")
@@ -580,10 +583,8 @@ def main() -> int:
 
             output_row = QHBoxLayout()
             output_row.setSpacing(10)
+            output_row.addWidget(QLabel("Output"))
             output_row.addWidget(self.output_dir, 1)
-            output_row.addWidget(self.choose_output)
-            output_row.addWidget(self.open_project)
-            output_row.addWidget(self.open_output)
 
             separation_panel = QVBoxLayout()
             separation_panel.setSpacing(8)
@@ -773,9 +774,6 @@ def main() -> int:
                 "Timeline: wheel scrolls, Shift+wheel scrolls sideways, Ctrl+wheel zooms time, Ctrl+Shift+wheel zooms pitch, middle/right drag pans."
             )
 
-            self.choose_output.clicked.connect(self.pick_output_dir)
-            self.open_project.clicked.connect(self.pick_project)
-            self.open_output.clicked.connect(self.open_latest_output)
             self.run_full.clicked.connect(self.start_full_processing)
             self.run_midi.clicked.connect(self.start_midi_processing)
             self.play_button.clicked.connect(self.toggle_playback)
@@ -902,7 +900,7 @@ def main() -> int:
             else:
                 self.drop_zone.path = None
                 self.drop_zone.setText(f"Project: {result.project_dir.name}")
-            self.set_current_result(result)
+            self.set_current_result(result, open_output=False)
             self.append_log(f"Opened project: {result.project_dir}")
 
         def start_full_processing(self) -> None:
@@ -993,7 +991,7 @@ def main() -> int:
         def append_log(self, message: str) -> None:
             self.log.append(message)
 
-        def set_current_result(self, result: PipelineResult) -> None:
+        def set_current_result(self, result: PipelineResult, open_output: bool = True) -> None:
             self.current_result = result
             self.current_stems = result.stems
             self.current_input_stem = (result.source_audio or result.normalized_audio).stem
@@ -1005,7 +1003,7 @@ def main() -> int:
                 f"Ready: {len(result.midi_files)} MIDI files. Change Basic Pitch settings or MIDI stem ticks, then use Rerun MIDI only."
             )
             self.load_editor_project(result)
-            if self.open_when_done.isChecked():
+            if open_output and self.open_when_done.isChecked():
                 self.open_latest_output()
 
         def load_editor_project(self, result: PipelineResult) -> None:
