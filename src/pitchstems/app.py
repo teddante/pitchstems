@@ -45,6 +45,7 @@ def main() -> int:
             QApplication,
             QCheckBox,
             QComboBox,
+            QDialog,
             QDoubleSpinBox,
             QFileDialog,
             QGridLayout,
@@ -1327,8 +1328,11 @@ def main() -> int:
             self.chord_list.setAlternatingRowColors(True)
             self.preview_chord_button = QPushButton("Play Chord")
             self.use_chord_button = QPushButton("Use for Selection")
+            self.inspect_chord_button = QPushButton("Inspect")
             self.preview_chord_button.setEnabled(False)
             self.use_chord_button.setEnabled(False)
+            self.inspect_chord_button.setEnabled(False)
+            self.inspect_chord_button.setToolTip("Open a detailed report of the current Chord Inspector inputs, weights, constraints, and candidate scoring.")
             self.chord_preview_player = QMediaPlayer(self)
             self.chord_preview_output = QAudioOutput(self)
             self.chord_preview_output.setVolume(0.85)
@@ -1529,12 +1533,14 @@ def main() -> int:
             editor_side.addWidget(_section_label("Note Evidence"))
             editor_side.addWidget(self.note_filter_help)
             editor_side.addWidget(self.note_filter_list)
-            chord_action_row = QHBoxLayout()
-            chord_action_row.setSpacing(6)
-            chord_action_row.addWidget(self.preview_chord_button)
-            chord_action_row.addWidget(self.use_chord_button)
-            chord_action_row.addWidget(self.reset_note_filter_button)
-            editor_side.addLayout(chord_action_row)
+            chord_action_grid = QGridLayout()
+            chord_action_grid.setHorizontalSpacing(6)
+            chord_action_grid.setVerticalSpacing(4)
+            chord_action_grid.addWidget(self.preview_chord_button, 0, 0)
+            chord_action_grid.addWidget(self.use_chord_button, 0, 1)
+            chord_action_grid.addWidget(self.reset_note_filter_button, 1, 0)
+            chord_action_grid.addWidget(self.inspect_chord_button, 1, 1)
+            editor_side.addLayout(chord_action_grid)
             editor_side.addWidget(self.chord_list, 1)
             editor_side_panel.setLayout(editor_side)
             editor_body.addWidget(editor_side_panel)
@@ -1580,6 +1586,7 @@ def main() -> int:
             self.preview_chord_button.clicked.connect(self.preview_selected_chord)
             self.use_chord_button.clicked.connect(self.assign_selected_chord_to_selection)
             self.reset_note_filter_button.clicked.connect(self.reset_chord_note_filter)
+            self.inspect_chord_button.clicked.connect(self.inspect_current_chord_analysis)
             self.note_filter_list.itemChanged.connect(self.handle_chord_note_filter_changed)
             self.chord_list.itemDoubleClicked.connect(self.preview_chord_item)
             self.chord_list.currentItemChanged.connect(lambda *_args: self.refresh_chord_actions())
@@ -2581,7 +2588,9 @@ def main() -> int:
                 self.set_chord_context_text("Notes: -")
                 self.chord_list.clear()
                 self.note_filter_list.clear()
+                self.inspect_chord_button.setEnabled(False)
                 return
+            self.inspect_chord_button.setEnabled(True)
             context = self.chord_context_key(seconds)
             if context != self.chord_note_filter_context:
                 self.chord_note_filter_context = context
@@ -2830,6 +2839,172 @@ def main() -> int:
             self.chord_note_overrides = {}
             self.refresh_current_harmony(self.timeline.position)
 
+        def inspect_current_chord_analysis(self) -> None:
+            if self.editor_project is None:
+                return
+            report = self.current_chord_analysis_report()
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Chord Inspector Calculation")
+            layout = QVBoxLayout()
+            text = QTextEdit()
+            text.setReadOnly(True)
+            text.setPlainText(report)
+            layout.addWidget(text)
+            close_button = QPushButton("Close")
+            close_button.clicked.connect(dialog.accept)
+            button_row = QHBoxLayout()
+            button_row.addStretch(1)
+            button_row.addWidget(close_button)
+            layout.addLayout(button_row)
+            dialog.setLayout(layout)
+            dialog.resize(820, 680)
+            dialog.exec()
+
+        def current_chord_analysis_report(self) -> str:
+            source_notes = self.chord_analysis_notes()
+            context = self.chord_context_key(self.timeline.position)
+            self.current_chord_base_weights = self.chord_base_pitch_weights(source_notes, context)
+            analysis_notes = self.filtered_chord_analysis_notes(source_notes, context)
+            required, excluded = self.chord_note_constraints()
+            scoring_options = self.chord_scoring_options()
+            selection = self.timeline.selection_range()
+            if selection is not None:
+                start, end = selection
+                analysis = analyze_chord_region(
+                    analysis_notes,
+                    start,
+                    end,
+                    required_pitch_classes=required,
+                    excluded_pitch_classes=excluded,
+                    scoring_options=scoring_options,
+                )
+                mode = f"Selection {_format_time(start)} - {_format_time(end)} ({end - start:.3f} sec)"
+                evidence_rows, totals = self.chord_selection_evidence_rows(analysis_notes, start, end)
+            else:
+                seconds = self.timeline.position
+                analysis = analyze_chord_at(
+                    analysis_notes,
+                    seconds,
+                    required_pitch_classes=required,
+                    excluded_pitch_classes=excluded,
+                    scoring_options=scoring_options,
+                )
+                mode = f"Playhead {_format_time(seconds)}"
+                evidence_rows, totals = self.chord_point_evidence_rows(analysis_notes, seconds)
+
+            lines = [
+                "Chord Inspector Calculation",
+                "=" * 29,
+                f"Context: {mode}",
+                f"Detected chord: {analysis.label or 'No clear chord'} ({analysis.confidence:.0%})",
+                f"Sampled tracks: {', '.join(self.chord_analysis_track_names()) or '-'}",
+                f"Source MIDI notes in sampled tracks: {len(source_notes):,}",
+                f"Filtered/analyzed note events: {len(analysis_notes):,}",
+                "",
+                "Detector Settings",
+                "-" * 17,
+                f"Preset: {self.chord_detector_preset.currentText()}",
+                f"Coverage weight: {scoring_options.coverage_weight:.2f}",
+                f"Purity weight: {scoring_options.purity_weight:.2f}",
+                f"Extra-weight penalty: {scoring_options.extra_weight_penalty:.2f}",
+                f"Playhead coverage weight: {scoring_options.plain_coverage_weight:.2f}",
+                f"Playhead purity weight: {scoring_options.plain_purity_weight:.2f}",
+                f"Bass/root bonus enabled: {scoring_options.use_bass_root_bonus}",
+                f"Exact-match bonus enabled: {scoring_options.use_exact_match_bonus}",
+                f"Missing-note penalty enabled: {scoring_options.use_missing_penalty}",
+                f"Complexity penalty enabled: {scoring_options.use_complexity_penalty}",
+                f"Weak-note floor: {scoring_options.weak_note_floor:.0%}",
+                "",
+                "Manual Note Evidence Overrides",
+                "-" * 30,
+                f"Forced notes: {self.pitch_class_list(required)}",
+                f"Excluded notes: {self.pitch_class_list(excluded)}",
+                "",
+                "Weighted Pitch-Class Totals",
+                "-" * 27,
+            ]
+            if totals:
+                max_total = max(totals.values())
+                for pitch_class, total in sorted(totals.items(), key=lambda item: (-item[1], item[0])):
+                    lines.append(f"{PITCH_NAMES[pitch_class]:>2}: raw {total:.4f}, normalized {total / max_total:.0%}")
+            else:
+                lines.append("-")
+            if analysis.note_weights:
+                lines.extend(["", "Pitch Classes Used By Detector", "-" * 30])
+                for name, weight in analysis.note_weights:
+                    lines.append(f"{name:>2}: {weight:.0%}")
+
+            lines.extend(["", "Input Note Events", "-" * 17])
+            if evidence_rows:
+                lines.extend(evidence_rows[:400])
+                if len(evidence_rows) > 400:
+                    lines.append(f"... {len(evidence_rows) - 400} more note events")
+            else:
+                lines.append("-")
+
+            lines.extend(["", "Chord Candidates And Formula Breakdown", "-" * 39])
+            if analysis.candidates:
+                for label, confidence in analysis.candidates:
+                    notes = " - ".join(analysis.candidate_notes.get(label, [])) or "-"
+                    aliases = ", ".join(analysis.candidate_aliases.get(label, [])) or "-"
+                    lines.extend(
+                        [
+                            "",
+                            f"{label} ({confidence:.0%})",
+                            f"Official tones: {notes}",
+                            f"Alternate names: {aliases}",
+                        ]
+                    )
+                    lines.extend(analysis.candidate_explanations.get(label, ["No explanation available."]))
+            else:
+                lines.append("No chord candidates here.")
+            return "\n".join(lines)
+
+        def chord_selection_evidence_rows(
+            self,
+            notes: list[NoteEvent],
+            start: float,
+            end: float,
+        ) -> tuple[list[str], dict[int, float]]:
+            rows: list[str] = []
+            totals: dict[int, float] = {}
+            for note in sorted(notes, key=lambda item: (item.stem, item.start, item.pitch)):
+                overlap = max(0.0, min(note.end, end) - max(note.start, start))
+                if overlap <= 0:
+                    continue
+                velocity_factor = 0.35 + 0.65 * (max(1, min(note.velocity, 127)) / 127)
+                weight = overlap * velocity_factor
+                totals[note.pitch % 12] = totals.get(note.pitch % 12, 0.0) + weight
+                rows.append(
+                    f"{note.stem:12} {note.name:4} pitch {note.pitch:3} "
+                    f"start {_format_time(note.start)} end {_format_time(note.end)} "
+                    f"overlap {overlap:.3f}s velocity {note.velocity:3} "
+                    f"velocity factor {velocity_factor:.3f} weight {weight:.4f}"
+                )
+            return rows, totals
+
+        def chord_point_evidence_rows(
+            self,
+            notes: list[NoteEvent],
+            seconds: float,
+        ) -> tuple[list[str], dict[int, float]]:
+            rows: list[str] = []
+            totals: dict[int, float] = {}
+            for note in sorted(active_notes_at(notes, seconds), key=lambda item: (item.stem, item.pitch, item.start)):
+                weight = max(1, min(note.velocity, 127)) / 127
+                totals[note.pitch % 12] = max(totals.get(note.pitch % 12, 0.0), weight)
+                rows.append(
+                    f"{note.stem:12} {note.name:4} pitch {note.pitch:3} "
+                    f"start {_format_time(note.start)} end {_format_time(note.end)} "
+                    f"active at playhead velocity {note.velocity:3} weight {weight:.4f}"
+                )
+            return rows, totals
+
+        def pitch_class_list(self, pitch_classes: set[int]) -> str:
+            if not pitch_classes:
+                return "-"
+            return ", ".join(PITCH_NAMES[pitch_class] for pitch_class in sorted(pitch_classes))
+
         def _set_chord_candidates(self, analysis) -> None:
             if analysis.candidates:
                 self.chord_list.clear()
@@ -3067,6 +3242,7 @@ def main() -> int:
             self.timeline_slider.setRange(0, 0)
             self.timeline_slider.setEnabled(False)
             self.fit_song_button.setEnabled(False)
+            self.inspect_chord_button.setEnabled(False)
             self.editor_position.setText(_format_time(0))
             self.current_chord.setText("Chord: -")
             self.set_chord_context_text("Notes: -")
