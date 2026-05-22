@@ -11,13 +11,15 @@ PitchStems is a solo-developer, local-first desktop app. Work quickly, keep the 
 - Keep generated audio, stems, MIDI, exports, model weights, and user files out of git.
 - Preserve the local-first posture and GPU-capable Windows workflow.
 
-## Git And Approval
+## Git And Autonomy
 
-The agent may inspect, edit, test, create local branches, stage, and make sensible local checkpoint commits when that clearly protects work or keeps the project moving.
+The agent may inspect, edit, test, branch, stage, commit, push branches, and open/update pull requests when the change is coherent, checks pass, and the action is the normal efficient next step.
 
-Ask for explicit user approval before pushing, opening or updating PRs, merging, tagging, releasing, or changing repo settings. Be extra careful with destructive git operations; avoid them unless the user explicitly asks.
+Prefer automation over ceremony. If the next GitHub step is low-risk and clearly recommended, do it.
 
-When asking for approval, summarize the branch, changed files, checks run, proposed PR/release action, and any known risks.
+Pause and ask first for destructive git operations, force-pushes, branch deletion with unmerged work, merge conflict choices that could discard work, public releases/tags, package publishing, repo setting changes, secrets, or anything where confidence is low.
+
+When acting autonomously, summarize what was done, checks run, branch/PR/release links, and any known risks.
 
 ## Checks
 
