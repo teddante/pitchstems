@@ -1,0 +1,255 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from mido import MidiFile, tick2second
+
+from pitchstems.pipeline import PipelineResult
+
+
+DEFAULT_TEMPO = 500000
+PITCH_NAMES = ("C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B")
+
+
+@dataclass(frozen=True)
+class NoteEvent:
+    stem: str
+    start: float
+    end: float
+    pitch: int
+    velocity: int
+
+    @property
+    def duration(self) -> float:
+        return max(0.0, self.end - self.start)
+
+    @property
+    def name(self) -> str:
+        return midi_note_name(self.pitch)
+
+
+@dataclass(frozen=True)
+class EditorTrack:
+    name: str
+    audio_path: Path
+    muted: bool = False
+    solo: bool = False
+
+
+@dataclass(frozen=True)
+class ChordRegion:
+    start: float
+    end: float
+    label: str
+    confidence: float
+
+    @property
+    def duration(self) -> float:
+        return max(0.0, self.end - self.start)
+
+
+@dataclass(frozen=True)
+class ChordAnalysis:
+    label: str | None
+    confidence: float
+    active_note_names: list[str]
+    pitch_classes: list[int]
+    root: int | None = None
+    bass: int | None = None
+
+
+@dataclass(frozen=True)
+class EditorProject:
+    project_dir: Path
+    source_audio: Path
+    tracks: list[EditorTrack]
+    notes: list[NoteEvent]
+    chords: list[ChordRegion]
+    duration: float
+
+
+def build_editor_project(result: PipelineResult) -> EditorProject:
+    """Build the first editable timeline model from a completed pipeline result."""
+    tracks = [EditorTrack(name=stem.name, audio_path=stem.path) for stem in result.stems]
+    notes: list[NoteEvent] = []
+    for midi in result.midi_files:
+        notes.extend(read_midi_notes(midi.path, midi.stem))
+    notes.sort(key=lambda note: (note.start, note.stem, note.pitch, note.end))
+    duration = max(
+        [note.end for note in notes]
+        + [0.0]
+    )
+    chords = detect_chords(notes)
+    return EditorProject(
+        project_dir=result.project_dir,
+        source_audio=result.normalized_audio,
+        tracks=tracks,
+        notes=notes,
+        chords=chords,
+        duration=duration,
+    )
+
+
+def read_midi_notes(path: Path, stem: str) -> list[NoteEvent]:
+    """Read note on/off events from a MIDI file into absolute seconds."""
+    midi = MidiFile(path)
+    notes: list[NoteEvent] = []
+
+    for track in midi.tracks:
+        tempo = DEFAULT_TEMPO
+        seconds = 0.0
+        active: dict[int, list[tuple[float, int]]] = {}
+        for message in track:
+            seconds += tick2second(message.time, midi.ticks_per_beat, tempo)
+            if message.type == "set_tempo":
+                tempo = message.tempo
+                continue
+            if message.type == "note_on" and message.velocity > 0:
+                active.setdefault(message.note, []).append((seconds, message.velocity))
+                continue
+            if message.type in {"note_off", "note_on"}:
+                starts = active.get(message.note)
+                if not starts:
+                    continue
+                start, velocity = starts.pop(0)
+                if seconds > start:
+                    notes.append(
+                        NoteEvent(
+                            stem=stem,
+                            start=start,
+                            end=seconds,
+                            pitch=message.note,
+                            velocity=velocity,
+                        )
+                    )
+    return notes
+
+
+def detect_chords(notes: list[NoteEvent], minimum_region: float = 0.18) -> list[ChordRegion]:
+    """Infer coarse chord regions from simultaneous MIDI notes."""
+    if not notes:
+        return []
+
+    times = sorted({round(note.start, 6) for note in notes} | {round(note.end, 6) for note in notes})
+    regions: list[ChordRegion] = []
+    for start, end in zip(times, times[1:]):
+        if end - start < minimum_region:
+            continue
+        probe = (start + end) / 2
+        analysis = analyze_chord_at(notes, probe)
+        if not analysis.label:
+            continue
+        if regions and regions[-1].label == analysis.label and abs(regions[-1].end - start) < 0.05:
+            previous = regions[-1]
+            regions[-1] = ChordRegion(
+                start=previous.start,
+                end=end,
+                label=previous.label,
+                confidence=max(previous.confidence, analysis.confidence),
+            )
+        else:
+            regions.append(
+                ChordRegion(
+                    start=start,
+                    end=end,
+                    label=analysis.label,
+                    confidence=analysis.confidence,
+                )
+            )
+    return regions
+
+
+def active_notes_at(notes: list[NoteEvent], seconds: float) -> list[NoteEvent]:
+    return sorted(
+        [note for note in notes if note.start <= seconds < note.end],
+        key=lambda note: (note.pitch, note.stem),
+    )
+
+
+def analyze_chord_at(notes: list[NoteEvent], seconds: float) -> ChordAnalysis:
+    return analyze_chord([note.pitch for note in active_notes_at(notes, seconds)])
+
+
+def analyze_chord(pitches: list[int]) -> ChordAnalysis:
+    active_note_names = [midi_note_name(pitch) for pitch in sorted(set(pitches))]
+    pitch_classes = sorted({pitch % 12 for pitch in pitches})
+    if len(pitch_classes) < 3:
+        return ChordAnalysis(None, 0.0, active_note_names, pitch_classes)
+
+    bass = min(pitches) % 12
+    best_label: str | None = None
+    best_root: int | None = None
+    best_score = 0.0
+    for root in range(12):
+        label, score = _score_root(root, set(pitch_classes), bass)
+        if score > best_score:
+            best_label = label
+            best_root = root
+            best_score = score
+
+    if best_label is None or best_score < 0.72:
+        return ChordAnalysis(None, best_score, active_note_names, pitch_classes, best_root, bass)
+    return ChordAnalysis(best_label, best_score, active_note_names, pitch_classes, best_root, bass)
+
+
+def identify_chord(pitches: list[int]) -> tuple[str | None, float]:
+    analysis = analyze_chord(pitches)
+    return analysis.label, analysis.confidence
+
+
+def midi_note_name(pitch: int) -> str:
+    octave = (pitch // 12) - 1
+    return f"{PITCH_NAMES[pitch % 12]}{octave}"
+
+
+def _score_root(root: int, pitch_classes: set[int], bass: int) -> tuple[str, float]:
+    intervals = {(pitch - root) % 12 for pitch in pitch_classes}
+    qualities = _chord_qualities()
+    root_bonus = 0.12 if bass == root else 0.04 if root in pitch_classes else 0.0
+    best_quality = ""
+    best_score = 0.0
+    for suffix, required in qualities:
+        matched = len(intervals & required)
+        extras = len(intervals - required)
+        missing = len(required - intervals)
+        exact_bonus = 0.18 if intervals == required else 0.0
+        score = (
+            (matched / len(required))
+            - (extras * 0.10)
+            - (missing * 0.22)
+            + root_bonus
+            + exact_bonus
+        )
+        if score > best_score:
+            best_quality = suffix
+            best_score = score
+    label = f"{PITCH_NAMES[root]}{best_quality}"
+    if bass != root:
+        label = f"{label}/{PITCH_NAMES[bass]}"
+    return label, max(0.0, min(1.0, best_score))
+
+
+def _chord_qualities() -> list[tuple[str, set[int]]]:
+    return [
+        ("maj9", {0, 2, 4, 7, 11}),
+        ("9", {0, 2, 4, 7, 10}),
+        ("m9", {0, 2, 3, 7, 10}),
+        ("maj7", {0, 4, 7, 11}),
+        ("7", {0, 4, 7, 10}),
+        ("m7", {0, 3, 7, 10}),
+        ("mMaj7", {0, 3, 7, 11}),
+        ("m7b5", {0, 3, 6, 10}),
+        ("dim7", {0, 3, 6, 9}),
+        ("6", {0, 4, 7, 9}),
+        ("m6", {0, 3, 7, 9}),
+        ("add9", {0, 2, 4, 7}),
+        ("madd9", {0, 2, 3, 7}),
+        ("7sus4", {0, 5, 7, 10}),
+        ("sus2", {0, 2, 7}),
+        ("sus4", {0, 5, 7}),
+        ("dim", {0, 3, 6}),
+        ("aug", {0, 4, 8}),
+        ("m", {0, 3, 7}),
+        ("", {0, 4, 7}),
+    ]

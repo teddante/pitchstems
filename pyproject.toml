@@ -57,6 +57,8 @@ dev = [
 
 [project.scripts]
 pitchstems = "pitchstems.cli:main"
+
+[project.gui-scripts]
 pitchstems-gui = "pitchstems.app:main"
 
 [tool.hatch.build.targets.wheel]

@@ -30,13 +30,18 @@ On Windows with an NVIDIA GPU, use:
 Run these before opening a pull request:
 
 ```powershell
-python -m ruff check src tests
-python -m pytest
-python -m compileall src
-pitchstems --doctor
+.\scripts\check.ps1
 ```
 
-Use `pitchstems --doctor --gpu` when changing GPU setup or acceleration code.
+Use the GPU check when changing GPU setup, acceleration code, model runtime,
+launcher behavior, or packaging:
+
+```powershell
+.\scripts\check.ps1 -Gpu
+```
+
+See [AGENTS.md](AGENTS.md) for the solo-development branch, commit, pull
+request, release, and approval workflow used by AI-assisted development.
 
 ## Project Boundaries
 

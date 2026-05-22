@@ -11,7 +11,7 @@ py -3.10 -m venv .venv
 
 Write-Host "Installing PitchStems with Windows GPU dependencies..."
 .\.venv\Scripts\python -m pip install -U pip
-.\.venv\Scripts\python -m pip install -e ".[win-gpu,gui]"
+.\.venv\Scripts\python -m pip install -e ".[win-gpu,gui,dev]"
 
 Write-Host "Replacing default CPU ML wheels with Windows CUDA wheels..."
 .\.venv\Scripts\python -m pip uninstall -y torch torchvision onnxruntime onnxruntime-gpu
