@@ -13,6 +13,7 @@ from pitchstems.editor_project import (
     ChordRegion,
     EditorProject,
     NoteEvent,
+    PITCH_NAMES,
     active_notes_at,
     analyze_chord_at,
     analyze_chord_region,
@@ -1119,6 +1120,10 @@ def main() -> int:
             self.activity_depth = 0
             self.manual_chords: list[ChordRegion] = []
             self.removed_chord_ranges: list[tuple[float, float]] = []
+            self.chord_note_overrides: dict[int, bool] = {}
+            self.chord_note_filter_context = None
+            self.current_chord_base_weights: dict[int, float] = {}
+            self.updating_chord_note_filter = False
 
             self.drop_zone = DropZone()
             self.drop_zone.on_path_changed = self.reset_stage_state
@@ -1228,6 +1233,12 @@ def main() -> int:
             self.chord_context = QLabel("Notes: -")
             self.chord_context.setWordWrap(True)
             self.chord_context.setStyleSheet("color: #475569;")
+            self.note_filter_list = QListWidget()
+            self.note_filter_list.setMaximumHeight(150)
+            self.note_filter_list.setAlternatingRowColors(True)
+            self.note_filter_list.setToolTip("Tick notes to include them in the current Chord Inspector calculation. Untick detected notes to ignore them; tick missing notes to force them in.")
+            self.reset_note_filter_button = QPushButton("Reset Notes")
+            self.reset_note_filter_button.setToolTip("Clear manual include/exclude note choices for the current chord analysis.")
             self.timeline = TimelineView()
             self.timeline.on_position_changed = self.set_editor_position_seconds
             self.timeline.on_selection_changed = self.set_editor_selection
@@ -1438,10 +1449,13 @@ def main() -> int:
             editor_side.addLayout(self.playback_controls)
             editor_side.addWidget(_section_label("Chord Inspector"))
             editor_side.addWidget(self.chord_context)
+            editor_side.addWidget(_section_label("Note Evidence"))
+            editor_side.addWidget(self.note_filter_list)
             chord_action_row = QHBoxLayout()
             chord_action_row.setSpacing(6)
             chord_action_row.addWidget(self.preview_chord_button)
             chord_action_row.addWidget(self.use_chord_button)
+            chord_action_row.addWidget(self.reset_note_filter_button)
             editor_side.addLayout(chord_action_row)
             editor_side.addWidget(self.chord_list, 1)
             editor_body.addLayout(editor_side)
@@ -1486,6 +1500,8 @@ def main() -> int:
             self.fit_song_button.clicked.connect(self.fit_editor_song_to_view)
             self.preview_chord_button.clicked.connect(self.preview_selected_chord)
             self.use_chord_button.clicked.connect(self.assign_selected_chord_to_selection)
+            self.reset_note_filter_button.clicked.connect(self.reset_chord_note_filter)
+            self.note_filter_list.itemChanged.connect(self.handle_chord_note_filter_changed)
             self.chord_list.itemDoubleClicked.connect(self.preview_chord_item)
             self.chord_list.currentItemChanged.connect(lambda *_args: self.refresh_chord_actions())
             self.timeline_slider.valueChanged.connect(self.set_editor_position)
@@ -2283,9 +2299,16 @@ def main() -> int:
                 self.current_chord.setText("Chord: -")
                 self.chord_context.setText("Notes: -")
                 self.chord_list.clear()
+                self.note_filter_list.clear()
                 return
-            analysis_notes = self.chord_analysis_notes()
-            sample_text = self.chord_sample_text(analysis_notes)
+            context = self.chord_context_key(seconds)
+            if context != self.chord_note_filter_context:
+                self.chord_note_filter_context = context
+                self.chord_note_overrides = {}
+            source_notes = self.chord_analysis_notes()
+            self.current_chord_base_weights = self.chord_base_pitch_weights(source_notes, context)
+            analysis_notes = self.filtered_chord_analysis_notes(source_notes, context)
+            sample_text = self.chord_sample_text(source_notes)
             selection = self.timeline.selection_range()
             if selection is not None:
                 start, end = selection
@@ -2296,6 +2319,7 @@ def main() -> int:
                     f"{_format_time(start)} - {_format_time(end)}"
                 )
                 self._set_chord_candidates(analysis)
+                self.populate_note_filter_list(self.current_chord_base_weights)
                 if analysis.note_weights:
                     note_text = ", ".join(
                         f"{name} ({weight:.0%})"
@@ -2316,6 +2340,7 @@ def main() -> int:
             chord = analysis.label or "No clear chord"
             self.current_chord.setText(f"Chord: {chord}  ({analysis.confidence:.0%})")
             self._set_chord_candidates(analysis)
+            self.populate_note_filter_list(self.current_chord_base_weights)
             if active_notes:
                 unique_pitches = sorted({note.pitch for note in active_notes})
                 shown_pitches = unique_pitches[:32]
@@ -2325,6 +2350,13 @@ def main() -> int:
                 self.chord_context.setText(f"{sample_text}\nNotes: {note_text}")
             else:
                 self.chord_context.setText(f"{sample_text}\nNotes: -")
+
+        def chord_context_key(self, seconds: float):
+            selection = self.timeline.selection_range()
+            if selection is not None:
+                start, end = selection
+                return ("selection", round(start, 3), round(end, 3))
+            return ("point", round(seconds, 2))
 
         def chord_analysis_notes(self) -> list[NoteEvent]:
             if self.editor_project is None:
@@ -2368,6 +2400,110 @@ def main() -> int:
                 if self.track_analysis_checks.get(track.name)
                 and self.track_analysis_checks[track.name].isChecked()
             ]
+
+        def chord_base_pitch_weights(self, notes: list[NoteEvent], context) -> dict[int, float]:
+            if not notes:
+                return {}
+            weights: dict[int, float] = {}
+            if context[0] == "selection":
+                _kind, start, end = context
+                for note in notes:
+                    overlap = max(0.0, min(note.end, end) - max(note.start, start))
+                    if overlap <= 0:
+                        continue
+                    velocity_factor = 0.35 + 0.65 * (max(1, min(note.velocity, 127)) / 127)
+                    weights[note.pitch % 12] = weights.get(note.pitch % 12, 0.0) + overlap * velocity_factor
+            else:
+                _kind, seconds = context
+                for note in notes:
+                    if note.start <= seconds < note.end:
+                        weights[note.pitch % 12] = max(
+                            weights.get(note.pitch % 12, 0.0),
+                            max(1, min(note.velocity, 127)) / 127,
+                        )
+            if not weights:
+                return {}
+            maximum = max(weights.values())
+            return {pitch_class: weight / maximum for pitch_class, weight in weights.items()}
+
+        def filtered_chord_analysis_notes(self, notes: list[NoteEvent], context) -> list[NoteEvent]:
+            filtered = [
+                note
+                for note in notes
+                if self.chord_note_overrides.get(note.pitch % 12, True)
+            ]
+            forced_pitch_classes = [
+                pitch_class
+                for pitch_class, included in self.chord_note_overrides.items()
+                if included and pitch_class not in self.current_chord_base_weights
+            ]
+            if not forced_pitch_classes:
+                return filtered
+            if context[0] == "selection":
+                _kind, start, end = context
+            else:
+                _kind, seconds = context
+                start = max(0.0, seconds - 0.05)
+                end = seconds + 0.35
+            for pitch_class in forced_pitch_classes:
+                filtered.append(
+                    NoteEvent(
+                        stem="forced-note",
+                        start=start,
+                        end=end,
+                        pitch=60 + pitch_class,
+                        velocity=108,
+                    )
+                )
+            return filtered
+
+        def populate_note_filter_list(self, weights: dict[int, float]) -> None:
+            self.updating_chord_note_filter = True
+            try:
+                self.note_filter_list.clear()
+                detected = sorted(weights, key=lambda pitch_class: (-weights[pitch_class], pitch_class))
+                missing = [pitch_class for pitch_class in range(12) if pitch_class not in weights]
+                for pitch_class in [*detected, *missing]:
+                    default_included = pitch_class in weights
+                    included = self.chord_note_overrides.get(pitch_class, default_included)
+                    if pitch_class in weights:
+                        detail = f"{weights[pitch_class]:.0%}"
+                    else:
+                        detail = "not detected"
+                    if self.chord_note_overrides.get(pitch_class) is False:
+                        detail += " excluded"
+                    elif self.chord_note_overrides.get(pitch_class) is True and pitch_class not in weights:
+                        detail = "forced in"
+                    item = QListWidgetItem(f"{PITCH_NAMES[pitch_class]}  {detail}")
+                    item.setData(Qt.UserRole, pitch_class)
+                    item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                    item.setCheckState(Qt.Checked if included else Qt.Unchecked)
+                    item.setToolTip(
+                        "Checked notes are included in this Chord Inspector calculation. "
+                        "Untick a detected note to ignore it, or tick an undetected note to force it in."
+                    )
+                    self.note_filter_list.addItem(item)
+            finally:
+                self.updating_chord_note_filter = False
+
+        def handle_chord_note_filter_changed(self, item) -> None:
+            if self.updating_chord_note_filter:
+                return
+            pitch_class = item.data(Qt.UserRole)
+            if pitch_class is None:
+                return
+            pitch_class = int(pitch_class)
+            included = item.checkState() == Qt.Checked
+            default_included = pitch_class in self.current_chord_base_weights
+            if included == default_included:
+                self.chord_note_overrides.pop(pitch_class, None)
+            else:
+                self.chord_note_overrides[pitch_class] = included
+            self.refresh_current_harmony(self.timeline.position)
+
+        def reset_chord_note_filter(self) -> None:
+            self.chord_note_overrides = {}
+            self.refresh_current_harmony(self.timeline.position)
 
         def _set_chord_candidates(self, analysis) -> None:
             if analysis.candidates:
@@ -2582,6 +2718,9 @@ def main() -> int:
             self.editor_project = None
             self.manual_chords = []
             self.removed_chord_ranges = []
+            self.chord_note_overrides = {}
+            self.chord_note_filter_context = None
+            self.current_chord_base_weights = {}
             self.clear_transport_players()
             self.track_audio_checks.clear()
             self.track_audio_sliders.clear()
@@ -2599,6 +2738,7 @@ def main() -> int:
             self.current_chord.setText("Chord: -")
             self.chord_context.setText("Notes: -")
             self.track_list.clear()
+            self.note_filter_list.clear()
             self.track_visibility_checks.clear()
             self.track_note_counts.clear()
             self.editor_track_visibility = {}
