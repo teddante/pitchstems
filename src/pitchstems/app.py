@@ -1968,7 +1968,7 @@ def main() -> int:
             for row, track in enumerate(self.editor_project.tracks, 1):
                 show_check = QCheckBox()
                 show_check.setChecked(track_visibility.get(track.name, True))
-                show_check.setToolTip("Show this track's MIDI notes in the timeline.")
+                show_check.setToolTip("Show this track's MIDI notes in the timeline and include them in Chord Inspector analysis.")
                 show_check.toggled.connect(lambda *_args: self.refresh_visible_tracks())
                 show_check.toggled.connect(lambda *_args: self.save_editor_state())
                 self.track_visibility_checks[track.name] = show_check
@@ -1980,7 +1980,7 @@ def main() -> int:
 
                 audio_check = QCheckBox()
                 audio_check.setChecked(audio_enabled.get(track.name, True))
-                audio_check.setToolTip("Play this separated stem audio in the editor transport.")
+                audio_check.setToolTip("Play this separated stem audio in the editor transport. This does not affect chord detection.")
                 audio_slider = QSlider(Qt.Horizontal)
                 audio_slider.setRange(0, 100)
                 audio_slider.setValue(int(audio_volume.get(track.name, 80)))
@@ -1998,7 +1998,7 @@ def main() -> int:
                 midi_check = QCheckBox()
                 midi_check.setChecked(midi_enabled.get(track.name, False))
                 midi_check.setEnabled(False)
-                midi_check.setToolTip("MIDI synth playback will be added in the next playback pass.")
+                midi_check.setToolTip("Play this stem's generated MIDI preview audio. This does not affect chord detection.")
                 midi_slider = QSlider(Qt.Horizontal)
                 midi_slider.setRange(0, 100)
                 midi_slider.setValue(int(midi_volume.get(track.name, 70)))
@@ -2115,7 +2115,7 @@ def main() -> int:
                 midi_slider = self.track_midi_sliders.get(stem_name)
                 if midi_check:
                     midi_check.setEnabled(True)
-                    midi_check.setToolTip("Play the generated MIDI preview audio for this stem.")
+                    midi_check.setToolTip("Play the generated MIDI preview audio for this stem. This does not affect chord detection.")
                 if midi_slider:
                     midi_slider.setEnabled(True)
                     midi_slider.setToolTip("MIDI preview audio volume.")
@@ -2261,10 +2261,12 @@ def main() -> int:
                 self.chord_context.setText("Notes: -")
                 self.chord_list.clear()
                 return
+            analysis_notes = self.chord_analysis_notes()
+            sample_text = self.chord_sample_text(analysis_notes)
             selection = self.timeline.selection_range()
             if selection is not None:
                 start, end = selection
-                analysis = analyze_chord_region(self.editor_project.notes, start, end)
+                analysis = analyze_chord_region(analysis_notes, start, end)
                 chord = analysis.label or "No clear chord"
                 self.current_chord.setText(
                     f"Selection: {chord}  ({analysis.confidence:.0%})  "
@@ -2276,18 +2278,18 @@ def main() -> int:
                         f"{name} ({weight:.0%})"
                         for name, weight in analysis.note_weights[:12]
                     )
-                    self.chord_context.setText(f"Weighted notes: {note_text}")
+                    self.chord_context.setText(f"{sample_text}\nWeighted notes: {note_text}")
                 elif analysis.active_note_names:
                     note_text = ", ".join(analysis.active_note_names[:32])
                     if len(analysis.active_note_names) > 32:
                         note_text += f", +{len(analysis.active_note_names) - 32} more"
-                    self.chord_context.setText(f"Notes in selection: {note_text}")
+                    self.chord_context.setText(f"{sample_text}\nNotes in selection: {note_text}")
                 else:
-                    self.chord_context.setText("Notes in selection: -")
+                    self.chord_context.setText(f"{sample_text}\nNotes in selection: -")
                 return
 
-            analysis = analyze_chord_at(self.editor_project.notes, seconds)
-            active_notes = active_notes_at(self.editor_project.notes, seconds)
+            analysis = analyze_chord_at(analysis_notes, seconds)
+            active_notes = active_notes_at(analysis_notes, seconds)
             chord = analysis.label or "No clear chord"
             self.current_chord.setText(f"Chord: {chord}  ({analysis.confidence:.0%})")
             self._set_chord_candidates(analysis)
@@ -2297,9 +2299,41 @@ def main() -> int:
                 note_text = ", ".join(midi_note_name(pitch) for pitch in shown_pitches)
                 if len(unique_pitches) > len(shown_pitches):
                     note_text += f", +{len(unique_pitches) - len(shown_pitches)} more"
-                self.chord_context.setText(f"Notes: {note_text}")
+                self.chord_context.setText(f"{sample_text}\nNotes: {note_text}")
             else:
-                self.chord_context.setText("Notes: -")
+                self.chord_context.setText(f"{sample_text}\nNotes: -")
+
+        def chord_analysis_notes(self) -> list[NoteEvent]:
+            if self.editor_project is None:
+                return []
+            if not self.track_visibility_checks:
+                return self.editor_project.notes
+            visible_tracks = {
+                stem_name.lower()
+                for stem_name, checkbox in self.track_visibility_checks.items()
+                if checkbox.isChecked()
+            }
+            return [
+                note
+                for note in self.editor_project.notes
+                if note.stem.lower() in visible_tracks
+            ]
+
+        def chord_sample_text(self, notes: list[NoteEvent]) -> str:
+            if self.editor_project is None:
+                return "Sample: -"
+            sampled = {note.stem.lower() for note in notes}
+            names = [
+                track.name
+                for track in self.editor_project.tracks
+                if track.name.lower() in sampled
+            ]
+            if not names:
+                return "Sample: no shown MIDI tracks. Tick Show to include a track in chord analysis."
+            shown = ", ".join(names[:5])
+            if len(names) > 5:
+                shown += f", +{len(names) - 5} more"
+            return f"Sample: shown MIDI tracks ({shown}). Audio/MIDI playback ticks do not affect detection."
 
         def _set_chord_candidates(self, analysis) -> None:
             if analysis.candidates:
@@ -2448,6 +2482,7 @@ def main() -> int:
                 if checkbox.isChecked()
             }
             self.timeline.set_visible_tracks(visible)
+            self.refresh_current_harmony(self.timeline.position)
             self.save_editor_state()
 
         def save_editor_state(self) -> None:
