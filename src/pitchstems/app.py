@@ -438,6 +438,7 @@ def main() -> int:
             self.choice = model_choice("bs_roformer_sw")
             self.messages: queue.Queue[str] = queue.Queue()
             self.worker: threading.Thread | None = None
+            self.midi_preview_worker: threading.Thread | None = None
             self.latest_output_dir: Path | None = None
             self.current_result: PipelineResult | None = None
             self.current_stems: list[StemResult] = []
@@ -900,7 +901,12 @@ def main() -> int:
             else:
                 self.drop_zone.path = None
                 self.drop_zone.setText(f"Project: {result.project_dir.name}")
-            self.set_current_result(result, open_output=False)
+            try:
+                self.set_current_result(result, open_output=False)
+            except Exception as exc:
+                self.append_log(f"Could not open project editor: {exc}")
+                self.reset_stage_state()
+                return
             self.append_log(f"Opened project: {result.project_dir}")
 
         def start_full_processing(self) -> None:
@@ -978,6 +984,8 @@ def main() -> int:
                     return
                 if isinstance(message, tuple) and message[0] == "RESULT":
                     self.set_current_result(message[1])
+                elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEWS":
+                    self.attach_midi_preview_players(message[1])
                 elif message == "__ENABLE_PROCESS__":
                     self.set_processing_state(False)
                 elif message.startswith("__OUTPUT_DIR__"):
@@ -1134,7 +1142,7 @@ def main() -> int:
             self.track_audio_outputs.clear()
             self.midi_players.clear()
             self.midi_audio_outputs.clear()
-            self.midi_preview_paths = self.render_midi_previews(result)
+            self.midi_preview_paths = self.find_existing_midi_previews(result)
             for stem in result.stems:
                 player = QMediaPlayer(self)
                 output = QAudioOutput(self)
@@ -1142,39 +1150,78 @@ def main() -> int:
                 player.setSource(QUrl.fromLocalFile(str(stem.path)))
                 self.track_players[stem.name] = player
                 self.track_audio_outputs[stem.name] = output
-                midi_preview = self.midi_preview_paths.get(stem.name)
-                if midi_preview:
-                    midi_player = QMediaPlayer(self)
-                    midi_output = QAudioOutput(self)
-                    midi_player.setAudioOutput(midi_output)
-                    midi_player.setSource(QUrl.fromLocalFile(str(midi_preview)))
-                    self.midi_players[stem.name] = midi_player
-                    self.midi_audio_outputs[stem.name] = midi_output
-                    midi_check = self.track_midi_checks.get(stem.name)
-                    midi_slider = self.track_midi_sliders.get(stem.name)
-                    if midi_check:
-                        midi_check.setEnabled(True)
-                        midi_check.setToolTip("Play the generated MIDI preview audio for this stem.")
-                    if midi_slider:
-                        midi_slider.setEnabled(True)
-                        midi_slider.setToolTip("MIDI preview audio volume.")
+            self.attach_midi_preview_players(self.midi_preview_paths)
+            self.start_midi_preview_render(result)
             self.refresh_playback_mix()
 
-        def render_midi_previews(self, result: PipelineResult) -> dict[str, Path]:
-            if self.editor_project is None or not self.editor_project.notes:
-                return {}
+        def find_existing_midi_previews(self, result: PipelineResult) -> dict[str, Path]:
             preview_dir = result.project_dir / "editor" / "midi-preview"
-            previews: dict[str, Path] = {}
-            for track in self.editor_project.tracks:
-                preview = render_midi_preview(
-                    track.name,
-                    self.editor_project.notes,
-                    preview_dir,
-                    self.editor_project.duration,
-                )
-                if preview:
-                    previews[track.name] = preview
+            previews = {}
+            for stem in result.stems:
+                preview = preview_dir / f"{stem.name}_midi_preview.wav"
+                if preview.exists():
+                    previews[stem.name] = preview
             return previews
+
+        def start_midi_preview_render(self, result: PipelineResult) -> None:
+            if self.editor_project is None or not self.editor_project.notes:
+                return
+            if self.midi_preview_worker and self.midi_preview_worker.is_alive():
+                return
+            missing = [
+                track.name
+                for track in self.editor_project.tracks
+                if track.name not in self.midi_preview_paths
+                and any(note.stem.lower() == track.name.lower() for note in self.editor_project.notes)
+            ]
+            if not missing:
+                return
+            project = self.editor_project
+            preview_dir = result.project_dir / "editor" / "midi-preview"
+            self.append_log(f"Rendering MIDI preview audio for {len(missing)} tracks in the background...")
+
+            def worker() -> None:
+                previews: dict[str, Path] = {}
+                try:
+                    for stem_name in missing:
+                        preview = render_midi_preview(
+                            stem_name,
+                            project.notes,
+                            preview_dir,
+                            project.duration,
+                        )
+                        if preview:
+                            previews[stem_name] = preview
+                    self.messages.put(("MIDI_PREVIEWS", previews))
+                except Exception as exc:
+                    self.messages.put(f"Could not render MIDI previews: {exc}")
+
+            self.midi_preview_worker = threading.Thread(target=worker, daemon=True)
+            self.midi_preview_worker.start()
+
+        def attach_midi_preview_players(self, previews: dict[str, Path]) -> None:
+            if not previews:
+                return
+            self.midi_preview_paths.update(previews)
+            for stem_name, midi_preview in previews.items():
+                if stem_name in self.midi_players:
+                    continue
+                midi_player = QMediaPlayer(self)
+                midi_output = QAudioOutput(self)
+                midi_player.setAudioOutput(midi_output)
+                midi_player.setSource(QUrl.fromLocalFile(str(midi_preview)))
+                self.midi_players[stem_name] = midi_player
+                self.midi_audio_outputs[stem_name] = midi_output
+                midi_check = self.track_midi_checks.get(stem_name)
+                midi_slider = self.track_midi_sliders.get(stem_name)
+                if midi_check:
+                    midi_check.setEnabled(True)
+                    midi_check.setToolTip("Play the generated MIDI preview audio for this stem.")
+                if midi_slider:
+                    midi_slider.setEnabled(True)
+                    midi_slider.setToolTip("MIDI preview audio volume.")
+            self.refresh_playback_mix()
+            self.append_log(f"MIDI preview audio ready: {len(previews)} tracks.")
 
         def refresh_playback_mix(self) -> None:
             for stem_name, output in self.track_audio_outputs.items():

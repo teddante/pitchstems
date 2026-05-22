@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -131,13 +132,22 @@ def detect_chords(notes: list[NoteEvent], minimum_region: float = 0.18) -> list[
     if not notes:
         return []
 
-    times = sorted({round(note.start, 6) for note in notes} | {round(note.end, 6) for note in notes})
+    starts: dict[float, list[NoteEvent]] = {}
+    ends: dict[float, list[NoteEvent]] = {}
+    for note in notes:
+        starts.setdefault(round(note.start, 6), []).append(note)
+        ends.setdefault(round(note.end, 6), []).append(note)
+    times = sorted(set(starts) | set(ends))
     regions: list[ChordRegion] = []
+    active: list[NoteEvent] = []
     for start, end in zip(times, times[1:]):
+        for note in ends.get(start, []):
+            with contextlib.suppress(ValueError):
+                active.remove(note)
+        active.extend(starts.get(start, []))
         if end - start < minimum_region:
             continue
-        probe = (start + end) / 2
-        analysis = analyze_chord_at(notes, probe)
+        analysis = analyze_chord([note.pitch for note in active])
         if not analysis.label:
             continue
         if regions and regions[-1].label == analysis.label and abs(regions[-1].end - start) < 0.05:
