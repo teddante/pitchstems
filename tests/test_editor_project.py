@@ -75,11 +75,8 @@ def test_analyze_chord_includes_contextual_candidates() -> None:
 
     assert analysis.label == "C6"
     assert "C6" in labels
-    assert "Am7/C" in labels
     assert analysis.candidate_notes["C6"] == ["C", "E", "G", "A"]
-    assert analysis.candidate_notes["Am7/C"] == ["A", "C", "E", "G"]
     assert "Am7/C" in analysis.candidate_aliases["C6"]
-    assert "C6" in analysis.candidate_aliases["Am7/C"]
     assert any("Score formula:" in line for line in analysis.candidate_explanations["C6"])
     assert any("Matched tones:" in line for line in analysis.candidate_explanations["C6"])
 
@@ -156,7 +153,8 @@ def test_analyze_chord_region_can_name_ambiguous_selection_candidates() -> None:
     labels = [label for label, _confidence in analysis.candidates]
 
     assert analysis.label == "C6"
-    assert "Am7/C" in labels
+    assert "C6" in labels
+    assert "Am7/C" in analysis.candidate_aliases["C6"]
 
 
 def test_energy_chord_scoring_prefers_strong_core_over_weak_color() -> None:
@@ -192,6 +190,28 @@ def test_weighted_chord_candidates_reject_required_tones_with_no_visible_energy(
     assert analysis.label == "G"
     assert "Cmaj9(no3)/G" not in labels
     assert "Em7/G" not in labels
+
+
+def test_weighted_chord_candidates_group_aliases_and_keep_colored_options() -> None:
+    notes = [
+        _note(0.0, 1.00, 55, velocity=127),  # G
+        _note(0.0, 0.55, 62, velocity=127),  # D
+        _note(0.0, 0.19, 66, velocity=127),  # F#
+        _note(0.0, 0.17, 69, velocity=127),  # A
+        _note(0.0, 0.13, 71, velocity=127),  # B
+    ]
+
+    analysis = analyze_chord_region(notes, 0.0, 1.0)
+    labels = [label for label, _confidence in analysis.candidates]
+    note_sets = [
+        frozenset(analysis.candidate_notes[label])
+        for label in labels
+    ]
+
+    assert analysis.label == "Gsus2"
+    assert "Gadd9(no3)" in analysis.candidate_aliases["Gsus2"]
+    assert len(note_sets) == len(set(note_sets))
+    assert any("F#" in analysis.candidate_notes[label] for label in labels)
 
 
 def test_detect_chords_merges_adjacent_matching_regions() -> None:
