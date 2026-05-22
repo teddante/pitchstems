@@ -132,7 +132,7 @@ def test_analyze_chord_region_weights_overlap_and_velocity() -> None:
     assert analysis.note_weights[0][0] == "C"
     assert dict(analysis.note_weights)["D"] < 0.1
     assert any("weighted notes" in line for line in analysis.candidate_explanations["C"])
-    assert any("required-tone weight" in line for line in analysis.candidate_explanations["C"])
+    assert any("candidate-tone energy" in line for line in analysis.candidate_explanations["C"])
 
 
 def test_midi_velocity_energy_uses_power_from_velocity_amplitude() -> None:
@@ -212,6 +212,34 @@ def test_weighted_chord_candidates_group_aliases_and_keep_colored_options() -> N
     assert "Gadd9(no3)" in analysis.candidate_aliases["Gsus2"]
     assert len(note_sets) == len(set(note_sets))
     assert any("F#" in analysis.candidate_notes[label] for label in labels)
+
+
+def test_weighted_force_constrains_names_without_inventing_energy() -> None:
+    notes = [
+        _note(0.0, 1.0, 55, velocity=127),  # G
+        _note(0.0, 1.0, 62, velocity=127),  # D
+        _note(0.0, 1.0, 71, velocity=127),  # B
+    ]
+
+    analysis = analyze_chord_region(notes, 0.0, 1.0, required_pitch_classes={0})
+    labels = [label for label, _confidence in analysis.candidates]
+
+    assert labels
+    assert all("C" in analysis.candidate_notes[label] for label in labels)
+    assert "C" not in dict(analysis.note_weights)
+    assert any("Missing tones: C" in line for line in analysis.candidate_explanations[labels[0]])
+
+
+def test_weighted_force_can_complete_two_note_selection() -> None:
+    notes = [
+        _note(0.0, 1.0, 55, velocity=127),  # G
+        _note(0.0, 1.0, 62, velocity=127),  # D
+    ]
+
+    analysis = analyze_chord_region(notes, 0.0, 1.0, required_pitch_classes={11})
+
+    assert analysis.label == "G"
+    assert analysis.candidate_notes["G"] == ["G", "B", "D"]
 
 
 def test_detect_chords_merges_adjacent_matching_regions() -> None:

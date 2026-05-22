@@ -2609,29 +2609,6 @@ def main() -> int:
                 for note in notes
                 if note.pitch % 12 not in excluded_pitch_classes
             ]
-            forced_pitch_classes = [
-                pitch_class
-                for pitch_class, state in self.chord_note_overrides.items()
-                if state == "force" and pitch_class not in self.current_chord_base_weights
-            ]
-            if not forced_pitch_classes:
-                return filtered
-            if context[0] == "selection":
-                _kind, start, end = context
-            else:
-                _kind, seconds = context
-                start = max(0.0, seconds - 0.05)
-                end = seconds + 0.35
-            for pitch_class in forced_pitch_classes:
-                filtered.append(
-                    NoteEvent(
-                        stem="forced-note",
-                        start=start,
-                        end=end,
-                        pitch=60 + pitch_class,
-                        velocity=108,
-                    )
-                )
             return filtered
 
         def chord_note_constraints(self) -> tuple[set[int], set[int]]:
@@ -2779,7 +2756,8 @@ def main() -> int:
                 "Selection score = coverage * purity.",
                 "Coverage asks how strongly the candidate's expected notes are present.",
                 "Purity asks how much of the selected energy belongs to the candidate's notes.",
-                "Chord names that require a tone below visible evidence resolution are rejected.",
+                "Automatic chord names that require a tone below visible evidence resolution are rejected.",
+                "Forced notes constrain chord names without inventing MIDI energy.",
                 "No bass/root, exact-match, missing-note, or simplicity bonuses are applied.",
                 "",
                 "Manual Note Evidence Overrides",

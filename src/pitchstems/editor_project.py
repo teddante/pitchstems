@@ -263,10 +263,15 @@ def analyze_chord_region(
                 if pitch % 12 in kept_pitch_classes
             }
 
-    if len(pitch_weights) < 3:
+    if not pitch_weights:
         active_note_names = [midi_note_name(pitch) for pitch in sorted(exact_pitch_weights)]
         return ChordAnalysis(None, 0.0, active_note_names, sorted(pitch_weights))
-
+    effective_pitch_classes = set(pitch_weights)
+    if required_pitch_classes:
+        effective_pitch_classes |= required_pitch_classes
+    if len(effective_pitch_classes) < 3:
+        active_note_names = [midi_note_name(pitch) for pitch in sorted(exact_pitch_weights)]
+        return ChordAnalysis(None, 0.0, active_note_names, sorted(pitch_weights))
     max_exact_weight = max(exact_pitch_weights.values())
     bass_pitch = min(
         pitch
@@ -528,85 +533,6 @@ def _score_root(
     return label, max(0.0, min(1.0, best_score)), best_explanation
 
 
-def _score_weighted_root(
-    root: int,
-    pitch_weights: dict[int, float],
-    bass: int,
-    required_pitch_classes: set[int] | None = None,
-    excluded_pitch_classes: set[int] | None = None,
-    options: ChordScoringOptions | None = None,
-) -> tuple[str, float, list[str]] | None:
-    options = options or ChordScoringOptions()
-    interval_weights = {
-        (pitch - root) % 12: weight
-        for pitch, weight in pitch_weights.items()
-    }
-    total_weight = max(0.0001, sum(interval_weights.values()))
-    max_weight = max(interval_weights.values())
-    bass_bonus = _bass_root_bonus(root, bass, set(pitch_weights)) if options.use_bass_root_bonus else 0.0
-    best_quality = ""
-    best_score = 0.0
-    best_explanation: list[str] = []
-    for suffix, required in _chord_qualities():
-        label = f"{PITCH_NAMES[root]}{suffix}"
-        if bass != root:
-            label = f"{label}/{PITCH_NAMES[bass]}"
-        if not _label_matches_constraints(label, required_pitch_classes, excluded_pitch_classes):
-            continue
-        required_set = set(required)
-        normalized_support = {
-            interval: interval_weights.get(interval, 0.0) / max_weight
-            for interval in required_set
-        }
-        unsupported = {
-            interval
-            for interval, support in normalized_support.items()
-            if support < MIN_WEIGHTED_TONE_SUPPORT
-        }
-        if unsupported:
-            continue
-        template_weight = sum(interval_weights.get(interval, 0.0) for interval in required)
-        required_weight = template_weight / total_weight
-        extra_weight = 1.0 - required_weight
-        missing = sum(1 for interval in required_set if interval not in interval_weights)
-        coverage = sum(
-            min(1.0, interval_weights.get(interval, 0.0) / max_weight)
-            for interval in required
-        ) / len(required)
-        purity = required_weight
-        exact_bonus = 0.08 if options.use_exact_match_bonus and extra_weight < 0.04 and missing == 0 else 0.0
-        missing_penalty = 0.10 * missing if options.use_missing_penalty else 0.0
-        complexity_penalty = _complexity_penalty(required) if options.use_complexity_penalty else 0.0
-        score = coverage * purity - extra_weight * options.extra_weight_penalty
-        score += bass_bonus + exact_bonus - missing_penalty - complexity_penalty
-        if score > best_score:
-            best_quality = suffix
-            best_score = score
-            best_explanation = _weighted_score_explanation(
-                label=label,
-                root=root,
-                required=required,
-                interval_weights=interval_weights,
-                bass=bass,
-                bass_bonus=bass_bonus,
-                required_weight=required_weight,
-                extra_weight=extra_weight,
-                missing=missing,
-                coverage=coverage,
-                exact_bonus=exact_bonus,
-                complexity_penalty=complexity_penalty,
-                missing_penalty=missing_penalty,
-                options=options,
-                score=score,
-            )
-    label = f"{PITCH_NAMES[root]}{best_quality}"
-    if bass != root:
-        label = f"{label}/{PITCH_NAMES[bass]}"
-    if not best_explanation:
-        return None
-    return label, max(0.0, min(1.0, best_score)), best_explanation
-
-
 def _score_weighted_root_candidates(
     root: int,
     pitch_weights: dict[int, float],
@@ -635,7 +561,16 @@ def _score_weighted_root_candidates(
             interval: interval_weights.get(interval, 0.0) / max_weight
             for interval in required_set
         }
-        if any(support < MIN_WEIGHTED_TONE_SUPPORT for support in normalized_support.values()):
+        unsupported = {
+            interval
+            for interval, support in normalized_support.items()
+            if support < MIN_WEIGHTED_TONE_SUPPORT
+            and (
+                not required_pitch_classes
+                or (root + interval) % 12 not in required_pitch_classes
+            )
+        }
+        if unsupported:
             continue
         template_weight = sum(interval_weights.get(interval, 0.0) for interval in required)
         required_weight = template_weight / total_weight
@@ -841,7 +776,7 @@ def _weighted_score_explanation(
     return [
         f"{label}: scored from weighted notes across the selected time range.",
         f"Chord tones expected: {' - '.join(_interval_names(root, required))}.",
-        f"Matched weighted tones: {', '.join(matched_notes) or 'none'}; required-tone weight {required_weight:.0%}.",
+        f"Matched weighted tones: {', '.join(matched_notes) or 'none'}; candidate-tone energy {required_weight:.0%}.",
         f"Missing tones: {', '.join(missing_notes) or 'none'}. Extra weighted tones: {', '.join(extra_notes) or 'none'} ({extra_weight:.0%}).",
         f"Evidence terms: coverage {coverage:.0%}, purity {required_weight:.0%}.",
         _ranking_modifier_summary(
