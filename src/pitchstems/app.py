@@ -2802,7 +2802,10 @@ def main() -> int:
                     )
                     lines.extend(analysis.candidate_explanations.get(label, ["No explanation available."]))
             else:
-                lines.append("No chord candidates here.")
+                lines.append("No full chord candidates here.")
+            if analysis.partial_hints:
+                lines.extend(["", "Partial Harmony Hints", "-" * 21])
+                lines.extend(analysis.partial_hints)
             return "\n".join(lines)
 
         def chord_selection_evidence_rows(
@@ -2877,7 +2880,11 @@ def main() -> int:
                     self.chord_list.addItem(item)
             else:
                 self.chord_list.clear()
-                self.chord_list.addItem("No chord candidates here.")
+                self.chord_list.addItem("No full chord candidates here.")
+                for hint in analysis.partial_hints:
+                    item = QListWidgetItem(hint)
+                    item.setToolTip("Partial harmony hint. This is not a confirmed chord candidate.")
+                    self.chord_list.addItem(item)
             self.refresh_chord_actions()
 
         def _candidate_notes_text(self, analysis, label: str) -> str:

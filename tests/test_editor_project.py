@@ -242,6 +242,37 @@ def test_weighted_force_can_complete_two_note_selection() -> None:
     assert analysis.candidate_notes["G"] == ["G", "B", "D"]
 
 
+def test_two_note_selection_reports_partial_harmony_hints() -> None:
+    notes = [
+        _note(0.0, 1.0, 55, velocity=127),  # G
+        _note(0.0, 1.0, 62, velocity=127),  # D
+    ]
+
+    analysis = analyze_chord_region(notes, 0.0, 1.0)
+
+    assert analysis.label is None
+    assert analysis.candidates == []
+    assert analysis.note_weights == [("D", 1.0), ("G", 1.0)]
+    assert "Two-note interval: G - D (perfect fifth above G)." in analysis.partial_hints
+    assert "Power-chord shell: G5 (G - D)." in analysis.partial_hints
+    assert any("G (add B)" in hint for hint in analysis.partial_hints)
+
+
+def test_unsupported_three_note_cluster_reports_incomplete_chord_hints() -> None:
+    notes = [
+        _note(0.0, 1.0, 43, velocity=127),  # G
+        _note(0.0, 1.0, 47, velocity=80),  # B
+        _note(0.0, 1.0, 60, velocity=80),  # C
+    ]
+
+    analysis = analyze_chord_region(notes, 0.0, 1.0)
+
+    assert analysis.label is None
+    assert analysis.candidates == []
+    assert any("Possible incomplete chord names:" in hint for hint in analysis.partial_hints)
+    assert any("Gadd4 (add D)" in hint for hint in analysis.partial_hints)
+
+
 def test_detect_chords_merges_adjacent_matching_regions() -> None:
     notes = [
         _note(0.0, 1.0, 60),
