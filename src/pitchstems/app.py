@@ -19,6 +19,7 @@ from pitchstems.editor_project import (
     analyze_chord_at,
     analyze_chord_region,
     build_editor_project,
+    midi_velocity_energy,
     midi_note_name,
 )
 from pitchstems.midi_preview import render_midi_preview, render_note_preview
@@ -2717,15 +2718,17 @@ def main() -> int:
                     overlap = max(0.0, min(note.end, end) - max(note.start, start))
                     if overlap <= 0:
                         continue
-                    velocity_factor = 0.35 + 0.65 * (max(1, min(note.velocity, 127)) / 127)
-                    weights[note.pitch % 12] = weights.get(note.pitch % 12, 0.0) + overlap * velocity_factor
+                    weights[note.pitch % 12] = (
+                        weights.get(note.pitch % 12, 0.0)
+                        + overlap * midi_velocity_energy(note.velocity)
+                    )
             else:
                 _kind, seconds = context
                 for note in notes:
                     if note.start <= seconds < note.end:
                         weights[note.pitch % 12] = max(
                             weights.get(note.pitch % 12, 0.0),
-                            max(1, min(note.velocity, 127)) / 127,
+                            midi_velocity_energy(note.velocity),
                         )
             if not weights:
                 return {}
@@ -2904,6 +2907,7 @@ def main() -> int:
                 "Detector Settings",
                 "-" * 17,
                 f"Preset: {self.chord_detector_preset.currentText()}",
+                "MIDI energy model: note energy = overlap_seconds * (velocity / 127)^2",
                 f"Coverage weight: {scoring_options.coverage_weight:.2f}",
                 f"Purity weight: {scoring_options.purity_weight:.2f}",
                 f"Extra-weight penalty: {scoring_options.extra_weight_penalty:.2f}",
@@ -2972,14 +2976,14 @@ def main() -> int:
                 overlap = max(0.0, min(note.end, end) - max(note.start, start))
                 if overlap <= 0:
                     continue
-                velocity_factor = 0.35 + 0.65 * (max(1, min(note.velocity, 127)) / 127)
-                weight = overlap * velocity_factor
+                velocity_energy = midi_velocity_energy(note.velocity)
+                weight = overlap * velocity_energy
                 totals[note.pitch % 12] = totals.get(note.pitch % 12, 0.0) + weight
                 rows.append(
                     f"{note.stem:12} {note.name:4} pitch {note.pitch:3} "
                     f"start {_format_time(note.start)} end {_format_time(note.end)} "
                     f"overlap {overlap:.3f}s velocity {note.velocity:3} "
-                    f"velocity factor {velocity_factor:.3f} weight {weight:.4f}"
+                    f"velocity energy {velocity_energy:.4f} note energy {weight:.4f}"
                 )
             return rows, totals
 
@@ -2991,12 +2995,12 @@ def main() -> int:
             rows: list[str] = []
             totals: dict[int, float] = {}
             for note in sorted(active_notes_at(notes, seconds), key=lambda item: (item.stem, item.pitch, item.start)):
-                weight = max(1, min(note.velocity, 127)) / 127
+                weight = midi_velocity_energy(note.velocity)
                 totals[note.pitch % 12] = max(totals.get(note.pitch % 12, 0.0), weight)
                 rows.append(
                     f"{note.stem:12} {note.name:4} pitch {note.pitch:3} "
                     f"start {_format_time(note.start)} end {_format_time(note.end)} "
-                    f"active at playhead velocity {note.velocity:3} weight {weight:.4f}"
+                    f"active at playhead velocity {note.velocity:3} velocity energy {weight:.4f}"
                 )
             return rows, totals
 

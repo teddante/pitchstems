@@ -200,6 +200,11 @@ def active_notes_at(notes: list[NoteEvent], seconds: float) -> list[NoteEvent]:
     )
 
 
+def midi_velocity_energy(velocity: int) -> float:
+    amplitude = max(0, min(velocity, 127)) / 127
+    return amplitude * amplitude
+
+
 def analyze_chord_at(
     notes: list[NoteEvent],
     seconds: float,
@@ -234,8 +239,7 @@ def analyze_chord_region(
         overlap = max(0.0, min(note.end, end) - max(note.start, start))
         if overlap <= 0:
             continue
-        velocity_factor = 0.35 + 0.65 * (max(1, min(note.velocity, 127)) / 127)
-        weight = overlap * velocity_factor
+        weight = overlap * midi_velocity_energy(note.velocity)
         pitch_weights[note.pitch % 12] = pitch_weights.get(note.pitch % 12, 0.0) + weight
         exact_pitch_weights[note.pitch] = exact_pitch_weights.get(note.pitch, 0.0) + weight
 

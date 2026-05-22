@@ -13,6 +13,7 @@ from pitchstems.editor_project import (
     detect_chords,
     exact_chord_names_for_pitch_classes,
     identify_chord,
+    midi_velocity_energy,
     midi_note_name,
     read_midi_notes,
 )
@@ -136,6 +137,12 @@ def test_analyze_chord_region_weights_overlap_and_velocity() -> None:
     assert dict(analysis.note_weights)["D"] < 0.1
     assert any("weighted notes" in line for line in analysis.candidate_explanations["C"])
     assert any("required-tone weight" in line for line in analysis.candidate_explanations["C"])
+
+
+def test_midi_velocity_energy_uses_power_from_velocity_amplitude() -> None:
+    assert midi_velocity_energy(127) == 1.0
+    assert midi_velocity_energy(0) == 0.0
+    assert midi_velocity_energy(64) == (64 / 127) ** 2
 
 
 def test_analyze_chord_region_can_name_ambiguous_selection_candidates() -> None:
