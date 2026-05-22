@@ -61,6 +61,20 @@ def test_analyze_chord_includes_contextual_candidates() -> None:
     assert any("Matched tones:" in line for line in analysis.candidate_explanations["C6"])
 
 
+def test_chord_constraints_force_and_exclude_candidate_tones() -> None:
+    forced = analyze_chord([60, 64, 67], required_pitch_classes={9})
+    forced_labels = [label for label, _confidence in forced.candidates]
+
+    assert "C6" in forced_labels
+    assert forced_labels
+    assert all("A" in forced.candidate_notes[label] for label in forced_labels)
+
+    excluded = analyze_chord([60, 64, 67, 69], excluded_pitch_classes={9})
+
+    assert excluded.candidates
+    assert all("A" not in excluded.candidate_notes[label] for label, _confidence in excluded.candidates)
+
+
 def test_chord_tones_for_label_orders_extensions_from_root() -> None:
     assert chord_tones_for_label("Cmaj9") == ["C", "E", "G", "B", "D"]
     assert chord_tones_for_label("F#7sus4/C#") == ["F#", "B", "C#", "E"]

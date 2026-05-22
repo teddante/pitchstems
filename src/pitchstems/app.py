@@ -1120,7 +1120,7 @@ def main() -> int:
             self.activity_depth = 0
             self.manual_chords: list[ChordRegion] = []
             self.removed_chord_ranges: list[tuple[float, float]] = []
-            self.chord_note_overrides: dict[int, bool] = {}
+            self.chord_note_overrides: dict[int, str] = {}
             self.chord_note_filter_context = None
             self.current_chord_base_weights: dict[int, float] = {}
             self.updating_chord_note_filter = False
@@ -1236,10 +1236,10 @@ def main() -> int:
             self.note_filter_list = QListWidget()
             self.note_filter_list.setMaximumHeight(150)
             self.note_filter_list.setAlternatingRowColors(True)
-            self.note_filter_list.setToolTip("Tick notes to include them in the current Chord Inspector calculation. Untick detected notes to ignore them; tick missing notes to force them in.")
+            self.note_filter_list.setToolTip("Three states: Exclude rejects chords containing this note, Auto uses detector evidence naturally, Force requires chords containing this note.")
             self.note_filter_help = QLabel(
-                "Checked notes are used for this chord guess. Untick a detected note to ignore it; "
-                "tick a missing note to force it in for this playhead/selection."
+                "Each note has three states: Exclude rejects chord names containing it, Auto lets the detector decide, "
+                "Force requires chord names containing it."
             )
             self.note_filter_help.setWordWrap(True)
             self.note_filter_help.setStyleSheet("color: #64748b;")
@@ -2319,7 +2319,14 @@ def main() -> int:
             selection = self.timeline.selection_range()
             if selection is not None:
                 start, end = selection
-                analysis = analyze_chord_region(analysis_notes, start, end)
+                required, excluded = self.chord_note_constraints()
+                analysis = analyze_chord_region(
+                    analysis_notes,
+                    start,
+                    end,
+                    required_pitch_classes=required,
+                    excluded_pitch_classes=excluded,
+                )
                 chord = analysis.label or "No clear chord"
                 self.current_chord.setText(
                     f"Selection: {chord}  ({analysis.confidence:.0%})  "
@@ -2342,7 +2349,13 @@ def main() -> int:
                     self.chord_context.setText(f"{sample_text}\nNotes in selection: -")
                 return
 
-            analysis = analyze_chord_at(analysis_notes, seconds)
+            required, excluded = self.chord_note_constraints()
+            analysis = analyze_chord_at(
+                analysis_notes,
+                seconds,
+                required_pitch_classes=required,
+                excluded_pitch_classes=excluded,
+            )
             active_notes = active_notes_at(analysis_notes, seconds)
             chord = analysis.label or "No clear chord"
             self.current_chord.setText(f"Chord: {chord}  ({analysis.confidence:.0%})")
@@ -2434,15 +2447,20 @@ def main() -> int:
             return {pitch_class: weight / maximum for pitch_class, weight in weights.items()}
 
         def filtered_chord_analysis_notes(self, notes: list[NoteEvent], context) -> list[NoteEvent]:
+            excluded_pitch_classes = {
+                pitch_class
+                for pitch_class, state in self.chord_note_overrides.items()
+                if state == "exclude"
+            }
             filtered = [
                 note
                 for note in notes
-                if self.chord_note_overrides.get(note.pitch % 12, True)
+                if note.pitch % 12 not in excluded_pitch_classes
             ]
             forced_pitch_classes = [
                 pitch_class
-                for pitch_class, included in self.chord_note_overrides.items()
-                if included and pitch_class not in self.current_chord_base_weights
+                for pitch_class, state in self.chord_note_overrides.items()
+                if state == "force" and pitch_class not in self.current_chord_base_weights
             ]
             if not forced_pitch_classes:
                 return filtered
@@ -2464,6 +2482,19 @@ def main() -> int:
                 )
             return filtered
 
+        def chord_note_constraints(self) -> tuple[set[int], set[int]]:
+            required = {
+                pitch_class
+                for pitch_class, state in self.chord_note_overrides.items()
+                if state == "force"
+            }
+            excluded = {
+                pitch_class
+                for pitch_class, state in self.chord_note_overrides.items()
+                if state == "exclude"
+            }
+            return required, excluded
+
         def populate_note_filter_list(self, weights: dict[int, float]) -> None:
             self.updating_chord_note_filter = True
             try:
@@ -2471,24 +2502,30 @@ def main() -> int:
                 detected = sorted(weights, key=lambda pitch_class: (-weights[pitch_class], pitch_class))
                 missing = [pitch_class for pitch_class in range(12) if pitch_class not in weights]
                 for pitch_class in [*detected, *missing]:
-                    default_included = pitch_class in weights
-                    included = self.chord_note_overrides.get(pitch_class, default_included)
+                    state = self.chord_note_overrides.get(pitch_class, "auto")
                     if pitch_class in weights:
                         detail = f"{weights[pitch_class]:.0%}"
                     else:
                         detail = "not detected"
-                    if self.chord_note_overrides.get(pitch_class) is False:
-                        detail += " excluded"
-                    elif self.chord_note_overrides.get(pitch_class) is True and pitch_class not in weights:
+                    if state == "exclude":
+                        detail = f"{detail}; hard excluded"
+                    elif state == "force":
                         detail = "forced in"
-                    state = "Use" if included else "Ignore"
-                    item = QListWidgetItem(f"{state} {PITCH_NAMES[pitch_class]}  -  {detail}")
+                    label = {"exclude": "Exclude", "auto": "Auto", "force": "Force"}[state]
+                    item = QListWidgetItem(f"{label} {PITCH_NAMES[pitch_class]}  -  {detail}")
                     item.setData(Qt.UserRole, pitch_class)
-                    item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-                    item.setCheckState(Qt.Checked if included else Qt.Unchecked)
+                    tristate_flag = getattr(Qt, "ItemIsUserTristate", Qt.ItemIsUserCheckable)
+                    item.setFlags(item.flags() | Qt.ItemIsUserCheckable | tristate_flag)
+                    check_state = {
+                        "exclude": Qt.Unchecked,
+                        "auto": Qt.PartiallyChecked,
+                        "force": Qt.Checked,
+                    }[state]
+                    item.setCheckState(check_state)
                     item.setToolTip(
-                        "Checked notes are included in this Chord Inspector calculation. "
-                        "Untick a detected note to ignore it, or tick an undetected note to force it in."
+                        "Unchecked: Exclude any chord name containing this note.\n"
+                        "Mixed: Auto, use detector evidence naturally.\n"
+                        "Checked: Force chord names to contain this note."
                     )
                     self.note_filter_list.addItem(item)
             finally:
@@ -2501,12 +2538,15 @@ def main() -> int:
             if pitch_class is None:
                 return
             pitch_class = int(pitch_class)
-            included = item.checkState() == Qt.Checked
-            default_included = pitch_class in self.current_chord_base_weights
-            if included == default_included:
+            state = {
+                Qt.Unchecked: "exclude",
+                Qt.PartiallyChecked: "auto",
+                Qt.Checked: "force",
+            }.get(item.checkState(), "auto")
+            if state == "auto":
                 self.chord_note_overrides.pop(pitch_class, None)
             else:
-                self.chord_note_overrides[pitch_class] = included
+                self.chord_note_overrides[pitch_class] = state
             self.refresh_current_harmony(self.timeline.position)
 
         def reset_chord_note_filter(self) -> None:
