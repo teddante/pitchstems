@@ -281,7 +281,7 @@ def main() -> int:
             self.pixels_per_second = max(1, min(420, time_width / duration))
 
             track_base_height = 0.0
-            for track in self.project.tracks:
+            for track in self._visible_project_tracks():
                 pitch_range = self.pitch_ranges.get(track.name.lower())
                 if pitch_range:
                     low_pitch, high_pitch = pitch_range
@@ -528,7 +528,14 @@ def main() -> int:
             visible_rect,
             visible_note_count: int,
         ) -> None:
-            for index, track in enumerate(self.project.tracks):
+            tracks = self._visible_project_tracks()
+            if not tracks:
+                text = self.scene.addText("No timeline tracks visible. Tick View for a track to show it here.")
+                text.setDefaultTextColor(QColor("#64748b"))
+                text.setPos(self.label_width + 18, self.chord_height + 18)
+                self._make_sticky_y(text, 12)
+                return
+            for index, track in enumerate(tracks):
                 y, height, low_pitch, high_pitch = self.track_geometries[track.name.lower()]
                 fill = QColor("#ffffff") if index % 2 == 0 else QColor("#f1f5f9")
                 self.scene.addRect(0, y, self.scene.width(), height, QPen(Qt.NoPen), QBrush(fill))
@@ -552,10 +559,8 @@ def main() -> int:
             draw_note_labels = self.pixels_per_second >= 150 and visible_note_count <= 900
             dense_render = self.pixels_per_second < 55 or visible_note_count > 2400
             enable_tooltips = visible_note_count <= 1400 and not dense_render
-            for track in self.project.tracks:
+            for track in tracks:
                 track_key = track.name.lower()
-                if track_key not in self.visible_tracks:
-                    continue
                 geometry = self.track_geometries.get(track_key)
                 if geometry is None:
                     continue
@@ -750,7 +755,7 @@ def main() -> int:
         def _build_track_geometries(self) -> dict[str, tuple[float, float, int, int]]:
             geometries: dict[str, tuple[float, float, int, int]] = {}
             y = self.chord_height
-            for track in self.project.tracks:
+            for track in self._visible_project_tracks():
                 pitch_range = self.pitch_ranges.get(track.name.lower())
                 if pitch_range:
                     low_pitch, high_pitch = pitch_range
@@ -763,6 +768,15 @@ def main() -> int:
                 geometries[track.name.lower()] = (y, height, low_pitch, high_pitch)
                 y += height
             return geometries
+
+        def _visible_project_tracks(self):
+            if self.project is None:
+                return []
+            return [
+                track
+                for track in self.project.tracks
+                if track.name.lower() in self.visible_tracks
+            ]
 
         def _draw_pitch_guides(
             self,
