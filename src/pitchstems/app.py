@@ -37,7 +37,7 @@ def main() -> int:
     log_path = setup_app_logging()
     logger = app_logger()
     try:
-        from PySide6.QtCore import QTimer, Qt, QUrl
+        from PySide6.QtCore import QSettings, QTimer, Qt, QUrl
         from PySide6.QtGui import QAction, QColor, QBrush, QImage, QKeySequence, QPainter, QPen, QPixmap, QShortcut
         from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
         from PySide6.QtWidgets import (
@@ -1104,6 +1104,8 @@ def main() -> int:
             self.current_result: PipelineResult | None = None
             self.current_stems: list[StemResult] = []
             self.current_input_stem: str | None = None
+            self.settings = QSettings("PitchStems", "PitchStems")
+            self.recent_projects_menu = None
             self.base_editor_project: EditorProject | None = None
             self.editor_project: EditorProject | None = None
             self.is_playing = False
@@ -1571,6 +1573,8 @@ def main() -> int:
             file_menu = self.menuBar().addMenu("&File")
             self._add_action(file_menu, "&Open Audio...", "Ctrl+O", self.pick_audio)
             self._add_action(file_menu, "Open &Project...", "Ctrl+Shift+O", self.pick_project)
+            self.recent_projects_menu = file_menu.addMenu("Open &Recent")
+            self.refresh_recent_projects_menu()
             file_menu.addSeparator()
             self._add_action(file_menu, "&Save Project", "Ctrl+S", self.save_project_now)
             self._add_action(file_menu, "Choose Output &Folder...", None, self.pick_output_dir)
@@ -1620,6 +1624,79 @@ def main() -> int:
             action.triggered.connect(callback)
             menu.addAction(action)
             return action
+
+        def refresh_recent_projects_menu(self) -> None:
+            if self.recent_projects_menu is None:
+                return
+            self.recent_projects_menu.clear()
+            recent = self.recent_project_paths()
+            if not recent:
+                action = QAction("No recent projects", self)
+                action.setEnabled(False)
+                self.recent_projects_menu.addAction(action)
+                return
+            for index, path in enumerate(recent[:10], 1):
+                action = QAction(f"&{index} {self.recent_project_label(path)}", self)
+                action.setToolTip(str(path))
+                action.triggered.connect(lambda _checked=False, project_path=path: self.open_recent_project(project_path))
+                self.recent_projects_menu.addAction(action)
+            self.recent_projects_menu.addSeparator()
+            self._add_action(self.recent_projects_menu, "Clear Recent Projects", None, self.clear_recent_projects)
+
+        def recent_project_paths(self) -> list[Path]:
+            value = self.settings.value("recent_projects", [])
+            if isinstance(value, str):
+                raw_paths = [value]
+            else:
+                raw_paths = list(value or [])
+            paths: list[Path] = []
+            seen: set[str] = set()
+            for raw_path in raw_paths:
+                path = Path(str(raw_path)).expanduser()
+                key = str(path).lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                paths.append(path)
+            return paths
+
+        def recent_project_label(self, manifest_path: Path) -> str:
+            project_dir = manifest_path.parent
+            if manifest_path.name == PROJECT_FILENAME:
+                return f"{project_dir.name}  ({self._short_path(project_dir.parent)})"
+            return f"{manifest_path.name}  ({self._short_path(manifest_path.parent)})"
+
+        def _short_path(self, path: Path, max_length: int = 46) -> str:
+            text = str(path)
+            if len(text) <= max_length:
+                return text
+            return f"...{text[-(max_length - 3):]}"
+
+        def remember_recent_project(self, project_dir: Path) -> None:
+            manifest = (project_dir / PROJECT_FILENAME).expanduser().resolve()
+            recent = [path for path in self.recent_project_paths() if path.resolve() != manifest]
+            recent.insert(0, manifest)
+            self.settings.setValue("recent_projects", [str(path) for path in recent[:10]])
+            self.refresh_recent_projects_menu()
+
+        def remove_recent_project(self, manifest_path: Path) -> None:
+            target = manifest_path.expanduser().resolve()
+            recent = [path for path in self.recent_project_paths() if path.expanduser().resolve() != target]
+            self.settings.setValue("recent_projects", [str(path) for path in recent])
+            self.refresh_recent_projects_menu()
+
+        def clear_recent_projects(self) -> None:
+            self.settings.setValue("recent_projects", [])
+            self.refresh_recent_projects_menu()
+            self.statusBar().showMessage("Recent projects cleared.", 3000)
+
+        def open_recent_project(self, manifest_path: Path) -> None:
+            if not manifest_path.exists():
+                self.remove_recent_project(manifest_path)
+                self.append_log(f"Recent project no longer exists: {manifest_path}")
+                self.statusBar().showMessage("Recent project was removed because it no longer exists.", 5000)
+                return
+            self.open_project_manifest(manifest_path)
 
         def show_timeline_controls(self) -> None:
             self.statusBar().showMessage(
@@ -1686,14 +1763,18 @@ def main() -> int:
             )
             if not filename:
                 return
+            self.open_project_manifest(Path(filename))
+
+        def open_project_manifest(self, manifest_path: Path) -> None:
             self.begin_activity("Opening project...")
             try:
-                self.logger.info("Opening project manifest: %s", filename)
-                result = load_pipeline_result(Path(filename))
+                self.logger.info("Opening project manifest: %s", manifest_path)
+                result = load_pipeline_result(manifest_path)
             except Exception as exc:
                 self.logger.exception("Could not open project manifest")
                 self.append_log(f"Could not open project: {exc}")
                 self.end_activity("Could not open project")
+                self.remove_recent_project(manifest_path)
                 return
             self.output_dir.setText(str(result.project_dir.parent))
             self.drop_zone.set_project_file(result.project_dir, result.source_audio)
@@ -1827,6 +1908,7 @@ def main() -> int:
                 f"Ready: {len(result.midi_files)} MIDI files. Change Basic Pitch settings or MIDI stem ticks, then use Rerun MIDI only."
             )
             self.load_editor_project(result)
+            self.remember_recent_project(result.project_dir)
             if open_output and self.open_when_done.isChecked():
                 self.open_latest_output()
 
