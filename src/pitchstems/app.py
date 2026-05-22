@@ -191,7 +191,7 @@ def main() -> int:
                 self.pending_zoom_center_seconds = self._view_center_seconds()
             base = self.pending_pixels_per_second or self.pixels_per_second
             self.pending_pixels_per_second = max(28, min(420, base * factor))
-            self.zoom_redraw_timer.start(70)
+            self.zoom_redraw_timer.start(180)
 
         def zoom_vertical(self, factor: float) -> None:
             if self.project is None:
@@ -200,7 +200,7 @@ def main() -> int:
                 self.pending_zoom_center_y = self.mapToScene(self.viewport().rect().center()).y()
             base = self.pending_vertical_zoom or self.vertical_zoom
             self.pending_vertical_zoom = max(0.45, min(3.6, base * factor))
-            self.zoom_redraw_timer.start(70)
+            self.zoom_redraw_timer.start(180)
 
         def reset_zoom(self) -> None:
             if self.project is None:
@@ -365,7 +365,6 @@ def main() -> int:
                 )
                 self._draw_pitch_guides(y, height, low_pitch, high_pitch)
 
-            draw_density = len(self.project.notes) > 8000 and self.pixels_per_second < 80
             draw_note_labels = self.pixels_per_second >= 150 and len(self.project.notes) <= 900
             for track in self.project.tracks:
                 track_key = track.name.lower()
@@ -376,9 +375,6 @@ def main() -> int:
                     continue
                 y, height, low_pitch, high_pitch = geometry
                 track_notes = self.notes_by_track.get(track_key, [])
-                if draw_density:
-                    self._draw_note_density(track.name, track_notes, y, height)
-                    continue
                 for note in track_notes:
                     self._draw_note_event(note, y, height, low_pitch, high_pitch, draw_note_labels)
 
@@ -394,20 +390,21 @@ def main() -> int:
             note_height = self._note_height(height, low_pitch, high_pitch)
             pitch_y = self._pitch_y(note.pitch, y, height, low_pitch, high_pitch, note_height)
             x = self._x(note.start)
-            width = max(3, note.duration * self.pixels_per_second)
+            width = max(1.0, note.duration * self.pixels_per_second)
             color = _track_color(note.stem)
             velocity = max(1, min(note.velocity, 127))
             velocity_ratio = velocity / 127
             fill_color = QColor(color)
             fill_color.setAlpha(int(70 + velocity_ratio * 185))
             pen_color = QColor(color.darker(150 if velocity_ratio < 0.55 else 125))
-            pen_width = 1 if velocity_ratio < 0.72 else 2
+            pen_width = 0 if self.pixels_per_second < 80 else 1 if velocity_ratio < 0.72 else 2
+            pen = QPen(Qt.NoPen) if pen_width == 0 else QPen(pen_color, pen_width)
             rect = self.scene.addRect(
                 x,
                 pitch_y,
                 width,
                 note_height,
-                QPen(pen_color, pen_width),
+                pen,
                 QBrush(fill_color),
             )
             rect.setToolTip(
@@ -420,41 +417,6 @@ def main() -> int:
                 label = self.scene.addText(note.name)
                 label.setDefaultTextColor(QColor("#0f172a"))
                 label.setPos(x + 3, pitch_y - 3)
-
-        def _draw_note_density(self, stem_name: str, notes: list, y: float, height: float) -> None:
-            if not notes:
-                return
-            duration = max(self.project.duration if self.project else 0.0, 1.0)
-            bin_seconds = max(0.25, 5 / self.pixels_per_second)
-            bins: dict[int, float] = {}
-            for note in notes:
-                start_bin = int(note.start / bin_seconds)
-                end_bin = max(start_bin, int(note.end / bin_seconds))
-                velocity_ratio = max(1, min(note.velocity, 127)) / 127
-                contribution = max(0.2, velocity_ratio) * max(0.04, note.duration)
-                for bin_index in range(start_bin, end_bin + 1):
-                    bins[bin_index] = bins.get(bin_index, 0.0) + contribution
-            if not bins:
-                return
-            max_weight = max(bins.values())
-            color = _track_color(stem_name)
-            lane_y = y + 12
-            lane_height = max(8.0, height - 24)
-            for bin_index, weight in bins.items():
-                seconds = bin_index * bin_seconds
-                if seconds > duration:
-                    continue
-                intensity = min(1.0, weight / max_weight)
-                fill_color = QColor(color)
-                fill_color.setAlpha(int(35 + intensity * 160))
-                self.scene.addRect(
-                    self._x(seconds),
-                    lane_y,
-                    max(2.0, bin_seconds * self.pixels_per_second),
-                    lane_height,
-                    QPen(Qt.NoPen),
-                    QBrush(fill_color),
-                ).setToolTip(f"{stem_name}: dense note overview. Zoom in to inspect individual MIDI notes.")
 
         def _draw_playhead(self, height: float) -> None:
             self.playhead = self.scene.addLine(0, 0, 0, height, QPen(QColor("#ef4444"), 2))
@@ -651,11 +613,17 @@ def main() -> int:
             degrees = event.angleDelta().y() / 120
             horizontal_degrees = event.angleDelta().x() / 120
             if modifiers & Qt.ControlModifier and modifiers & Qt.ShiftModifier:
-                self.zoom_vertical(1.14 if degrees > 0 else 1 / 1.14)
+                if not degrees:
+                    event.accept()
+                    return
+                self.zoom_vertical(1.14 ** degrees)
                 event.accept()
                 return
             if modifiers & Qt.ControlModifier:
-                self.zoom_horizontal(1.14 if degrees > 0 else 1 / 1.14)
+                if not degrees:
+                    event.accept()
+                    return
+                self.zoom_horizontal(1.14 ** degrees)
                 event.accept()
                 return
             if modifiers & Qt.ShiftModifier:
@@ -845,12 +813,9 @@ def main() -> int:
             self.current_chord = QLabel("Chord: -")
             self.current_chord.setMinimumWidth(220)
             self.current_chord.setStyleSheet("font-weight: 700; color: #4c1d95;")
-            self.current_chord_options = QLabel("Possible: -")
-            self.current_chord_options.setWordWrap(True)
-            self.current_chord_options.setStyleSheet("color: #64748b;")
-            self.current_notes = QLabel("Notes: -")
-            self.current_notes.setWordWrap(True)
-            self.current_notes.setStyleSheet("color: #475569;")
+            self.chord_context = QLabel("Notes: -")
+            self.chord_context.setWordWrap(True)
+            self.chord_context.setStyleSheet("color: #475569;")
             self.timeline = TimelineView()
             self.timeline.on_position_changed = self.set_editor_position_seconds
             self.timeline.on_selection_changed = self.set_editor_selection
@@ -1035,8 +1000,6 @@ def main() -> int:
             transport_row.addWidget(self.current_chord)
             transport_row.addStretch(1)
             editor_layout.addLayout(transport_row)
-            editor_layout.addWidget(self.current_chord_options)
-            editor_layout.addWidget(self.current_notes)
 
             editor_body = QHBoxLayout()
             editor_body.setSpacing(10)
@@ -1045,6 +1008,7 @@ def main() -> int:
             editor_side.addWidget(_section_label("Tracks & Mix"))
             editor_side.addLayout(self.playback_controls)
             editor_side.addWidget(_section_label("Chord Inspector"))
+            editor_side.addWidget(self.chord_context)
             editor_side.addWidget(self.chord_list, 1)
             editor_body.addLayout(editor_side)
             editor_body.addWidget(self.timeline, 1)
@@ -1695,8 +1659,8 @@ def main() -> int:
         def refresh_current_harmony(self, seconds: float) -> None:
             if self.editor_project is None:
                 self.current_chord.setText("Chord: -")
-                self.current_chord_options.setText("Possible: -")
-                self.current_notes.setText("Notes: -")
+                self.chord_context.setText("Notes: -")
+                self.chord_list.clear()
                 return
             selection = self.timeline.selection_range()
             if selection is not None:
@@ -1713,14 +1677,14 @@ def main() -> int:
                         f"{name} ({weight:.0%})"
                         for name, weight in analysis.note_weights[:12]
                     )
-                    self.current_notes.setText(f"Weighted notes: {note_text}")
+                    self.chord_context.setText(f"Weighted notes: {note_text}")
                 elif analysis.active_note_names:
                     note_text = ", ".join(analysis.active_note_names[:32])
                     if len(analysis.active_note_names) > 32:
                         note_text += f", +{len(analysis.active_note_names) - 32} more"
-                    self.current_notes.setText(f"Notes in selection: {note_text}")
+                    self.chord_context.setText(f"Notes in selection: {note_text}")
                 else:
-                    self.current_notes.setText("Notes in selection: -")
+                    self.chord_context.setText("Notes in selection: -")
                 return
 
             analysis = analyze_chord_at(self.editor_project.notes, seconds)
@@ -1734,16 +1698,13 @@ def main() -> int:
                 note_text = ", ".join(midi_note_name(pitch) for pitch in shown_pitches)
                 if len(unique_pitches) > len(shown_pitches):
                     note_text += f", +{len(unique_pitches) - len(shown_pitches)} more"
-                self.current_notes.setText(f"Notes: {note_text}")
+                self.chord_context.setText(f"Notes: {note_text}")
             else:
-                self.current_notes.setText("Notes: -")
+                self.chord_context.setText("Notes: -")
 
         def _set_chord_candidates(self, analysis) -> None:
             if analysis.candidates:
                 self.chord_list.clear()
-                self.current_chord_options.setText(
-                    f"Possible: {len(analysis.candidates)} candidates shown in Chord Inspector."
-                )
                 for label, confidence in analysis.candidates:
                     notes = self._candidate_notes_text(analysis, label)
                     item = QListWidgetItem(f"{label}  {confidence:.0%}\n{notes}")
@@ -1754,7 +1715,6 @@ def main() -> int:
                     )
                     self.chord_list.addItem(item)
             else:
-                self.current_chord_options.setText("Possible: -")
                 self.chord_list.clear()
                 self.chord_list.addItem("No chord candidates here.")
 
@@ -1827,8 +1787,7 @@ def main() -> int:
             self.timeline_slider.setEnabled(False)
             self.editor_position.setText(_format_time(0))
             self.current_chord.setText("Chord: -")
-            self.current_chord_options.setText("Possible: -")
-            self.current_notes.setText("Notes: -")
+            self.chord_context.setText("Notes: -")
             self.track_list.clear()
             self.track_visibility_checks.clear()
             self.track_note_counts.clear()
