@@ -252,7 +252,7 @@ def main() -> int:
             if self.pending_zoom_center_seconds is None:
                 self.pending_zoom_center_seconds = self._view_center_seconds()
             base = self.pending_pixels_per_second or self.pixels_per_second
-            self.pending_pixels_per_second = max(28, min(420, base * factor))
+            self.pending_pixels_per_second = max(1, min(420, base * factor))
             self.zoom_redraw_timer.start(65)
 
         def zoom_vertical(self, factor: float) -> None:
@@ -261,8 +261,40 @@ def main() -> int:
             if self.pending_zoom_center_y is None:
                 self.pending_zoom_center_y = self.mapToScene(self.viewport().rect().center()).y()
             base = self.pending_vertical_zoom or self.vertical_zoom
-            self.pending_vertical_zoom = max(0.45, min(3.6, base * factor))
+            self.pending_vertical_zoom = max(0.08, min(3.6, base * factor))
             self.zoom_redraw_timer.start(65)
+
+        def fit_song_to_view(self) -> None:
+            if self.project is None:
+                return
+            self.zoom_redraw_timer.stop()
+            self.view_redraw_timer.stop()
+            self.pending_pixels_per_second = None
+            self.pending_vertical_zoom = None
+            self.pending_zoom_center_seconds = None
+            self.pending_zoom_center_y = None
+
+            duration = max(self.project.duration, 1.0)
+            viewport = self.viewport().rect()
+            time_width = max(80, viewport.width() - self.label_width - 92)
+            self.pixels_per_second = max(1, min(420, time_width / duration))
+
+            track_base_height = 0.0
+            for track in self.project.tracks:
+                pitch_range = self.pitch_ranges.get(track.name.lower())
+                if pitch_range:
+                    low_pitch, high_pitch = pitch_range
+                    track_base_height += max(96, (high_pitch - low_pitch + 1) * 8 + 28)
+                else:
+                    track_base_height += 78
+            target_height = max(120, viewport.height() - 26)
+            track_target_height = max(48, target_height - self.chord_height - 34)
+            self.vertical_zoom = max(0.08, min(3.6, track_target_height / max(track_base_height, 1.0)))
+
+            self.redraw()
+            self.horizontalScrollBar().setValue(0)
+            self.verticalScrollBar().setValue(0)
+            self.update_sticky_labels()
 
         def reset_zoom(self) -> None:
             if self.project is None:
@@ -1166,6 +1198,8 @@ def main() -> int:
             self.play_button = QPushButton("Play")
             self.stop_button = QPushButton("Stop")
             self.stop_button.setEnabled(False)
+            self.fit_song_button = QPushButton("Fit Song")
+            self.fit_song_button.setEnabled(False)
 
             output_row = QHBoxLayout()
             output_row.setSpacing(10)
@@ -1323,6 +1357,7 @@ def main() -> int:
             transport_row.setSpacing(8)
             transport_row.addWidget(self.play_button)
             transport_row.addWidget(self.stop_button)
+            transport_row.addWidget(self.fit_song_button)
             transport_row.addWidget(QLabel("Position"))
             transport_row.addWidget(self.editor_position)
             transport_row.addWidget(self.current_chord)
@@ -1382,6 +1417,7 @@ def main() -> int:
             self.run_midi.clicked.connect(self.start_midi_processing)
             self.play_button.clicked.connect(self.toggle_playback)
             self.stop_button.clicked.connect(self.stop_transport)
+            self.fit_song_button.clicked.connect(self.fit_editor_song_to_view)
             self.preview_chord_button.clicked.connect(self.preview_selected_chord)
             self.use_chord_button.clicked.connect(self.assign_selected_chord_to_selection)
             self.chord_list.itemDoubleClicked.connect(self.preview_chord_item)
@@ -1483,6 +1519,7 @@ def main() -> int:
                 lambda: self.timeline.zoom_vertical(1 / 1.18),
             )
             self._add_action(view_menu, "Reset Timeline Zoom", "Ctrl+0", self.timeline.reset_zoom)
+            self._add_action(view_menu, "Fit Whole Song", "Ctrl+Alt+0", self.fit_editor_song_to_view)
 
             help_menu = self.menuBar().addMenu("&Help")
             self._add_action(help_menu, "Show Timeline Controls", None, self.show_timeline_controls)
@@ -1497,9 +1534,16 @@ def main() -> int:
 
         def show_timeline_controls(self) -> None:
             self.statusBar().showMessage(
-                "Timeline controls: Space plays/pauses; drag the chord lane or Shift+drag the timeline to select a chord-analysis range; Esc clears selection; click/drag sets playhead; wheel scrolls vertically; Shift+wheel scrolls horizontally; Ctrl+wheel zooms time; Ctrl+Shift+wheel zooms pitch; middle/right drag pans.",
+                "Timeline controls: Space plays/pauses; Fit Song or Ctrl+Alt+0 shows the full song; drag the chord lane or Shift+drag the timeline to select a chord-analysis range; Esc clears selection; click/drag sets playhead; wheel scrolls vertically; Shift+wheel scrolls horizontally; Ctrl+wheel zooms time; Ctrl+Shift+wheel zooms pitch; middle/right drag pans.",
                 12000,
             )
+
+        def fit_editor_song_to_view(self) -> None:
+            if self.editor_project is None:
+                self.statusBar().showMessage("Open or run a project before fitting the song view.", 4000)
+                return
+            self.timeline.fit_song_to_view()
+            self.statusBar().showMessage("Showing the whole song horizontally and vertically.", 4000)
 
         def toggle_playback_from_shortcut(self) -> None:
             focused = QApplication.focusWidget()
@@ -1725,6 +1769,7 @@ def main() -> int:
             self.timeline_slider.setValue(0)
             self.timeline_slider.setEnabled(maximum > 0)
             self.timeline_slider.blockSignals(False)
+            self.fit_song_button.setEnabled(maximum > 0)
             self.editor_position.setText(_format_time(playhead_seconds))
             self.refresh_editor_lists(track_visibility)
             self.refresh_playback_controls(editor_state)
@@ -2410,6 +2455,7 @@ def main() -> int:
             self.editor_summary.setText("Run separation + MIDI to build an editor timeline.")
             self.timeline_slider.setRange(0, 0)
             self.timeline_slider.setEnabled(False)
+            self.fit_song_button.setEnabled(False)
             self.editor_position.setText(_format_time(0))
             self.current_chord.setText("Chord: -")
             self.chord_context.setText("Notes: -")
