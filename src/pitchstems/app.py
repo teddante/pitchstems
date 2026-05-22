@@ -37,7 +37,7 @@ def main() -> int:
     logger = app_logger()
     try:
         from PySide6.QtCore import QTimer, Qt, QUrl
-        from PySide6.QtGui import QAction, QColor, QBrush, QKeySequence, QPen, QShortcut
+        from PySide6.QtGui import QAction, QColor, QBrush, QImage, QKeySequence, QPainter, QPen, QPixmap, QShortcut
         from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
         from PySide6.QtWidgets import (
             QApplication,
@@ -336,18 +336,31 @@ def main() -> int:
             self.pending_zoom_center_seconds = None
             self.pending_zoom_center_y = None
 
-            self.redraw()
+            self._update_scene_rect_for_current_zoom()
             if has_time_zoom:
                 self._center_on_seconds(center_seconds)
             if has_pitch_zoom:
                 x = self._x(center_seconds) if has_time_zoom else self.mapToScene(self.viewport().rect().center()).x()
                 self.centerOn(x, center_y)
+            self.view_redraw_timer.stop()
+            self.redraw()
             self.update_sticky_labels()
 
         def request_view_redraw(self, _value: int | None = None) -> None:
             if self.project is None:
                 return
             self.view_redraw_timer.start(35)
+
+        def _update_scene_rect_for_current_zoom(self) -> None:
+            if self.project is None:
+                return
+            duration = max(self.project.duration, 10.0)
+            self.track_geometries = self._build_track_geometries()
+            width = self.label_width + duration * self.pixels_per_second + 80
+            height = self.chord_height + sum(
+                geometry[1] for geometry in self.track_geometries.values()
+            ) + 34
+            self.scene.setSceneRect(0, 0, width, height)
 
         def set_position(self, seconds: float) -> None:
             if self.project is None:
@@ -625,38 +638,51 @@ def main() -> int:
         ) -> None:
             if not notes:
                 return
+            x_origin = self._x(visible_start)
+            image_width = max(1, int((visible_end - visible_start) * self.pixels_per_second) + 8)
+            image_height = max(1, int(height) + 1)
+            image = QImage(image_width, image_height, QImage.Format_ARGB32_Premultiplied)
+            image.fill(Qt.transparent)
+            painter = QPainter(image)
             note_height = self._note_height(height, low_pitch, high_pitch)
             bin_seconds = max(0.06, 4.0 / self.pixels_per_second)
             bins: dict[tuple[int, int], tuple[int, str]] = {}
             long_notes = []
             first_visible_bin = int(max(0.0, visible_start) / bin_seconds)
             last_visible_bin = int(max(visible_end, visible_start) / bin_seconds) + 1
-            for note in notes:
-                start_bin = max(first_visible_bin, int(note.start / bin_seconds))
-                end_bin = min(last_visible_bin, max(start_bin, int(note.end / bin_seconds)))
-                if end_bin - start_bin > 96:
-                    long_notes.append(note)
-                    continue
-                for time_bin in range(start_bin, end_bin + 1):
-                    key = (time_bin, note.pitch)
-                    previous_velocity, _previous_stem = bins.get(key, (0, note.stem))
-                    if note.velocity > previous_velocity:
-                        bins[key] = (note.velocity, note.stem)
-            for note in long_notes:
-                x = self._x(note.start)
-                width = max(2.0, note.duration * self.pixels_per_second)
-                pitch_y = self._pitch_y(note.pitch, y, height, low_pitch, high_pitch, note_height)
-                color = QColor(_track_color(note.stem))
-                color.setAlpha(int(50 + min(1.0, note.velocity / 127) * 145))
-                self.scene.addRect(x, pitch_y, width, note_height, QPen(Qt.NoPen), QBrush(color))
-            for (time_bin, pitch), (velocity, stem) in bins.items():
-                start = time_bin * bin_seconds
-                x = self._x(start)
-                width = max(2.0, bin_seconds * self.pixels_per_second)
-                pitch_y = self._pitch_y(pitch, y, height, low_pitch, high_pitch, note_height)
-                color = QColor(_track_color(stem))
-                color.setAlpha(int(55 + min(1.0, velocity / 127) * 150))
-                self.scene.addRect(x, pitch_y, width, note_height, QPen(Qt.NoPen), QBrush(color))
+            try:
+                for note in notes:
+                    start_bin = max(first_visible_bin, int(note.start / bin_seconds))
+                    end_bin = min(last_visible_bin, max(start_bin, int(note.end / bin_seconds)))
+                    if end_bin - start_bin > 96:
+                        long_notes.append(note)
+                        continue
+                    for time_bin in range(start_bin, end_bin + 1):
+                        key = (time_bin, note.pitch)
+                        previous_velocity, _previous_stem = bins.get(key, (0, note.stem))
+                        if note.velocity > previous_velocity:
+                            bins[key] = (note.velocity, note.stem)
+                for note in long_notes:
+                    start = max(note.start, visible_start)
+                    end = min(note.end, visible_end)
+                    x = int((start - visible_start) * self.pixels_per_second)
+                    width = max(2, int((end - start) * self.pixels_per_second))
+                    pitch_y = int(self._pitch_y(note.pitch, 0, height, low_pitch, high_pitch, note_height))
+                    color = QColor(_track_color(note.stem))
+                    color.setAlpha(int(50 + min(1.0, note.velocity / 127) * 145))
+                    painter.fillRect(x, pitch_y, width, max(1, int(note_height)), color)
+                for (time_bin, pitch), (velocity, stem) in bins.items():
+                    start = max(visible_start, time_bin * bin_seconds)
+                    x = int((start - visible_start) * self.pixels_per_second)
+                    width = max(2, int(bin_seconds * self.pixels_per_second))
+                    pitch_y = int(self._pitch_y(pitch, 0, height, low_pitch, high_pitch, note_height))
+                    color = QColor(_track_color(stem))
+                    color.setAlpha(int(55 + min(1.0, velocity / 127) * 150))
+                    painter.fillRect(x, pitch_y, width, max(1, int(note_height)), color)
+            finally:
+                painter.end()
+            item = self.scene.addPixmap(QPixmap.fromImage(image))
+            item.setPos(x_origin, y)
 
         def _draw_playhead(self, height: float) -> None:
             self.playhead = self.scene.addLine(0, 0, 0, height, QPen(QColor("#ef4444"), 2))
