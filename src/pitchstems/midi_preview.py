@@ -41,6 +41,39 @@ def render_midi_preview(
     return output_path
 
 
+def render_note_preview(
+    name: str,
+    notes: list[NoteEvent],
+    output_dir: Path,
+    duration: float = 1.6,
+    sample_rate: int = 22_050,
+) -> Path | None:
+    if not notes:
+        return None
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = "".join(character if character.isalnum() or character in "-_" else "_" for character in name)
+    output_path = output_dir / f"{safe_name}.wav"
+    sample_count = max(1, int((duration + 0.15) * sample_rate))
+    samples = array("f", [0.0]) * sample_count
+
+    for note in notes:
+        _add_note(samples, note, sample_rate)
+
+    peak = max((abs(sample) for sample in samples), default=0.0)
+    if peak <= 0:
+        return None
+    scale = min(0.92 / peak, 1.0)
+    pcm = array("h", (int(max(-1.0, min(1.0, sample * scale)) * 32767) for sample in samples))
+
+    with wave.open(str(output_path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(sample_rate)
+        wav.writeframes(pcm.tobytes())
+    return output_path
+
+
 def _add_note(samples: array, note: NoteEvent, sample_rate: int) -> None:
     start = max(0, int(note.start * sample_rate))
     end = min(len(samples), max(start + 1, int(note.end * sample_rate)))

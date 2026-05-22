@@ -2,7 +2,7 @@ from pathlib import Path
 import wave
 
 from pitchstems.editor_project import NoteEvent
-from pitchstems.midi_preview import render_midi_preview
+from pitchstems.midi_preview import render_midi_preview, render_note_preview
 
 
 def test_render_midi_preview_writes_wav(tmp_path: Path) -> None:
@@ -24,3 +24,19 @@ def test_render_midi_preview_skips_stems_without_notes(tmp_path: Path) -> None:
     notes = [NoteEvent(stem="bass", start=0.0, end=0.2, pitch=40, velocity=90)]
 
     assert render_midi_preview("piano", notes, tmp_path, duration=0.4, sample_rate=8000) is None
+
+
+def test_render_note_preview_writes_named_wav(tmp_path: Path) -> None:
+    notes = [
+        NoteEvent(stem="official-chord", start=0.0, end=0.5, pitch=60, velocity=90),
+        NoteEvent(stem="official-chord", start=0.0, end=0.5, pitch=64, velocity=90),
+        NoteEvent(stem="official-chord", start=0.0, end=0.5, pitch=67, velocity=90),
+    ]
+
+    output = render_note_preview("C major", notes, tmp_path, duration=0.5, sample_rate=8000)
+
+    assert output == tmp_path / "C_major.wav"
+    with wave.open(str(output), "rb") as wav:
+        assert wav.getnchannels() == 1
+        assert wav.getframerate() == 8000
+        assert wav.getnframes() > 0

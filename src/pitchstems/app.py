@@ -3,19 +3,22 @@ from __future__ import annotations
 import os
 import queue
 import threading
+from dataclasses import replace
 from pathlib import Path
 
 from pitchstems.acceleration import onnxruntime_status, torch_status
 from pitchstems.app_logging import app_logger, logs_dir, setup_app_logging
 from pitchstems.editor_project import (
+    ChordRegion,
     EditorProject,
+    NoteEvent,
     active_notes_at,
     analyze_chord_at,
     analyze_chord_region,
     build_editor_project,
     midi_note_name,
 )
-from pitchstems.midi_preview import render_midi_preview
+from pitchstems.midi_preview import render_midi_preview, render_note_preview
 from pitchstems.model_catalog import model_choice
 from pitchstems.pipeline import PipelineResult, process_audio_file, process_midi_from_stems
 from pitchstems.project_store import (
@@ -746,6 +749,7 @@ def main() -> int:
             self.track_midi_checks: dict[str, QCheckBox] = {}
             self.track_midi_sliders: dict[str, QSlider] = {}
             self.activity_depth = 0
+            self.manual_chords: list[ChordRegion] = []
 
             self.drop_zone = DropZone()
             self.drop_zone.on_path_changed = self.reset_stage_state
@@ -876,6 +880,14 @@ def main() -> int:
             self.chord_list = QListWidget()
             self.chord_list.setMaximumWidth(240)
             self.chord_list.setAlternatingRowColors(True)
+            self.preview_chord_button = QPushButton("Play Chord")
+            self.use_chord_button = QPushButton("Use for Selection")
+            self.preview_chord_button.setEnabled(False)
+            self.use_chord_button.setEnabled(False)
+            self.chord_preview_player = QMediaPlayer(self)
+            self.chord_preview_output = QAudioOutput(self)
+            self.chord_preview_output.setVolume(0.85)
+            self.chord_preview_player.setAudioOutput(self.chord_preview_output)
             self.play_button = QPushButton("Play")
             self.stop_button = QPushButton("Stop")
             self.stop_button.setEnabled(False)
@@ -1050,6 +1062,11 @@ def main() -> int:
             editor_side.addLayout(self.playback_controls)
             editor_side.addWidget(_section_label("Chord Inspector"))
             editor_side.addWidget(self.chord_context)
+            chord_action_row = QHBoxLayout()
+            chord_action_row.setSpacing(6)
+            chord_action_row.addWidget(self.preview_chord_button)
+            chord_action_row.addWidget(self.use_chord_button)
+            editor_side.addLayout(chord_action_row)
             editor_side.addWidget(self.chord_list, 1)
             editor_body.addLayout(editor_side)
             editor_body.addWidget(self.timeline, 1)
@@ -1090,6 +1107,10 @@ def main() -> int:
             self.run_midi.clicked.connect(self.start_midi_processing)
             self.play_button.clicked.connect(self.toggle_playback)
             self.stop_button.clicked.connect(self.stop_transport)
+            self.preview_chord_button.clicked.connect(self.preview_selected_chord)
+            self.use_chord_button.clicked.connect(self.assign_selected_chord_to_selection)
+            self.chord_list.itemDoubleClicked.connect(self.preview_chord_item)
+            self.chord_list.currentItemChanged.connect(lambda *_args: self.refresh_chord_actions())
             self.timeline_slider.valueChanged.connect(self.set_editor_position)
             self.bs_device.currentIndexChanged.connect(self.refresh_model_details)
             self.generate_midi.toggled.connect(self.refresh_midi_stem_checks)
@@ -1390,6 +1411,9 @@ def main() -> int:
             self.logger.info("Building editor project model")
             self.set_activity_message("Building editor project...")
             self.editor_project = build_editor_project(result)
+            editor_state = self.load_editor_state(result)
+            self.manual_chords = self.chord_overrides_from_editor_state(editor_state)
+            self.apply_manual_chords()
             self.logger.info(
                 "Editor model built: tracks=%d notes=%d chords=%d",
                 len(self.editor_project.tracks),
@@ -1397,7 +1421,6 @@ def main() -> int:
                 len(self.editor_project.chords),
             )
             project = self.editor_project
-            editor_state = self.load_editor_state(result)
             track_visibility = editor_state.get("track_visibility", {})
             playhead_seconds = float(editor_state.get("playhead_seconds", 0.0) or 0.0)
             self.editor_summary.setText(
@@ -1423,6 +1446,32 @@ def main() -> int:
             self.set_editor_position_seconds(playhead_seconds)
             self.main_tabs.setCurrentIndex(1)
             self.logger.info("Editor project loaded")
+
+        def chord_overrides_from_editor_state(self, editor_state: dict) -> list[ChordRegion]:
+            chords: list[ChordRegion] = []
+            for item in editor_state.get("chord_overrides", []):
+                try:
+                    start = float(item.get("start", 0.0))
+                    end = float(item.get("end", 0.0))
+                    label = str(item.get("label", "")).strip()
+                    confidence = float(item.get("confidence", 1.0))
+                except (TypeError, ValueError):
+                    continue
+                if label and end > start:
+                    chords.append(ChordRegion(start=start, end=end, label=label, confidence=confidence))
+            return sorted(chords, key=lambda chord: (chord.start, chord.end, chord.label))
+
+        def apply_manual_chords(self) -> None:
+            if self.editor_project is None or not self.manual_chords:
+                return
+            chords = list(self.editor_project.chords)
+            for manual in self.manual_chords:
+                chords = [chord for chord in chords if chord.end <= manual.start or chord.start >= manual.end]
+                chords.append(manual)
+            self.editor_project = replace(
+                self.editor_project,
+                chords=sorted(chords, key=lambda chord: (chord.start, chord.end, chord.label)),
+            )
 
         def load_editor_state(self, result: PipelineResult) -> dict:
             try:
@@ -1452,6 +1501,7 @@ def main() -> int:
                 )
             if len(self.editor_project.chords) > 200:
                 self.chord_list.addItem(f"... {len(self.editor_project.chords) - 200} more")
+            self.refresh_chord_actions()
 
         def set_editor_position(self, value: int) -> None:
             self.set_editor_position_seconds(value / 1000)
@@ -1753,6 +1803,7 @@ def main() -> int:
 
         def set_editor_selection(self, selection: tuple[float, float] | None) -> None:
             self.refresh_current_harmony(self.timeline.position)
+            self.refresh_chord_actions()
             if selection is None:
                 self.statusBar().showMessage("Timeline selection cleared.", 3000)
                 return
@@ -1816,8 +1867,12 @@ def main() -> int:
             if analysis.candidates:
                 self.chord_list.clear()
                 for label, confidence in analysis.candidates:
+                    note_names = analysis.candidate_notes.get(label, [])
                     notes = self._candidate_notes_text(analysis, label)
                     item = QListWidgetItem(f"{label}  {confidence:.0%}\n{notes}")
+                    item.setData(Qt.UserRole, label)
+                    item.setData(Qt.UserRole + 1, confidence)
+                    item.setData(Qt.UserRole + 2, note_names)
                     item.setToolTip(
                         f"{label}\n"
                         f"Official chord tones: {notes}\n"
@@ -1827,6 +1882,7 @@ def main() -> int:
             else:
                 self.chord_list.clear()
                 self.chord_list.addItem("No chord candidates here.")
+            self.refresh_chord_actions()
 
         def _candidate_notes_text(self, analysis, label: str) -> str:
             notes = analysis.candidate_notes.get(label, [])
@@ -1836,6 +1892,81 @@ def main() -> int:
             if "/" in label:
                 text += f"  bass {label.split('/', 1)[1]}"
             return text
+
+        def refresh_chord_actions(self) -> None:
+            item = self.chord_list.currentItem()
+            has_candidate = bool(item and item.data(Qt.UserRole))
+            self.preview_chord_button.setEnabled(has_candidate)
+            self.use_chord_button.setEnabled(has_candidate and self.timeline.selection_range() is not None)
+
+        def preview_selected_chord(self) -> None:
+            self.preview_chord_item(self.chord_list.currentItem())
+
+        def preview_chord_item(self, item) -> None:
+            if item is None or self.current_result is None:
+                return
+            label = item.data(Qt.UserRole)
+            note_names = item.data(Qt.UserRole + 2) or []
+            if not label or not note_names:
+                return
+            notes = self.preview_notes_for_chord(label, note_names)
+            preview_dir = self.current_result.project_dir / "editor" / "chord-preview"
+            preview = render_note_preview("official-chord", notes, preview_dir)
+            if not preview:
+                return
+            self.chord_preview_player.pause()
+            self.chord_preview_player.setSource(QUrl.fromLocalFile(str(preview)))
+            self.chord_preview_player.play()
+            self.statusBar().showMessage(f"Playing official {label} chord.", 3000)
+
+        def preview_notes_for_chord(self, label: str, note_names: list[str]) -> list[NoteEvent]:
+            pitches = _chord_preview_pitches(label, note_names)
+            return [
+                NoteEvent(
+                    stem="official-chord",
+                    start=0.0,
+                    end=1.45,
+                    pitch=pitch,
+                    velocity=92,
+                )
+                for pitch in pitches
+            ]
+
+        def assign_selected_chord_to_selection(self) -> None:
+            if self.editor_project is None or self.current_result is None:
+                return
+            selection = self.timeline.selection_range()
+            item = self.chord_list.currentItem()
+            if selection is None or item is None:
+                return
+            label = item.data(Qt.UserRole)
+            confidence = float(item.data(Qt.UserRole + 1) or 1.0)
+            if not label:
+                return
+            start, end = selection
+            manual = ChordRegion(start=start, end=end, label=label, confidence=confidence)
+            self.manual_chords = [
+                chord
+                for chord in self.manual_chords
+                if chord.end <= start or chord.start >= end
+            ]
+            self.manual_chords.append(manual)
+            self.editor_project = build_editor_project(self.current_result)
+            self.apply_manual_chords()
+            self.timeline.set_project(self.editor_project)
+            self.timeline.set_visible_tracks(
+                {
+                    stem_name
+                    for stem_name, checkbox in self.track_visibility_checks.items()
+                    if checkbox.isChecked()
+                }
+            )
+            self.refresh_detected_chord_list()
+            self.save_editor_state()
+            self.statusBar().showMessage(
+                f"Assigned {label} to {_format_time(start)} - {_format_time(end)}.",
+                5000,
+            )
 
         def refresh_visible_tracks(self) -> None:
             visible = {
@@ -1868,6 +1999,15 @@ def main() -> int:
                 stem_name: slider.value()
                 for stem_name, slider in self.track_midi_sliders.items()
             }
+            chord_overrides = [
+                {
+                    "start": chord.start,
+                    "end": chord.end,
+                    "label": chord.label,
+                    "confidence": chord.confidence,
+                }
+                for chord in self.manual_chords
+            ]
             save_project_manifest(
                 self.current_result,
                 track_visibility=visibility,
@@ -1876,6 +2016,7 @@ def main() -> int:
                 track_midi_enabled=midi_enabled,
                 track_midi_volume=midi_volume,
                 playhead_seconds=self.timeline.position,
+                chord_overrides=chord_overrides,
             )
 
         def reset_stage_state(self, _path: Path | None = None) -> None:
@@ -1886,6 +2027,7 @@ def main() -> int:
             self.current_stems = []
             self.current_input_stem = None
             self.editor_project = None
+            self.manual_chords = []
             self.clear_transport_players()
             self.track_audio_checks.clear()
             self.track_audio_sliders.clear()
@@ -2091,6 +2233,44 @@ def main() -> int:
         minutes = int(seconds // 60)
         remainder = seconds - (minutes * 60)
         return f"{minutes:02d}:{remainder:06.3f}"
+
+    def _chord_preview_pitches(label: str, note_names: list[str]) -> list[int]:
+        pitches = []
+        previous = None
+        for note_name in note_names:
+            pitch_class = _pitch_class(note_name)
+            pitch = 48 + pitch_class
+            while previous is not None and pitch <= previous:
+                pitch += 12
+            pitches.append(pitch)
+            previous = pitch
+        if "/" in label:
+            bass_name = label.split("/", 1)[1]
+            bass_pitch = 36 + _pitch_class(bass_name)
+            pitches.insert(0, bass_pitch)
+        return pitches
+
+    def _pitch_class(note_name: str) -> int:
+        pitch_classes = {
+            "C": 0,
+            "C#": 1,
+            "Db": 1,
+            "D": 2,
+            "D#": 3,
+            "Eb": 3,
+            "E": 4,
+            "F": 5,
+            "F#": 6,
+            "Gb": 6,
+            "G": 7,
+            "G#": 8,
+            "Ab": 8,
+            "A": 9,
+            "A#": 10,
+            "Bb": 10,
+            "B": 11,
+        }
+        return pitch_classes.get(note_name, 0)
 
     def _track_color(stem_name: str) -> QColor:
         palette = {

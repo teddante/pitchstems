@@ -45,6 +45,7 @@ def save_project_manifest(
     track_midi_enabled: dict[str, bool] | None = None,
     track_midi_volume: dict[str, int] | None = None,
     playhead_seconds: float | None = None,
+    chord_overrides: list[dict[str, Any]] | None = None,
 ) -> Path:
     project_dir = result.project_dir.expanduser().resolve()
     project_dir.mkdir(parents=True, exist_ok=True)
@@ -99,7 +100,9 @@ def save_project_manifest(
             "playhead_seconds": playhead_seconds
             if playhead_seconds is not None
             else existing.get("editor", {}).get("playhead_seconds", 0.0),
-            "chord_overrides": existing.get("editor", {}).get("chord_overrides", []),
+            "chord_overrides": chord_overrides
+            if chord_overrides is not None
+            else existing.get("editor", {}).get("chord_overrides", []),
             "note_edits": existing.get("editor", {}).get("note_edits", []),
         },
     }

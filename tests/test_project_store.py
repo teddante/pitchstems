@@ -1,7 +1,12 @@
 from pathlib import Path
 
 from pitchstems.pipeline import PipelineResult
-from pitchstems.project_store import PROJECT_FILENAME, load_pipeline_result, save_project_manifest
+from pitchstems.project_store import (
+    PROJECT_FILENAME,
+    load_pipeline_result,
+    load_project_manifest,
+    save_project_manifest,
+)
 from pitchstems.separation import SeparationOptions, StemResult
 from pitchstems.transcription import MidiOptions, MidiResult
 
@@ -41,8 +46,12 @@ def test_save_and_load_project_manifest_round_trip(tmp_path: Path) -> None:
         track_midi_enabled={"bass": False},
         track_midi_volume={"bass": 70},
         playhead_seconds=12.5,
+        chord_overrides=[
+            {"start": 10.0, "end": 12.0, "label": "Gmaj9", "confidence": 0.93}
+        ],
     )
     loaded = load_pipeline_result(manifest_path)
+    manifest = load_project_manifest(manifest_path)
 
     assert manifest_path == project_dir / PROJECT_FILENAME
     assert loaded.project_dir == project_dir
@@ -52,3 +61,6 @@ def test_save_and_load_project_manifest_round_trip(tmp_path: Path) -> None:
     assert loaded.combined_midi == combined
     assert loaded.zip_path == zip_path
     assert loaded.source_audio == tmp_path / "source.mp3"
+    assert manifest["editor"]["chord_overrides"] == [
+        {"start": 10.0, "end": 12.0, "label": "Gmaj9", "confidence": 0.93}
+    ]
