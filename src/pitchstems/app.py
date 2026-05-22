@@ -51,7 +51,9 @@ def main() -> int:
             QListWidget,
             QListWidgetItem,
             QMainWindow,
+            QProgressBar,
             QPushButton,
+            QSizePolicy,
             QSlider,
             QSpinBox,
             QTabWidget,
@@ -69,8 +71,10 @@ def main() -> int:
             self.setAcceptDrops(True)
             self.setFocusPolicy(Qt.StrongFocus)
             self.setAlignment(Qt.AlignCenter)
+            self.setWordWrap(True)
             self.setMinimumHeight(105)
             self.setMaximumHeight(130)
+            self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
             self.setStyleSheet(
                 """
                 QLabel {
@@ -85,6 +89,35 @@ def main() -> int:
             self.path: Path | None = None
             self.on_path_changed = None
 
+        def set_audio_file(self, path: Path) -> None:
+            self.path = path
+            self.setText(f"Audio\n{path.name}\n{self._short_path(path.parent)}")
+            self.setToolTip(str(path))
+
+        def set_project_file(self, project_dir: Path, source_audio: Path | None) -> None:
+            self.path = source_audio
+            if source_audio:
+                self.setText(
+                    f"Project\n{project_dir.name}\nSource: {source_audio.name}"
+                )
+                self.setToolTip(f"Project: {project_dir}\nSource: {source_audio}")
+            else:
+                self.setText(f"Project\n{project_dir.name}")
+                self.setToolTip(str(project_dir))
+
+        def reset_prompt(self) -> None:
+            self.path = None
+            self.setText("Drop an audio file here")
+            self.setToolTip("")
+
+        def _short_path(self, path: Path, max_length: int = 72) -> str:
+            text = str(path)
+            if len(text) <= max_length:
+                return text
+            parts = path.parts
+            tail = str(Path(*parts[-2:])) if len(parts) >= 2 else path.name
+            return f"...\\{tail}"
+
         def dragEnterEvent(self, event) -> None:
             if event.mimeData().hasUrls():
                 event.acceptProposedAction()
@@ -92,8 +125,7 @@ def main() -> int:
         def dropEvent(self, event) -> None:
             urls = event.mimeData().urls()
             if urls:
-                self.path = Path(urls[0].toLocalFile())
-                self.setText(str(self.path))
+                self.set_audio_file(Path(urls[0].toLocalFile()))
                 if self.on_path_changed:
                     self.on_path_changed(self.path)
 
@@ -130,6 +162,8 @@ def main() -> int:
             self.selection_end: float | None = None
             self.on_position_changed = None
             self.on_selection_changed = None
+            self.on_redraw_started = None
+            self.on_redraw_finished = None
             self.pending_pixels_per_second: float | None = None
             self.pending_vertical_zoom: float | None = None
             self.pending_zoom_center_seconds: float | None = None
@@ -258,6 +292,8 @@ def main() -> int:
             self._move_playhead()
 
         def redraw(self) -> None:
+            if self.project is not None and self.on_redraw_started:
+                self.on_redraw_started()
             self.setUpdatesEnabled(False)
             try:
                 self.scene.clear()
@@ -288,6 +324,8 @@ def main() -> int:
             finally:
                 self.setUpdatesEnabled(True)
                 self.viewport().update()
+                if self.project is not None and self.on_redraw_finished:
+                    self.on_redraw_finished()
 
         def _draw_time_grid(self, duration: float, width: float, height: float) -> None:
             self.scene.addRect(0, 0, self.label_width, height, QPen(Qt.NoPen), QBrush(QColor("#eef2f7")))
@@ -707,6 +745,7 @@ def main() -> int:
             self.track_audio_sliders: dict[str, QSlider] = {}
             self.track_midi_checks: dict[str, QCheckBox] = {}
             self.track_midi_sliders: dict[str, QSlider] = {}
+            self.activity_depth = 0
 
             self.drop_zone = DropZone()
             self.drop_zone.on_path_changed = self.reset_stage_state
@@ -819,6 +858,8 @@ def main() -> int:
             self.timeline = TimelineView()
             self.timeline.on_position_changed = self.set_editor_position_seconds
             self.timeline.on_selection_changed = self.set_editor_selection
+            self.timeline.on_redraw_started = lambda: self.begin_activity("Redrawing timeline...")
+            self.timeline.on_redraw_finished = lambda: self.end_activity("Timeline ready")
             self.timeline_slider = QSlider(Qt.Horizontal)
             self.timeline_slider.setRange(0, 0)
             self.timeline_slider.setEnabled(False)
@@ -1026,6 +1067,15 @@ def main() -> int:
             root.setLayout(root_layout)
             self.setCentralWidget(root)
             self.create_menus()
+            self.activity_label = QLabel("Ready")
+            self.activity_label.setMinimumWidth(180)
+            self.activity_bar = QProgressBar()
+            self.activity_bar.setRange(0, 1)
+            self.activity_bar.setValue(1)
+            self.activity_bar.setMaximumWidth(150)
+            self.activity_bar.setTextVisible(False)
+            self.statusBar().addPermanentWidget(self.activity_label)
+            self.statusBar().addPermanentWidget(self.activity_bar)
             self.statusBar().showMessage(
                 "Timeline: Space plays/pauses; drag chord lane or Shift+drag to select chord-analysis range; Esc clears selection; wheel scrolls, Ctrl+wheel zooms."
             )
@@ -1054,6 +1104,32 @@ def main() -> int:
 
             self.transport_timer = QTimer(self)
             self.transport_timer.timeout.connect(self.update_transport_position)
+
+        def begin_activity(self, message: str, busy: bool = True) -> None:
+            self.activity_depth += 1
+            self.activity_label.setText(message)
+            self.statusBar().showMessage(message)
+            if busy:
+                self.activity_bar.setRange(0, 0)
+            else:
+                self.activity_bar.setRange(0, 1)
+                self.activity_bar.setValue(0)
+            QApplication.processEvents()
+
+        def end_activity(self, message: str = "Ready") -> None:
+            self.activity_depth = max(0, self.activity_depth - 1)
+            if self.activity_depth:
+                return
+            self.activity_label.setText(message)
+            self.activity_bar.setRange(0, 1)
+            self.activity_bar.setValue(1)
+            self.statusBar().showMessage(message, 4000)
+            QApplication.processEvents()
+
+        def set_activity_message(self, message: str) -> None:
+            self.activity_label.setText(message)
+            self.statusBar().showMessage(message)
+            QApplication.processEvents()
 
         def create_menus(self) -> None:
             file_menu = self.menuBar().addMenu("&File")
@@ -1142,8 +1218,7 @@ def main() -> int:
                 self.set_audio_path(Path(filename))
 
         def set_audio_path(self, path: Path) -> None:
-            self.drop_zone.path = path
-            self.drop_zone.setText(str(path))
+            self.drop_zone.set_audio_file(path)
             self.reset_stage_state(path)
 
         def save_project_now(self) -> None:
@@ -1167,20 +1242,17 @@ def main() -> int:
             )
             if not filename:
                 return
+            self.begin_activity("Opening project...")
             try:
                 self.logger.info("Opening project manifest: %s", filename)
                 result = load_pipeline_result(Path(filename))
             except Exception as exc:
                 self.logger.exception("Could not open project manifest")
                 self.append_log(f"Could not open project: {exc}")
+                self.end_activity("Could not open project")
                 return
             self.output_dir.setText(str(result.project_dir.parent))
-            if result.source_audio:
-                self.drop_zone.path = result.source_audio
-                self.drop_zone.setText(f"Project: {result.project_dir.name}\n{result.source_audio}")
-            else:
-                self.drop_zone.path = None
-                self.drop_zone.setText(f"Project: {result.project_dir.name}")
+            self.drop_zone.set_project_file(result.project_dir, result.source_audio)
             try:
                 self.logger.info("Building editor for project: %s", result.project_dir)
                 self.set_current_result(result, open_output=False)
@@ -1189,8 +1261,10 @@ def main() -> int:
                 self.append_log(f"Could not open project editor: {exc}")
                 self.append_log(f"Log file: {self.log_path}")
                 self.reset_stage_state()
+                self.end_activity("Could not open project editor")
                 return
             self.append_log(f"Opened project: {result.project_dir}")
+            self.end_activity("Project loaded")
 
         def start_full_processing(self) -> None:
             if self.worker and self.worker.is_alive():
@@ -1200,6 +1274,7 @@ def main() -> int:
                 return
 
             self.set_processing_state(True)
+            self.begin_activity("Running separation + MIDI...")
             self.open_output.setEnabled(False)
             self.append_log("Starting separation + MIDI pipeline...")
             self.worker = threading.Thread(target=self.run_full_pipeline, daemon=True)
@@ -1213,6 +1288,7 @@ def main() -> int:
                 return
 
             self.set_processing_state(True)
+            self.begin_activity("Rerunning MIDI...")
             self.append_log("Rerunning MIDI from existing stems...")
             self.worker = threading.Thread(target=self.run_midi_stage, daemon=True)
             self.worker.start()
@@ -1273,8 +1349,12 @@ def main() -> int:
                     self.set_current_result(message[1])
                 elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEWS":
                     self.attach_midi_preview_players(message[1])
+                elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEW_FAILED":
+                    self.append_log(message[1])
+                    self.end_activity("MIDI preview audio failed")
                 elif message == "__ENABLE_PROCESS__":
                     self.set_processing_state(False)
+                    self.end_activity("Processing complete")
                 elif message.startswith("__OUTPUT_DIR__"):
                     self.latest_output_dir = Path(message.removeprefix("__OUTPUT_DIR__"))
                     self.open_output.setEnabled(True)
@@ -1282,6 +1362,8 @@ def main() -> int:
                         self.open_latest_output()
                 else:
                     self.append_log(message)
+                    if message and not message.startswith("Tracks:"):
+                        self.set_activity_message(message[:120])
 
         def append_log(self, message: str) -> None:
             self.logger.info(message)
@@ -1289,6 +1371,7 @@ def main() -> int:
 
         def set_current_result(self, result: PipelineResult, open_output: bool = True) -> None:
             self.logger.info("Setting current result: %s", result.project_dir)
+            self.set_activity_message("Loading result...")
             self.current_result = result
             self.current_stems = result.stems
             self.current_input_stem = (result.source_audio or result.normalized_audio).stem
@@ -1305,6 +1388,7 @@ def main() -> int:
 
         def load_editor_project(self, result: PipelineResult) -> None:
             self.logger.info("Building editor project model")
+            self.set_activity_message("Building editor project...")
             self.editor_project = build_editor_project(result)
             self.logger.info(
                 "Editor model built: tracks=%d notes=%d chords=%d",
@@ -1331,6 +1415,7 @@ def main() -> int:
             self.refresh_playback_controls(editor_state)
             self.clear_transport_players()
             self.logger.info("Drawing editor timeline")
+            self.set_activity_message("Drawing editor timeline...")
             self.timeline.set_project(project)
             self.timeline.set_visible_tracks(
                 {track.name for track in project.tracks if track_visibility.get(track.name, True)}
@@ -1446,6 +1531,7 @@ def main() -> int:
                 self.playback_controls.addWidget(notes, row, 6)
 
         def prepare_transport_players(self, result: PipelineResult) -> None:
+            self.set_activity_message("Preparing audio players...")
             self.pause_transport()
             self.clear_transport_players()
             self.midi_preview_paths = self.find_existing_midi_previews(result)
@@ -1501,6 +1587,7 @@ def main() -> int:
             project = self.editor_project
             preview_dir = result.project_dir / "editor" / "midi-preview"
             self.append_log(f"Rendering MIDI preview audio for {len(missing)} tracks in the background...")
+            self.begin_activity("Rendering MIDI preview audio...")
 
             def worker() -> None:
                 previews: dict[str, Path] = {}
@@ -1517,13 +1604,14 @@ def main() -> int:
                     self.messages.put(("MIDI_PREVIEWS", previews))
                 except Exception as exc:
                     self.logger.exception("MIDI preview render failed")
-                    self.messages.put(f"Could not render MIDI previews: {exc}")
+                    self.messages.put(("MIDI_PREVIEW_FAILED", f"Could not render MIDI previews: {exc}"))
 
             self.midi_preview_worker = threading.Thread(target=worker, daemon=True)
             self.midi_preview_worker.start()
 
         def attach_midi_preview_players(self, previews: dict[str, Path]) -> None:
             if not previews:
+                self.end_activity("No MIDI preview audio rendered")
                 return
             self.midi_preview_paths.update(previews)
             for stem_name, midi_preview in previews.items():
@@ -1545,6 +1633,7 @@ def main() -> int:
                     midi_slider.setToolTip("MIDI preview audio volume.")
             self.refresh_playback_mix()
             self.append_log(f"MIDI preview audio ready: {len(previews)} tracks.")
+            self.end_activity("MIDI preview audio ready")
 
         def refresh_playback_mix(self) -> None:
             for stem_name, output in self.track_audio_outputs.items():
@@ -1572,7 +1661,9 @@ def main() -> int:
                 return
             if not self.track_players:
                 self.append_log("Preparing playback...")
+                self.begin_activity("Preparing playback...")
                 self.prepare_transport_players(self.current_result)
+                self.end_activity("Playback ready")
             self.refresh_playback_mix()
             start_position = self.loop_playback_start_seconds()
             if start_position != self.timeline.position:
@@ -1789,6 +1880,8 @@ def main() -> int:
 
         def reset_stage_state(self, _path: Path | None = None) -> None:
             self.stop_transport()
+            if _path is None:
+                self.drop_zone.reset_prompt()
             self.current_result = None
             self.current_stems = []
             self.current_input_stem = None
