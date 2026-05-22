@@ -32,7 +32,7 @@ def main() -> int:
     logger = app_logger()
     try:
         from PySide6.QtCore import QTimer, Qt, QUrl
-        from PySide6.QtGui import QAction, QColor, QBrush, QKeySequence, QPen
+        from PySide6.QtGui import QAction, QColor, QBrush, QKeySequence, QPen, QShortcut
         from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
         from PySide6.QtWidgets import (
             QApplication,
@@ -801,8 +801,11 @@ def main() -> int:
             self.setCentralWidget(root)
             self.create_menus()
             self.statusBar().showMessage(
-                "Timeline: wheel scrolls, Shift+wheel scrolls sideways, Ctrl+wheel zooms time, Ctrl+Shift+wheel zooms pitch, middle/right drag pans."
+                "Timeline: Space plays/pauses; wheel scrolls, Shift+wheel scrolls sideways, Ctrl+wheel zooms time, Ctrl+Shift+wheel zooms pitch, middle/right drag pans."
             )
+            self.space_playback_shortcut = QShortcut(QKeySequence("Space"), self)
+            self.space_playback_shortcut.setContext(Qt.ApplicationShortcut)
+            self.space_playback_shortcut.activated.connect(self.toggle_playback_from_shortcut)
 
             self.run_full.clicked.connect(self.start_full_processing)
             self.run_midi.clicked.connect(self.start_midi_processing)
@@ -879,9 +882,26 @@ def main() -> int:
 
         def show_timeline_controls(self) -> None:
             self.statusBar().showMessage(
-                "Timeline controls: click/drag sets playhead; wheel scrolls vertically; Shift+wheel scrolls horizontally; Ctrl+wheel zooms time; Ctrl+Shift+wheel zooms pitch; middle/right drag pans.",
+                "Timeline controls: Space plays/pauses; click/drag sets playhead; wheel scrolls vertically; Shift+wheel scrolls horizontally; Ctrl+wheel zooms time; Ctrl+Shift+wheel zooms pitch; middle/right drag pans.",
                 12000,
             )
+
+        def toggle_playback_from_shortcut(self) -> None:
+            focused = QApplication.focusWidget()
+            interactive_widgets = (
+                QCheckBox,
+                QComboBox,
+                QDoubleSpinBox,
+                QLineEdit,
+                QListWidget,
+                QPushButton,
+                QSlider,
+                QSpinBox,
+                QTextEdit,
+            )
+            if isinstance(focused, interactive_widgets):
+                return
+            self.toggle_playback()
 
         def pick_audio(self) -> None:
             filename, _selected_filter = QFileDialog.getOpenFileName(
