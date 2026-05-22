@@ -2655,13 +2655,21 @@ def main() -> int:
                 for label, confidence in analysis.candidates:
                     note_names = analysis.candidate_notes.get(label, [])
                     notes = self._candidate_notes_text(analysis, label)
-                    item = QListWidgetItem(f"{label}  {confidence:.0%}\n{notes}")
+                    aliases = analysis.candidate_aliases.get(label, [])
+                    alias_text = ""
+                    if aliases:
+                        shown_aliases = ", ".join(aliases[:4])
+                        if len(aliases) > 4:
+                            shown_aliases += f", +{len(aliases) - 4} more"
+                        alias_text = f"\naka: {shown_aliases}"
+                    item = QListWidgetItem(f"{label}  {confidence:.0%}\n{notes}{alias_text}")
                     item.setData(Qt.UserRole, label)
                     item.setData(Qt.UserRole + 1, confidence)
                     item.setData(Qt.UserRole + 2, note_names)
                     item.setToolTip(
                         f"{label}\n"
                         f"Official chord tones: {notes}\n"
+                        f"Alternate names: {', '.join(aliases) if aliases else '-'}\n"
                         f"Detector confidence: {confidence:.0%}\n\n"
                         + "\n".join(analysis.candidate_explanations.get(label, []))
                     )

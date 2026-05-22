@@ -64,6 +64,7 @@ class ChordAnalysis:
     bass: int | None = None
     candidates: list[tuple[str, float]] = field(default_factory=list)
     candidate_notes: dict[str, list[str]] = field(default_factory=dict)
+    candidate_aliases: dict[str, list[str]] = field(default_factory=dict)
     candidate_explanations: dict[str, list[str]] = field(default_factory=dict)
     note_weights: list[tuple[str, float]] = field(default_factory=list)
 
@@ -282,6 +283,10 @@ def analyze_chord(
         label: chord_tones_for_label(label)
         for label, _score in candidates
     }
+    candidate_aliases = {
+        label: alternate_chord_names_for_label(label, bass)
+        for label, _score in candidates
+    }
     candidate_explanations = {
         label: explanation
         for label, score, _root, explanation in scored_roots
@@ -299,6 +304,7 @@ def analyze_chord(
         bass,
         candidates,
         candidate_notes,
+        candidate_aliases,
         candidate_explanations,
     )
 
@@ -333,6 +339,10 @@ def _analyze_weighted_pitch_classes(
         label: chord_tones_for_label(label)
         for label, _score in candidates
     }
+    candidate_aliases = {
+        label: alternate_chord_names_for_label(label, bass)
+        for label, _score in candidates
+    }
     candidate_explanations = {
         label: explanation
         for label, score, explanation, _root in scored_roots
@@ -348,6 +358,7 @@ def _analyze_weighted_pitch_classes(
             bass,
             candidates,
             candidate_notes,
+            candidate_aliases,
             candidate_explanations,
             note_weights,
         )
@@ -360,6 +371,7 @@ def _analyze_weighted_pitch_classes(
         bass,
         candidates,
         candidate_notes,
+        candidate_aliases,
         candidate_explanations,
         note_weights,
     )
@@ -377,6 +389,17 @@ def midi_note_name(pitch: int) -> str:
 
 def chord_tones_for_label(label: str) -> list[str]:
     return [PITCH_NAMES[pitch_class] for pitch_class in chord_pitch_classes_for_label(label)]
+
+
+def alternate_chord_names_for_label(label: str, bass: int | None = None) -> list[str]:
+    pitch_classes = set(chord_pitch_classes_for_label(label))
+    if not pitch_classes:
+        return []
+    return [
+        alias
+        for alias in exact_chord_names_for_pitch_classes(pitch_classes, bass)
+        if alias != label
+    ]
 
 
 def _score_root(
@@ -556,6 +579,20 @@ def _label_matches_constraints(
     if excluded_pitch_classes and notes & excluded_pitch_classes:
         return False
     return True
+
+
+def exact_chord_names_for_pitch_classes(pitch_classes: set[int], bass: int | None = None) -> list[str]:
+    names: list[str] = []
+    for root in range(12):
+        for suffix, intervals in _chord_qualities():
+            tones = {(root + interval) % 12 for interval in intervals}
+            if tones != pitch_classes:
+                continue
+            label = f"{PITCH_NAMES[root]}{suffix}"
+            if bass is not None and bass != root:
+                label = f"{label}/{PITCH_NAMES[bass]}"
+            names.append(label)
+    return names
 
 
 def chord_pitch_classes_for_label(label: str) -> list[int]:

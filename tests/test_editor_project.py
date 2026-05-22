@@ -57,6 +57,8 @@ def test_analyze_chord_includes_contextual_candidates() -> None:
     assert "Am7/C" in labels
     assert analysis.candidate_notes["C6"] == ["C", "E", "G", "A"]
     assert analysis.candidate_notes["Am7/C"] == ["A", "C", "E", "G"]
+    assert "Am7/C" in analysis.candidate_aliases["C6"]
+    assert "C6" in analysis.candidate_aliases["Am7/C"]
     assert any("Formula:" in line for line in analysis.candidate_explanations["C6"])
     assert any("Matched tones:" in line for line in analysis.candidate_explanations["C6"])
 
