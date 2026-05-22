@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from mido import MidiFile, tick2second
@@ -58,6 +58,7 @@ class ChordAnalysis:
     pitch_classes: list[int]
     root: int | None = None
     bass: int | None = None
+    candidates: list[tuple[str, float]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -188,19 +189,22 @@ def analyze_chord(pitches: list[int]) -> ChordAnalysis:
         return ChordAnalysis(None, 0.0, active_note_names, pitch_classes)
 
     bass = min(pitches) % 12
-    best_label: str | None = None
-    best_root: int | None = None
-    best_score = 0.0
+    scored_roots: list[tuple[str, float, int]] = []
     for root in range(12):
         label, score = _score_root(root, set(pitch_classes), bass)
-        if score > best_score:
-            best_label = label
-            best_root = root
-            best_score = score
+        scored_roots.append((label, score, root))
+
+    scored_roots.sort(key=lambda item: item[1], reverse=True)
+    best_label, best_score, best_root = scored_roots[0]
+    candidates = [
+        (label, score)
+        for label, score, _root in scored_roots
+        if score >= 0.72 and score >= best_score - 0.18
+    ][:6]
 
     if best_label is None or best_score < 0.72:
         return ChordAnalysis(None, best_score, active_note_names, pitch_classes, best_root, bass)
-    return ChordAnalysis(best_label, best_score, active_note_names, pitch_classes, best_root, bass)
+    return ChordAnalysis(best_label, best_score, active_note_names, pitch_classes, best_root, bass, candidates)
 
 
 def identify_chord(pitches: list[int]) -> tuple[str | None, float]:

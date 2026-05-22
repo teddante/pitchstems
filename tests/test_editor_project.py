@@ -46,6 +46,15 @@ def test_analyze_chord_names_extensions_and_inversions() -> None:
     assert analyze_chord([60, 65, 67, 70]).label == "C7sus4"
 
 
+def test_analyze_chord_includes_contextual_candidates() -> None:
+    analysis = analyze_chord([60, 64, 67, 69])
+    labels = [label for label, _confidence in analysis.candidates]
+
+    assert analysis.label == "C6"
+    assert "C6" in labels
+    assert "Am7/C" in labels
+
+
 def test_analyze_chord_at_uses_notes_active_at_playhead() -> None:
     notes = [
         _note(0.0, 1.0, 60),

@@ -119,6 +119,7 @@ def main() -> int:
             self.chord_height = 38
             self.visible_tracks: set[str] = set()
             self.track_geometries: dict[str, tuple[float, float, int, int]] = {}
+            self.sticky_items = []
             self.playhead = None
             self.on_position_changed = None
             self._panning = False
@@ -133,6 +134,7 @@ def main() -> int:
             self.setMouseTracking(True)
             self.setFocusPolicy(Qt.StrongFocus)
             self.setStyleSheet("QGraphicsView { border: 1px solid #d1d5db; background: #f8fafc; }")
+            self.horizontalScrollBar().valueChanged.connect(self.update_sticky_labels)
 
         def set_project(self, project: EditorProject | None) -> None:
             self.project = project
@@ -180,6 +182,7 @@ def main() -> int:
             self.scene.clear()
             self.playhead = None
             self.track_geometries = {}
+            self.sticky_items = []
             if self.project is None:
                 self.scene.addText("Run separation + MIDI to create an editor timeline.").setPos(18, 18)
                 self.scene.setSceneRect(0, 0, 760, 320)
@@ -197,6 +200,7 @@ def main() -> int:
             self._draw_chords()
             self._draw_tracks()
             self._draw_playhead(height)
+            self.update_sticky_labels()
 
         def _draw_time_grid(self, duration: float, width: float, height: float) -> None:
             self.scene.addRect(0, 0, self.label_width, height, QPen(Qt.NoPen), QBrush(QColor("#eef2f7")))
@@ -218,6 +222,7 @@ def main() -> int:
             label = self.scene.addText("Chords")
             label.setDefaultTextColor(QColor("#334155"))
             label.setPos(12, 9)
+            self._make_sticky(label, 12)
             for chord in self.project.chords:
                 x = self._x(chord.start)
                 width = max(18, chord.duration * self.pixels_per_second)
@@ -246,9 +251,11 @@ def main() -> int:
                 name = self.scene.addText(track.name)
                 name.setDefaultTextColor(QColor("#0f172a"))
                 name.setPos(12, y + 8)
+                self._make_sticky(name, 12)
                 range_text = self.scene.addText(f"{midi_note_name(low_pitch)}-{midi_note_name(high_pitch)}")
                 range_text.setDefaultTextColor(QColor("#64748b"))
                 range_text.setPos(12, y + 30)
+                self._make_sticky(range_text, 12)
                 self.scene.addLine(
                     0,
                     y + height,
@@ -337,6 +344,19 @@ def main() -> int:
                 label = self.scene.addText(midi_note_name(pitch))
                 label.setDefaultTextColor(QColor("#64748b"))
                 label.setPos(84, pitch_y - 5)
+                self._make_sticky(label, 84)
+
+        def _make_sticky(self, item, x_offset: float) -> None:
+            item.setZValue(20)
+            self.sticky_items.append((item, x_offset))
+
+        def update_sticky_labels(self, _value: int | None = None) -> None:
+            if not self.sticky_items:
+                return
+            view_left = self.mapToScene(self.viewport().rect().left(), 0).x()
+            x_base = max(0.0, view_left)
+            for item, x_offset in self.sticky_items:
+                item.setX(x_base + x_offset)
 
         def _pitch_y(
             self,
@@ -565,6 +585,9 @@ def main() -> int:
             self.current_chord = QLabel("Chord: -")
             self.current_chord.setMinimumWidth(220)
             self.current_chord.setStyleSheet("font-weight: 700; color: #4c1d95;")
+            self.current_chord_options = QLabel("Possible: -")
+            self.current_chord_options.setWordWrap(True)
+            self.current_chord_options.setStyleSheet("color: #64748b;")
             self.current_notes = QLabel("Notes: -")
             self.current_notes.setWordWrap(True)
             self.current_notes.setStyleSheet("color: #475569;")
@@ -748,6 +771,7 @@ def main() -> int:
             transport_row.addWidget(self.current_chord)
             transport_row.addStretch(1)
             editor_layout.addLayout(transport_row)
+            editor_layout.addWidget(self.current_chord_options)
             editor_layout.addWidget(self.current_notes)
 
             editor_body = QHBoxLayout()
@@ -1178,14 +1202,20 @@ def main() -> int:
             self.refresh_playback_mix()
 
         def clear_transport_players(self) -> None:
-            for player in list(self.track_players.values()) + list(self.midi_players.values()):
-                player.stop()
-                player.setSource(QUrl())
+            for player in self.transport_players():
+                try:
+                    player.pause()
+                    player.setSource(QUrl())
+                except RuntimeError:
+                    self.logger.exception("Transport player cleanup failed")
             self.track_players.clear()
             self.track_audio_outputs.clear()
             self.midi_players.clear()
             self.midi_audio_outputs.clear()
             self.midi_preview_paths.clear()
+
+        def transport_players(self) -> list[QMediaPlayer]:
+            return list(self.track_players.values()) + list(self.midi_players.values())
 
         def find_existing_midi_previews(self, result: PipelineResult) -> dict[str, Path]:
             preview_dir = result.project_dir / "editor" / "midi-preview"
@@ -1286,7 +1316,7 @@ def main() -> int:
                 self.prepare_transport_players(self.current_result)
             self.refresh_playback_mix()
             position_ms = int(self.timeline.position * 1000)
-            for player in list(self.track_players.values()) + list(self.midi_players.values()):
+            for player in self.transport_players():
                 player.setPosition(position_ms)
                 player.play()
             self.is_playing = True
@@ -1297,7 +1327,7 @@ def main() -> int:
         def pause_transport(self) -> None:
             if not self.is_playing:
                 return
-            for player in list(self.track_players.values()) + list(self.midi_players.values()):
+            for player in self.transport_players():
                 player.pause()
             self.is_playing = False
             self.play_button.setText("Play")
@@ -1305,13 +1335,16 @@ def main() -> int:
             self.save_editor_state()
 
         def stop_transport(self) -> None:
-            for player in list(self.track_players.values()) + list(self.midi_players.values()):
-                player.stop()
-                player.setPosition(0)
             self.is_playing = False
             self.play_button.setText("Play")
             self.stop_button.setEnabled(False)
             self.transport_timer.stop()
+            for player in self.transport_players():
+                try:
+                    player.pause()
+                    player.setPosition(0)
+                except RuntimeError:
+                    self.logger.exception("Transport stop failed")
             if self.editor_project is not None:
                 self.set_editor_position_seconds(0.0, seek_players=False)
 
@@ -1319,7 +1352,7 @@ def main() -> int:
             if not self.track_players:
                 return
             position_ms = int(seconds * 1000)
-            for player in list(self.track_players.values()) + list(self.midi_players.values()):
+            for player in self.transport_players():
                 player.setPosition(position_ms)
 
         def update_transport_position(self) -> None:
@@ -1352,18 +1385,27 @@ def main() -> int:
         def refresh_current_harmony(self, seconds: float) -> None:
             if self.editor_project is None:
                 self.current_chord.setText("Chord: -")
+                self.current_chord_options.setText("Possible: -")
                 self.current_notes.setText("Notes: -")
                 return
             analysis = analyze_chord_at(self.editor_project.notes, seconds)
             active_notes = active_notes_at(self.editor_project.notes, seconds)
             chord = analysis.label or "No clear chord"
             self.current_chord.setText(f"Chord: {chord}  ({analysis.confidence:.0%})")
-            if active_notes:
-                note_text = ", ".join(
-                    f"{note.name} [{note.stem}]" for note in active_notes[:24]
+            if analysis.candidates:
+                options = ", ".join(
+                    f"{label} ({confidence:.0%})"
+                    for label, confidence in analysis.candidates
                 )
-                if len(active_notes) > 24:
-                    note_text += f", +{len(active_notes) - 24} more"
+                self.current_chord_options.setText(f"Possible: {options}")
+            else:
+                self.current_chord_options.setText("Possible: -")
+            if active_notes:
+                unique_pitches = sorted({note.pitch for note in active_notes})
+                shown_pitches = unique_pitches[:32]
+                note_text = ", ".join(midi_note_name(pitch) for pitch in shown_pitches)
+                if len(unique_pitches) > len(shown_pitches):
+                    note_text += f", +{len(unique_pitches) - len(shown_pitches)} more"
                 self.current_notes.setText(f"Notes: {note_text}")
             else:
                 self.current_notes.setText("Notes: -")
@@ -1431,6 +1473,7 @@ def main() -> int:
             self.timeline_slider.setEnabled(False)
             self.editor_position.setText(_format_time(0))
             self.current_chord.setText("Chord: -")
+            self.current_chord_options.setText("Possible: -")
             self.current_notes.setText("Notes: -")
             self.track_list.clear()
             _clear_layout(self.playback_controls)
