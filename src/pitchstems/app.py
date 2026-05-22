@@ -11,6 +11,7 @@ from pitchstems.acceleration import onnxruntime_status, torch_status
 from pitchstems.app_logging import app_logger, logs_dir, setup_app_logging
 from pitchstems.editor_project import (
     ChordRegion,
+    ChordScoringOptions,
     EditorProject,
     NoteEvent,
     PITCH_NAMES,
@@ -1140,6 +1141,7 @@ def main() -> int:
             self.chord_note_filter_context = None
             self.current_chord_base_weights: dict[int, float] = {}
             self.updating_chord_note_filter = False
+            self.updating_chord_detector = False
 
             self.drop_zone = DropZone()
             self.drop_zone.on_path_changed = self.reset_stage_state
@@ -1261,6 +1263,32 @@ def main() -> int:
             self.note_filter_help.setStyleSheet("color: #64748b;")
             self.reset_note_filter_button = QPushButton("Reset Evidence")
             self.reset_note_filter_button.setToolTip("Clear manual include/exclude note choices for the current chord analysis.")
+            self.chord_detector_preset = QComboBox()
+            self.chord_detector_preset.addItems(["Balanced", "Evidence Only", "Custom"])
+            self.chord_detector_preset.setToolTip(
+                "Balanced uses the musical ranking helpers. Evidence Only leans on weighted duration and MIDI velocity. Custom lets the switches decide."
+            )
+            self.chord_use_bass = QCheckBox("Bass/root")
+            self.chord_use_bass.setChecked(True)
+            self.chord_use_bass.setToolTip("Give a small bonus when a candidate root is supported by the bass or present in the notes.")
+            self.chord_use_exact = QCheckBox("Exact")
+            self.chord_use_exact.setChecked(True)
+            self.chord_use_exact.setToolTip("Give a small bonus when the candidate tones exactly match the evidence.")
+            self.chord_use_missing = QCheckBox("Missing")
+            self.chord_use_missing.setChecked(True)
+            self.chord_use_missing.setToolTip("Penalise candidates that require chord tones not found in the evidence.")
+            self.chord_use_complexity = QCheckBox("Simple")
+            self.chord_use_complexity.setChecked(True)
+            self.chord_use_complexity.setToolTip("Slightly prefer shorter, simpler chord names when evidence is close.")
+            self.chord_weak_note_floor = QSpinBox()
+            self.chord_weak_note_floor.setRange(0, 60)
+            self.chord_weak_note_floor.setSingleStep(5)
+            self.chord_weak_note_floor.setSuffix("%")
+            self.chord_weak_note_floor.setValue(0)
+            self.chord_weak_note_floor.setToolTip(
+                "For selected ranges, ignore pitch classes below this percentage of the strongest weighted note when at least three notes remain."
+            )
+            self.load_chord_detector_settings()
             self.timeline = TimelineView()
             self.timeline.on_position_changed = self.set_editor_position_seconds
             self.timeline.on_selection_changed = self.set_editor_selection
@@ -1471,6 +1499,19 @@ def main() -> int:
             editor_side.addLayout(self.playback_controls)
             editor_side.addWidget(_section_label("Chord Inspector"))
             editor_side.addWidget(self.chord_context)
+            detector_group = QGroupBox("Detector")
+            detector_layout = QGridLayout()
+            detector_layout.setHorizontalSpacing(6)
+            detector_layout.setVerticalSpacing(4)
+            detector_layout.addWidget(self.chord_detector_preset, 0, 0, 1, 2)
+            detector_layout.addWidget(QLabel("Weak floor"), 1, 0)
+            detector_layout.addWidget(self.chord_weak_note_floor, 1, 1)
+            detector_layout.addWidget(self.chord_use_bass, 2, 0)
+            detector_layout.addWidget(self.chord_use_exact, 2, 1)
+            detector_layout.addWidget(self.chord_use_missing, 3, 0)
+            detector_layout.addWidget(self.chord_use_complexity, 3, 1)
+            detector_group.setLayout(detector_layout)
+            editor_side.addWidget(detector_group)
             editor_side.addWidget(_section_label("Note Evidence"))
             editor_side.addWidget(self.note_filter_help)
             editor_side.addWidget(self.note_filter_list)
@@ -1527,6 +1568,12 @@ def main() -> int:
             self.note_filter_list.itemChanged.connect(self.handle_chord_note_filter_changed)
             self.chord_list.itemDoubleClicked.connect(self.preview_chord_item)
             self.chord_list.currentItemChanged.connect(lambda *_args: self.refresh_chord_actions())
+            self.chord_detector_preset.currentTextChanged.connect(self.apply_chord_detector_preset)
+            self.chord_use_bass.toggled.connect(self.mark_chord_detector_custom)
+            self.chord_use_exact.toggled.connect(self.mark_chord_detector_custom)
+            self.chord_use_missing.toggled.connect(self.mark_chord_detector_custom)
+            self.chord_use_complexity.toggled.connect(self.mark_chord_detector_custom)
+            self.chord_weak_note_floor.valueChanged.connect(self.handle_chord_detector_changed)
             self.timeline_slider.valueChanged.connect(self.set_editor_position)
             self.bs_device.currentIndexChanged.connect(self.refresh_model_details)
             self.generate_midi.toggled.connect(self.refresh_midi_stem_checks)
@@ -2397,6 +2444,105 @@ def main() -> int:
             self.timeline.clear_selection()
             self.refresh_current_harmony(self.timeline.position)
 
+        def load_chord_detector_settings(self) -> None:
+            preset = self.settings.value("chordDetector/preset", "Balanced")
+            if preset not in {"Balanced", "Evidence Only", "Custom"}:
+                preset = "Balanced"
+            self.chord_detector_preset.setCurrentText(str(preset))
+            self.chord_use_bass.setChecked(self._setting_bool("chordDetector/useBass", True))
+            self.chord_use_exact.setChecked(self._setting_bool("chordDetector/useExact", True))
+            self.chord_use_missing.setChecked(self._setting_bool("chordDetector/useMissing", True))
+            self.chord_use_complexity.setChecked(self._setting_bool("chordDetector/useComplexity", True))
+            self.chord_weak_note_floor.setValue(int(self.settings.value("chordDetector/weakNoteFloor", 0)))
+
+        def save_chord_detector_settings(self) -> None:
+            self.settings.setValue("chordDetector/preset", self.chord_detector_preset.currentText())
+            self.settings.setValue("chordDetector/useBass", self.chord_use_bass.isChecked())
+            self.settings.setValue("chordDetector/useExact", self.chord_use_exact.isChecked())
+            self.settings.setValue("chordDetector/useMissing", self.chord_use_missing.isChecked())
+            self.settings.setValue("chordDetector/useComplexity", self.chord_use_complexity.isChecked())
+            self.settings.setValue("chordDetector/weakNoteFloor", self.chord_weak_note_floor.value())
+
+        def _setting_bool(self, key: str, default: bool) -> bool:
+            value = self.settings.value(key, default)
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str):
+                return value.lower() in {"1", "true", "yes"}
+            return bool(value)
+
+        def apply_chord_detector_preset(self, preset: str) -> None:
+            if self.updating_chord_detector:
+                return
+            self.updating_chord_detector = True
+            try:
+                if preset == "Balanced":
+                    self.chord_use_bass.setChecked(True)
+                    self.chord_use_exact.setChecked(True)
+                    self.chord_use_missing.setChecked(True)
+                    self.chord_use_complexity.setChecked(True)
+                    self.chord_weak_note_floor.setValue(0)
+                elif preset == "Evidence Only":
+                    self.chord_use_bass.setChecked(False)
+                    self.chord_use_exact.setChecked(False)
+                    self.chord_use_missing.setChecked(False)
+                    self.chord_use_complexity.setChecked(False)
+                    self.chord_weak_note_floor.setValue(20)
+            finally:
+                self.updating_chord_detector = False
+            self.save_chord_detector_settings()
+            self.refresh_current_harmony(self.timeline.position)
+
+        def mark_chord_detector_custom(self, _checked: bool) -> None:
+            if self.updating_chord_detector:
+                return
+            self.updating_chord_detector = True
+            try:
+                self.chord_detector_preset.setCurrentText("Custom")
+            finally:
+                self.updating_chord_detector = False
+            self.save_chord_detector_settings()
+            self.refresh_current_harmony(self.timeline.position)
+
+        def handle_chord_detector_changed(self, _value: int) -> None:
+            if self.updating_chord_detector:
+                return
+            if self.chord_detector_preset.currentText() != "Custom":
+                self.updating_chord_detector = True
+                try:
+                    self.chord_detector_preset.setCurrentText("Custom")
+                finally:
+                    self.updating_chord_detector = False
+            self.save_chord_detector_settings()
+            self.refresh_current_harmony(self.timeline.position)
+
+        def chord_scoring_options(self) -> ChordScoringOptions:
+            preset = self.chord_detector_preset.currentText()
+            if preset == "Evidence Only":
+                weighted_coverage = 0.52
+                weighted_purity = 0.48
+                plain_coverage = 0.58
+                plain_purity = 0.42
+                extra_penalty = 0.0
+            else:
+                weighted_coverage = 0.48
+                weighted_purity = 0.38
+                plain_coverage = 0.62
+                plain_purity = 0.30
+                extra_penalty = 0.12
+            return ChordScoringOptions(
+                coverage_weight=weighted_coverage,
+                purity_weight=weighted_purity,
+                extra_weight_penalty=extra_penalty,
+                plain_coverage_weight=plain_coverage,
+                plain_purity_weight=plain_purity,
+                use_bass_root_bonus=self.chord_use_bass.isChecked(),
+                use_exact_match_bonus=self.chord_use_exact.isChecked(),
+                use_missing_penalty=self.chord_use_missing.isChecked(),
+                use_complexity_penalty=self.chord_use_complexity.isChecked(),
+                weak_note_floor=self.chord_weak_note_floor.value() / 100,
+            )
+
         def refresh_current_harmony(self, seconds: float) -> None:
             if self.editor_project is None:
                 self.current_chord.setText("Chord: -")
@@ -2412,6 +2558,7 @@ def main() -> int:
             self.current_chord_base_weights = self.chord_base_pitch_weights(source_notes, context)
             analysis_notes = self.filtered_chord_analysis_notes(source_notes, context)
             sample_text = self.chord_sample_text(source_notes)
+            scoring_options = self.chord_scoring_options()
             selection = self.timeline.selection_range()
             if selection is not None:
                 start, end = selection
@@ -2422,6 +2569,7 @@ def main() -> int:
                     end,
                     required_pitch_classes=required,
                     excluded_pitch_classes=excluded,
+                    scoring_options=scoring_options,
                 )
                 chord = analysis.label or "No clear chord"
                 self.current_chord.setText(
@@ -2451,6 +2599,7 @@ def main() -> int:
                 seconds,
                 required_pitch_classes=required,
                 excluded_pitch_classes=excluded,
+                scoring_options=scoring_options,
             )
             active_notes = active_notes_at(analysis_notes, seconds)
             chord = analysis.label or "No clear chord"

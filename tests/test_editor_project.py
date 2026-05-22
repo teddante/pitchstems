@@ -3,6 +3,7 @@ from pathlib import Path
 from mido import Message, MetaMessage, MidiFile, MidiTrack
 
 from pitchstems.editor_project import (
+    ChordScoringOptions,
     NoteEvent,
     active_notes_at,
     analyze_chord,
@@ -150,6 +151,36 @@ def test_analyze_chord_region_can_name_ambiguous_selection_candidates() -> None:
 
     assert analysis.label == "C6"
     assert "Am7/C" in labels
+
+
+def test_chord_scoring_options_can_ignore_weak_selection_notes() -> None:
+    notes = [
+        _note(0.0, 0.68, 55, velocity=127),
+        _note(0.0, 1.00, 62, velocity=127),
+        _note(0.0, 0.37, 66, velocity=127),
+        _note(0.0, 0.45, 69, velocity=127),
+        _note(0.0, 0.18, 71, velocity=127),
+        _note(0.0, 0.02, 68, velocity=127),
+    ]
+    evidence_only = ChordScoringOptions(
+        coverage_weight=0.52,
+        purity_weight=0.48,
+        extra_weight_penalty=0.0,
+        plain_coverage_weight=0.58,
+        plain_purity_weight=0.42,
+        use_bass_root_bonus=False,
+        use_exact_match_bonus=False,
+        use_missing_penalty=False,
+        use_complexity_penalty=False,
+        weak_note_floor=0.20,
+    )
+
+    balanced = analyze_chord_region(notes, 0.0, 1.0)
+    tuned = analyze_chord_region(notes, 0.0, 1.0, scoring_options=evidence_only)
+
+    assert balanced.label == "Gmaj9"
+    assert tuned.label == "Gmaj9(no3)"
+    assert [name for name, _weight in tuned.note_weights] == ["D", "G", "A", "F#"]
 
 
 def test_detect_chords_merges_adjacent_matching_regions() -> None:
