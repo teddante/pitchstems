@@ -1033,7 +1033,7 @@ def main() -> int:
             self.editor_position.setText(_format_time(playhead_seconds))
             self.refresh_editor_lists(track_visibility)
             self.refresh_playback_controls(editor_state)
-            self.prepare_transport_players(result)
+            self.clear_transport_players()
             self.timeline.set_project(project)
             self.timeline.set_visible_tracks(
                 {track.name for track in project.tracks if track_visibility.get(track.name, True)}
@@ -1138,10 +1138,7 @@ def main() -> int:
 
         def prepare_transport_players(self, result: PipelineResult) -> None:
             self.pause_transport()
-            self.track_players.clear()
-            self.track_audio_outputs.clear()
-            self.midi_players.clear()
-            self.midi_audio_outputs.clear()
+            self.clear_transport_players()
             self.midi_preview_paths = self.find_existing_midi_previews(result)
             for stem in result.stems:
                 player = QMediaPlayer(self)
@@ -1153,6 +1150,16 @@ def main() -> int:
             self.attach_midi_preview_players(self.midi_preview_paths)
             self.start_midi_preview_render(result)
             self.refresh_playback_mix()
+
+        def clear_transport_players(self) -> None:
+            for player in list(self.track_players.values()) + list(self.midi_players.values()):
+                player.stop()
+                player.setSource(QUrl())
+            self.track_players.clear()
+            self.track_audio_outputs.clear()
+            self.midi_players.clear()
+            self.midi_audio_outputs.clear()
+            self.midi_preview_paths.clear()
 
         def find_existing_midi_previews(self, result: PipelineResult) -> dict[str, Path]:
             preview_dir = result.project_dir / "editor" / "midi-preview"
@@ -1244,9 +1251,12 @@ def main() -> int:
                 self.play_transport()
 
         def play_transport(self) -> None:
-            if self.editor_project is None or not self.track_players:
+            if self.editor_project is None or self.current_result is None:
                 self.append_log("Open or run a project before playback.")
                 return
+            if not self.track_players:
+                self.append_log("Preparing playback...")
+                self.prepare_transport_players(self.current_result)
             self.refresh_playback_mix()
             position_ms = int(self.timeline.position * 1000)
             for player in list(self.track_players.values()) + list(self.midi_players.values()):
@@ -1381,11 +1391,7 @@ def main() -> int:
             self.current_stems = []
             self.current_input_stem = None
             self.editor_project = None
-            self.track_players.clear()
-            self.track_audio_outputs.clear()
-            self.midi_players.clear()
-            self.midi_audio_outputs.clear()
-            self.midi_preview_paths.clear()
+            self.clear_transport_players()
             self.track_audio_checks.clear()
             self.track_audio_sliders.clear()
             self.track_midi_checks.clear()
