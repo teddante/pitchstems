@@ -1111,6 +1111,7 @@ def main() -> int:
             self.midi_players: dict[str, QMediaPlayer] = {}
             self.midi_audio_outputs: dict[str, QAudioOutput] = {}
             self.midi_preview_paths: dict[str, Path] = {}
+            self.track_analysis_checks: dict[str, QCheckBox] = {}
             self.track_audio_checks: dict[str, QCheckBox] = {}
             self.track_audio_sliders: dict[str, QSlider] = {}
             self.track_midi_checks: dict[str, QCheckBox] = {}
@@ -1246,6 +1247,7 @@ def main() -> int:
             self.playback_controls.setHorizontalSpacing(8)
             self.playback_controls.setVerticalSpacing(4)
             self.track_visibility_checks: dict[str, QCheckBox] = {}
+            self.track_analysis_checks: dict[str, QCheckBox] = {}
             self.track_note_counts: dict[str, int] = {}
             self.editor_track_visibility: dict[str, bool] = {}
             self.chord_list = QListWidget()
@@ -1951,32 +1953,53 @@ def main() -> int:
             self.track_midi_checks.clear()
             self.track_midi_sliders.clear()
             self.track_visibility_checks.clear()
+            self.track_analysis_checks.clear()
             if self.editor_project is None:
                 return
 
             track_visibility = self.editor_track_visibility
+            analysis_enabled = editor_state.get("track_analysis_enabled", {})
             audio_enabled = editor_state.get("track_audio_enabled", {})
             audio_volume = editor_state.get("track_audio_volume", {})
             midi_enabled = editor_state.get("track_midi_enabled", {})
             midi_volume = editor_state.get("track_midi_volume", {})
 
-            for column, text in enumerate(["Show", "Stem", "Audio", "Vol", "MIDI", "Vol", "Notes"]):
+            headers = [
+                ("Stem", "Separated stem / generated MIDI track."),
+                ("View", "Draw this track's MIDI notes on the timeline only."),
+                ("Chord", "Include this track's MIDI notes in Chord Inspector analysis."),
+                ("Audio", "Play separated stem audio in the editor transport."),
+                ("Vol", "Separated audio volume."),
+                ("MIDI", "Play generated MIDI preview audio in the editor transport."),
+                ("Vol", "MIDI preview volume."),
+                ("Notes", "Generated MIDI note count."),
+            ]
+            for column, (text, tooltip) in enumerate(headers):
                 label = QLabel(text)
                 label.setStyleSheet("font-weight: 600; color: #334155;")
+                label.setToolTip(tooltip)
                 self.playback_controls.addWidget(label, 0, column)
 
             for row, track in enumerate(self.editor_project.tracks, 1):
+                name = QLabel(track.name)
+                name.setMinimumWidth(58)
+                self.playback_controls.addWidget(name, row, 0)
+
                 show_check = QCheckBox()
                 show_check.setChecked(track_visibility.get(track.name, True))
-                show_check.setToolTip("Show this track's MIDI notes in the timeline and include them in Chord Inspector analysis.")
+                show_check.setToolTip("Draw this track's MIDI notes on the timeline. This does not affect chord detection or playback.")
                 show_check.toggled.connect(lambda *_args: self.refresh_visible_tracks())
                 show_check.toggled.connect(lambda *_args: self.save_editor_state())
                 self.track_visibility_checks[track.name] = show_check
-                self.playback_controls.addWidget(show_check, row, 0)
+                self.playback_controls.addWidget(show_check, row, 1)
 
-                name = QLabel(track.name)
-                name.setMinimumWidth(58)
-                self.playback_controls.addWidget(name, row, 1)
+                analysis_check = QCheckBox()
+                analysis_check.setChecked(analysis_enabled.get(track.name, track_visibility.get(track.name, True)))
+                analysis_check.setToolTip("Include this track's generated MIDI notes in the Chord Inspector sample.")
+                analysis_check.toggled.connect(lambda *_args: self.refresh_current_harmony(self.timeline.position))
+                analysis_check.toggled.connect(lambda *_args: self.save_editor_state())
+                self.track_analysis_checks[track.name] = analysis_check
+                self.playback_controls.addWidget(analysis_check, row, 2)
 
                 audio_check = QCheckBox()
                 audio_check.setChecked(audio_enabled.get(track.name, True))
@@ -1992,8 +2015,8 @@ def main() -> int:
                 audio_slider.valueChanged.connect(lambda *_args: self.save_editor_state())
                 self.track_audio_checks[track.name] = audio_check
                 self.track_audio_sliders[track.name] = audio_slider
-                self.playback_controls.addWidget(audio_check, row, 2)
-                self.playback_controls.addWidget(audio_slider, row, 3)
+                self.playback_controls.addWidget(audio_check, row, 3)
+                self.playback_controls.addWidget(audio_slider, row, 4)
 
                 midi_check = QCheckBox()
                 midi_check.setChecked(midi_enabled.get(track.name, False))
@@ -2011,12 +2034,12 @@ def main() -> int:
                 midi_slider.valueChanged.connect(lambda *_args: self.save_editor_state())
                 self.track_midi_checks[track.name] = midi_check
                 self.track_midi_sliders[track.name] = midi_slider
-                self.playback_controls.addWidget(midi_check, row, 4)
-                self.playback_controls.addWidget(midi_slider, row, 5)
+                self.playback_controls.addWidget(midi_check, row, 5)
+                self.playback_controls.addWidget(midi_slider, row, 6)
 
                 notes = QLabel(str(self.track_note_counts.get(track.name, 0)))
                 notes.setStyleSheet("color: #64748b;")
-                self.playback_controls.addWidget(notes, row, 6)
+                self.playback_controls.addWidget(notes, row, 7)
 
         def prepare_transport_players(self, result: PipelineResult) -> None:
             self.set_activity_message("Preparing audio players...")
@@ -2306,34 +2329,45 @@ def main() -> int:
         def chord_analysis_notes(self) -> list[NoteEvent]:
             if self.editor_project is None:
                 return []
-            if not self.track_visibility_checks:
+            if not self.track_analysis_checks:
                 return self.editor_project.notes
-            visible_tracks = {
+            analysis_tracks = {
                 stem_name.lower()
-                for stem_name, checkbox in self.track_visibility_checks.items()
+                for stem_name, checkbox in self.track_analysis_checks.items()
                 if checkbox.isChecked()
             }
             return [
                 note
                 for note in self.editor_project.notes
-                if note.stem.lower() in visible_tracks
+                if note.stem.lower() in analysis_tracks
             ]
 
         def chord_sample_text(self, notes: list[NoteEvent]) -> str:
             if self.editor_project is None:
                 return "Sample: -"
-            sampled = {note.stem.lower() for note in notes}
-            names = [
-                track.name
-                for track in self.editor_project.tracks
-                if track.name.lower() in sampled
-            ]
+            names = self.chord_analysis_track_names()
             if not names:
-                return "Sample: no shown MIDI tracks. Tick Show to include a track in chord analysis."
+                return "Chord sample: no tracks selected. Tick Chord to include a track."
             shown = ", ".join(names[:5])
             if len(names) > 5:
                 shown += f", +{len(names) - 5} more"
-            return f"Sample: shown MIDI tracks ({shown}). Audio/MIDI playback ticks do not affect detection."
+            return f"Chord sample: {shown} ({len(notes)} MIDI notes). View, Audio, and MIDI ticks do not affect detection."
+
+        def chord_analysis_track_names(self) -> list[str]:
+            if self.editor_project is None:
+                return []
+            if not self.track_analysis_checks:
+                return [
+                    track.name
+                    for track in self.editor_project.tracks
+                    if any(note.stem.lower() == track.name.lower() for note in self.editor_project.notes)
+                ]
+            return [
+                track.name
+                for track in self.editor_project.tracks
+                if self.track_analysis_checks.get(track.name)
+                and self.track_analysis_checks[track.name].isChecked()
+            ]
 
         def _set_chord_candidates(self, analysis) -> None:
             if analysis.candidates:
@@ -2491,6 +2525,10 @@ def main() -> int:
             visibility = {}
             for stem_name, checkbox in self.track_visibility_checks.items():
                 visibility[stem_name] = checkbox.isChecked()
+            analysis_enabled = {
+                stem_name: checkbox.isChecked()
+                for stem_name, checkbox in self.track_analysis_checks.items()
+            }
             audio_enabled = {
                 stem_name: checkbox.isChecked()
                 for stem_name, checkbox in self.track_audio_checks.items()
@@ -2523,6 +2561,7 @@ def main() -> int:
             save_project_manifest(
                 self.current_result,
                 track_visibility=visibility,
+                track_analysis_enabled=analysis_enabled,
                 track_audio_enabled=audio_enabled,
                 track_audio_volume=audio_volume,
                 track_midi_enabled=midi_enabled,
@@ -2548,6 +2587,7 @@ def main() -> int:
             self.track_audio_sliders.clear()
             self.track_midi_checks.clear()
             self.track_midi_sliders.clear()
+            self.track_analysis_checks.clear()
             self.run_midi.setEnabled(False)
             self.separation_status.setText("Not run yet.")
             self.midi_status.setText("Run the full pipeline first, then MIDI can be rerun without separating again.")

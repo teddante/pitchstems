@@ -40,6 +40,7 @@ def save_project_manifest(
     midi_policy: str | None = None,
     create_zip: bool | None = None,
     track_visibility: dict[str, bool] | None = None,
+    track_analysis_enabled: dict[str, bool] | None = None,
     track_audio_enabled: dict[str, bool] | None = None,
     track_audio_volume: dict[str, int] | None = None,
     track_midi_enabled: dict[str, bool] | None = None,
@@ -86,6 +87,9 @@ def save_project_manifest(
             "track_visibility": track_visibility
             if track_visibility is not None
             else existing.get("editor", {}).get("track_visibility", {}),
+            "track_analysis_enabled": track_analysis_enabled
+            if track_analysis_enabled is not None
+            else existing.get("editor", {}).get("track_analysis_enabled", {}),
             "track_audio_enabled": track_audio_enabled
             if track_audio_enabled is not None
             else existing.get("editor", {}).get("track_audio_enabled", {}),

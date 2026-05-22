@@ -41,6 +41,7 @@ def test_save_and_load_project_manifest_round_trip(tmp_path: Path) -> None:
         midi_policy="all",
         create_zip=True,
         track_visibility={"bass": True},
+        track_analysis_enabled={"bass": True},
         track_audio_enabled={"bass": True},
         track_audio_volume={"bass": 80},
         track_midi_enabled={"bass": False},
@@ -66,3 +67,4 @@ def test_save_and_load_project_manifest_round_trip(tmp_path: Path) -> None:
         {"start": 10.0, "end": 12.0, "label": "Gmaj9", "confidence": 0.93}
     ]
     assert manifest["editor"]["chord_removals"] == [{"start": 8.0, "end": 9.5}]
+    assert manifest["editor"]["track_analysis_enabled"] == {"bass": True}
