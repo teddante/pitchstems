@@ -19,15 +19,15 @@ WEIGHTED_CANDIDATE_MARGIN = 0.22
 
 @dataclass(frozen=True)
 class ChordScoringOptions:
-    coverage_weight: float = 0.48
-    purity_weight: float = 0.38
-    extra_weight_penalty: float = 0.12
-    plain_coverage_weight: float = 0.62
-    plain_purity_weight: float = 0.30
-    use_bass_root_bonus: bool = True
-    use_exact_match_bonus: bool = True
-    use_missing_penalty: bool = True
-    use_complexity_penalty: bool = True
+    coverage_weight: float = 0.50
+    purity_weight: float = 0.50
+    extra_weight_penalty: float = 0.0
+    plain_coverage_weight: float = 0.50
+    plain_purity_weight: float = 0.50
+    use_bass_root_bonus: bool = False
+    use_exact_match_bonus: bool = False
+    use_missing_penalty: bool = False
+    use_complexity_penalty: bool = False
     weak_note_floor: float = 0.0
 
 
@@ -721,15 +721,17 @@ def _plain_score_explanation(
         f"Matched tones: {', '.join(matched_notes) or 'none'} ({matched}/{len(required_set)}).",
         f"Missing tones: {', '.join(missing_notes) or 'none'}. Extra active tones: {', '.join(extra_notes) or 'none'}.",
         f"Evidence terms: coverage {coverage:.0%}, purity {purity:.0%}.",
-        "Ranking modifiers: "
-        f"{_modifier_value('bass/root', options.use_bass_root_bonus, bass_bonus, '+')}; "
-        f"{_modifier_value('exact match', options.use_exact_match_bonus, exact_bonus, '+')}; "
-        f"{_modifier_value('missing-note penalty', options.use_missing_penalty, missing_penalty, '-')}; "
-        f"{_modifier_value('complexity penalty', options.use_complexity_penalty, complexity_penalty, '-')}.",
+        _ranking_modifier_summary(
+            options,
+            bass_bonus,
+            exact_bonus,
+            missing_penalty,
+            complexity_penalty,
+        ),
         (
-            "Formula: "
+            "Score formula: "
             f"{options.plain_coverage_weight:.2f}*coverage + {options.plain_purity_weight:.2f}*purity "
-            "+ enabled ranking modifiers."
+            f"{_formula_modifier_text(options, 0.0)}."
         ),
         f"Raw score {score:.2f}; displayed confidence is a ranking score, not a statistical probability.",
     ]
@@ -770,16 +772,18 @@ def _weighted_score_explanation(
         f"Matched weighted tones: {', '.join(matched_notes) or 'none'}; required-tone weight {required_weight:.0%}.",
         f"Missing tones: {', '.join(missing_notes) or 'none'}. Extra weighted tones: {', '.join(extra_notes) or 'none'} ({extra_weight:.0%}).",
         f"Evidence terms: coverage {coverage:.0%}, purity {required_weight:.0%}.",
-        "Ranking modifiers: "
-        f"{_modifier_value('bass/root', options.use_bass_root_bonus, bass_bonus, '+')}; "
-        f"{_modifier_value('exact match', options.use_exact_match_bonus, exact_bonus, '+')}; "
-        f"extra-weight penalty -{extra_weight * options.extra_weight_penalty:.2f}; "
-        f"{_modifier_value('missing-note penalty', options.use_missing_penalty, missing_penalty, '-')}; "
-        f"{_modifier_value('complexity penalty', options.use_complexity_penalty, complexity_penalty, '-')}.",
+        _ranking_modifier_summary(
+            options,
+            bass_bonus,
+            exact_bonus,
+            missing_penalty,
+            complexity_penalty,
+            extra_weight * options.extra_weight_penalty,
+        ),
         (
-            "Formula: "
+            "Score formula: "
             f"{options.coverage_weight:.2f}*coverage + {options.purity_weight:.2f}*purity "
-            f"- {options.extra_weight_penalty:.2f}*extra-weight + enabled ranking modifiers."
+            f"{_formula_modifier_text(options, options.extra_weight_penalty)}."
         ),
         f"Raw score {score:.2f}; displayed confidence is a ranking score, not a statistical probability.",
     ]
@@ -789,10 +793,45 @@ def _interval_names(root: int, intervals) -> list[str]:
     return [PITCH_NAMES[(root + interval) % 12] for interval in intervals]
 
 
-def _modifier_value(name: str, enabled: bool, value: float, sign: str) -> str:
-    if not enabled:
-        return f"{name} disabled"
-    return f"{name} {sign}{value:.2f}"
+def _ranking_modifier_summary(
+    options: ChordScoringOptions,
+    bass_bonus: float,
+    exact_bonus: float,
+    missing_penalty: float,
+    complexity_penalty: float,
+    extra_weight_penalty: float = 0.0,
+) -> str:
+    modifiers = []
+    if options.use_bass_root_bonus:
+        modifiers.append(f"bass/root +{bass_bonus:.2f}")
+    if options.use_exact_match_bonus:
+        modifiers.append(f"exact match +{exact_bonus:.2f}")
+    if extra_weight_penalty:
+        modifiers.append(f"extra energy -{extra_weight_penalty:.2f}")
+    if options.use_missing_penalty:
+        modifiers.append(f"missing notes -{missing_penalty:.2f}")
+    if options.use_complexity_penalty:
+        modifiers.append(f"complexity -{complexity_penalty:.2f}")
+    if not modifiers:
+        return "No naming bonuses or penalties are applied."
+    return f"Naming modifiers: {', '.join(modifiers)}."
+
+
+def _formula_modifier_text(options: ChordScoringOptions, extra_weight_penalty: float) -> str:
+    parts = []
+    if extra_weight_penalty:
+        parts.append(f"- {extra_weight_penalty:.2f}*extra-energy")
+    if options.use_bass_root_bonus:
+        parts.append("+ bass/root")
+    if options.use_exact_match_bonus:
+        parts.append("+ exact-match")
+    if options.use_missing_penalty:
+        parts.append("- missing-note penalty")
+    if options.use_complexity_penalty:
+        parts.append("- complexity penalty")
+    if not parts:
+        return ""
+    return " " + " ".join(parts)
 
 
 def _chord_qualities() -> list[tuple[str, tuple[int, ...]]]:
