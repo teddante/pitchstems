@@ -3,6 +3,7 @@ from pathlib import Path
 from mido import Message, MetaMessage, MidiFile, MidiTrack
 
 from pitchstems.editor_project import (
+    ChordScoringOptions,
     NoteEvent,
     active_notes_at,
     analyze_chord,
@@ -240,6 +241,47 @@ def test_weighted_force_can_complete_two_note_selection() -> None:
 
     assert analysis.label == "G"
     assert analysis.candidate_notes["G"] == ["G", "B", "D"]
+
+
+def test_weighted_note_floor_removes_trace_extensions_from_candidates() -> None:
+    notes = [
+        _note(0.0, 1.0, 60, velocity=127),  # C
+        _note(0.0, 0.25, 67, velocity=127),  # G
+        _note(0.0, 0.20, 64, velocity=127),  # E
+        _note(0.0, 0.01, 71, velocity=127),  # B trace
+    ]
+
+    analysis = analyze_chord_region(
+        notes,
+        0.0,
+        1.0,
+        scoring_options=ChordScoringOptions(weak_note_floor=0.10),
+    )
+    labels = [label for label, _confidence in analysis.candidates]
+
+    assert analysis.label == "C"
+    assert "Cmaj7" not in labels
+    assert "B" not in dict(analysis.note_weights)
+
+
+def test_playhead_note_floor_removes_weak_active_notes() -> None:
+    notes = [
+        _note(0.0, 1.0, 60, velocity=127),  # C
+        _note(0.0, 1.0, 64, velocity=80),  # E
+        _note(0.0, 1.0, 67, velocity=80),  # G
+        _note(0.0, 1.0, 71, velocity=5),  # B trace
+    ]
+
+    analysis = analyze_chord_at(
+        notes,
+        0.5,
+        scoring_options=ChordScoringOptions(weak_note_floor=0.10),
+    )
+    labels = [label for label, _confidence in analysis.candidates]
+
+    assert analysis.label == "C"
+    assert "Cmaj7" not in labels
+    assert "B4" not in analysis.active_note_names
 
 
 def test_two_note_selection_reports_partial_harmony_hints() -> None:

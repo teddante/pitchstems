@@ -215,11 +215,33 @@ def analyze_chord_at(
     excluded_pitch_classes: set[int] | None = None,
     scoring_options: ChordScoringOptions | None = None,
 ) -> ChordAnalysis:
+    options = scoring_options or ChordScoringOptions()
+    active = active_notes_at(notes, seconds)
+    if active and options.weak_note_floor > 0:
+        pitch_weights: dict[int, float] = {}
+        for note in active:
+            pitch_weights[note.pitch % 12] = max(
+                pitch_weights.get(note.pitch % 12, 0.0),
+                midi_velocity_energy(note.velocity),
+            )
+        max_weight = max(pitch_weights.values())
+        kept_pitch_classes = {
+            pitch_class
+            for pitch_class, weight in pitch_weights.items()
+            if weight >= max_weight * options.weak_note_floor
+        }
+        if required_pitch_classes:
+            kept_pitch_classes |= required_pitch_classes
+        active = [
+            note
+            for note in active
+            if note.pitch % 12 in kept_pitch_classes
+        ]
     return analyze_chord(
-        [note.pitch for note in active_notes_at(notes, seconds)],
+        [note.pitch for note in active],
         required_pitch_classes=required_pitch_classes,
         excluded_pitch_classes=excluded_pitch_classes,
-        scoring_options=scoring_options,
+        scoring_options=options,
     )
 
 
@@ -253,17 +275,18 @@ def analyze_chord_region(
             for pitch_class, weight in pitch_weights.items()
             if weight >= max_pitch_class_weight * options.weak_note_floor
         }
-        if len(kept_pitch_classes) >= 3:
-            pitch_weights = {
-                pitch_class: weight
-                for pitch_class, weight in pitch_weights.items()
-                if pitch_class in kept_pitch_classes
-            }
-            exact_pitch_weights = {
-                pitch: weight
-                for pitch, weight in exact_pitch_weights.items()
-                if pitch % 12 in kept_pitch_classes
-            }
+        if required_pitch_classes:
+            kept_pitch_classes |= required_pitch_classes
+        pitch_weights = {
+            pitch_class: weight
+            for pitch_class, weight in pitch_weights.items()
+            if pitch_class in kept_pitch_classes
+        }
+        exact_pitch_weights = {
+            pitch: weight
+            for pitch, weight in exact_pitch_weights.items()
+            if pitch % 12 in kept_pitch_classes
+        }
 
     active_note_names = [midi_note_name(pitch) for pitch in sorted(exact_pitch_weights)]
     if not pitch_weights:

@@ -1272,6 +1272,14 @@ def main() -> int:
             )
             self.chord_detector_help.setWordWrap(True)
             self.chord_detector_help.setStyleSheet("color: #64748b;")
+            self.min_note_evidence_label = QLabel("Min note evidence: 0%")
+            self.min_note_evidence_label.setStyleSheet("color: #334155;")
+            self.min_note_evidence_slider = QSlider(Qt.Horizontal)
+            self.min_note_evidence_slider.setRange(0, 100)
+            self.min_note_evidence_slider.setValue(0)
+            self.min_note_evidence_slider.setToolTip(
+                "Ignore note names below this normalized evidence level when naming chords. Raw evidence still appears in Inspect."
+            )
             self.timeline = TimelineView()
             self.timeline.on_position_changed = self.set_editor_position_seconds
             self.timeline.on_selection_changed = self.set_editor_selection
@@ -1496,6 +1504,11 @@ def main() -> int:
             editor_side.addWidget(_section_label("Chord Inspector"))
             editor_side.addWidget(self.chord_context)
             editor_side.addWidget(self.chord_detector_help)
+            evidence_floor_row = QHBoxLayout()
+            evidence_floor_row.setSpacing(8)
+            evidence_floor_row.addWidget(self.min_note_evidence_label)
+            evidence_floor_row.addWidget(self.min_note_evidence_slider, 1)
+            editor_side.addLayout(evidence_floor_row)
             editor_side.addWidget(_section_label("Manual Note Overrides"))
             editor_side.addWidget(self.note_filter_help)
             editor_side.addWidget(self.note_filter_list)
@@ -1554,6 +1567,7 @@ def main() -> int:
             self.reset_note_filter_button.clicked.connect(self.reset_chord_note_filter)
             self.inspect_chord_button.clicked.connect(self.inspect_current_chord_analysis)
             self.note_filter_list.itemChanged.connect(self.handle_chord_note_filter_changed)
+            self.min_note_evidence_slider.valueChanged.connect(self.handle_min_note_evidence_changed)
             self.chord_list.itemDoubleClicked.connect(self.preview_chord_item)
             self.chord_list.currentItemChanged.connect(lambda *_args: self.refresh_chord_actions())
             self.timeline_slider.valueChanged.connect(self.set_editor_position)
@@ -2443,8 +2457,15 @@ def main() -> int:
             self.chord_context.setText(text)
             self.chord_context.setToolTip(text)
 
+        def chord_min_note_floor(self) -> float:
+            return self.min_note_evidence_slider.value() / 100
+
         def chord_scoring_options(self) -> ChordScoringOptions:
-            return ChordScoringOptions()
+            return ChordScoringOptions(weak_note_floor=self.chord_min_note_floor())
+
+        def handle_min_note_evidence_changed(self, value: int) -> None:
+            self.min_note_evidence_label.setText(f"Min note evidence: {value}%")
+            self.refresh_current_harmony(self.timeline.position)
 
         def refresh_current_harmony(self, seconds: float) -> None:
             if self.editor_project is None:
@@ -2748,7 +2769,11 @@ def main() -> int:
                 "-" * 17,
                 "MIDI energy model: note energy = overlap_seconds * (velocity / 127)^2",
                 "Octaves and tracks: every note event contributes separately, then totals are folded by note name.",
-                "Low-energy notes are not hidden automatically; use Manual Note Overrides only for corrections.",
+                "Low-energy notes are kept unless the minimum note evidence slider or Manual Note Overrides remove them from naming.",
+                (
+                    f"Minimum note evidence: {self.min_note_evidence_slider.value()}% normalized. "
+                    "Raw totals below this remain visible here but are ignored for chord naming."
+                ),
                 "",
                 "Chord-Name Ranking",
                 "-" * 18,
