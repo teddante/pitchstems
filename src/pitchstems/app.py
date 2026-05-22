@@ -120,7 +120,8 @@ def main() -> int:
             self.chord_height = 38
             self.visible_tracks: set[str] = set()
             self.track_geometries: dict[str, tuple[float, float, int, int]] = {}
-            self.sticky_items = []
+            self.sticky_x_items = []
+            self.sticky_y_items = []
             self.playhead = None
             self.selection_rect = None
             self.selection_start: float | None = None
@@ -147,6 +148,7 @@ def main() -> int:
             self.setFocusPolicy(Qt.StrongFocus)
             self.setStyleSheet("QGraphicsView { border: 1px solid #d1d5db; background: #f8fafc; }")
             self.horizontalScrollBar().valueChanged.connect(self.update_sticky_labels)
+            self.verticalScrollBar().valueChanged.connect(self.update_sticky_labels)
             self.zoom_redraw_timer = QTimer(self)
             self.zoom_redraw_timer.setSingleShot(True)
             self.zoom_redraw_timer.timeout.connect(self.commit_pending_zoom)
@@ -244,7 +246,8 @@ def main() -> int:
                 self.playhead = None
                 self.selection_rect = None
                 self.track_geometries = {}
-                self.sticky_items = []
+                self.sticky_x_items = []
+                self.sticky_y_items = []
                 if self.project is None:
                     self.scene.addText("Run separation + MIDI to create an editor timeline.").setPos(18, 18)
                     self.scene.setSceneRect(0, 0, 760, 320)
@@ -270,6 +273,15 @@ def main() -> int:
 
         def _draw_time_grid(self, duration: float, width: float, height: float) -> None:
             self.scene.addRect(0, 0, self.label_width, height, QPen(Qt.NoPen), QBrush(QColor("#eef2f7")))
+            header = self.scene.addRect(
+                0,
+                0,
+                width,
+                self.chord_height,
+                QPen(Qt.NoPen),
+                QBrush(QColor("#eef2f7")),
+            )
+            self._make_sticky_y(header, 26)
             tick = 0
             tick_step = 1 if self.pixels_per_second >= 48 else 5
             while tick <= int(duration) + 1:
@@ -280,15 +292,17 @@ def main() -> int:
                     text = self.scene.addText(_format_time(tick))
                     text.setDefaultTextColor(QColor("#475569"))
                     text.setPos(x + 4, 3)
+                    self._make_sticky_y(text, 32)
                 tick += tick_step
             self.scene.addLine(self.label_width, 0, self.label_width, height, QPen(QColor("#cbd5e1"), 1))
-            self.scene.addLine(0, self.chord_height, width, self.chord_height, QPen(QColor("#cbd5e1"), 1))
+            header_line = self.scene.addLine(0, self.chord_height, width, self.chord_height, QPen(QColor("#cbd5e1"), 1))
+            self._make_sticky_y(header_line, 33)
 
         def _draw_chords(self) -> None:
             label = self.scene.addText("Chords")
             label.setDefaultTextColor(QColor("#334155"))
             label.setPos(12, 9)
-            self._make_sticky(label, 12)
+            self._make_sticky_xy(label, 34)
             for chord in self.project.chords:
                 x = self._x(chord.start)
                 width = max(18, chord.duration * self.pixels_per_second)
@@ -300,6 +314,7 @@ def main() -> int:
                     QPen(QColor("#7c3aed"), 1),
                     QBrush(QColor("#ede9fe")),
                 )
+                self._make_sticky_y(rect, 28)
                 rect.setToolTip(
                     f"{chord.label}  {_format_time(chord.start)} - {_format_time(chord.end)}\n"
                     f"Estimated from overlapping MIDI notes. Confidence: {chord.confidence:.0%}"
@@ -308,6 +323,7 @@ def main() -> int:
                     text = self.scene.addText(chord.label)
                     text.setDefaultTextColor(QColor("#4c1d95"))
                     text.setPos(x + 5, 6)
+                    self._make_sticky_y(text, 34)
 
         def _draw_tracks(self) -> None:
             for index, track in enumerate(self.project.tracks):
@@ -464,15 +480,28 @@ def main() -> int:
 
         def _make_sticky(self, item, x_offset: float) -> None:
             item.setZValue(20)
-            self.sticky_items.append((item, x_offset))
+            self.sticky_x_items.append((item, x_offset))
+
+        def _make_sticky_y(self, item, z_value: int = 30) -> None:
+            item.setZValue(z_value)
+            self.sticky_y_items.append((item, item.y()))
+
+        def _make_sticky_xy(self, item, z_value: int = 30) -> None:
+            item.setZValue(z_value)
+            self.sticky_x_items.append((item, item.x()))
+            self.sticky_y_items.append((item, item.y()))
 
         def update_sticky_labels(self, _value: int | None = None) -> None:
-            if not self.sticky_items:
+            if not self.sticky_x_items and not self.sticky_y_items:
                 return
             view_left = self.mapToScene(self.viewport().rect().left(), 0).x()
+            view_top = self.mapToScene(0, self.viewport().rect().top()).y()
             x_base = max(0.0, view_left)
-            for item, x_offset in self.sticky_items:
+            y_base = max(0.0, view_top)
+            for item, x_offset in self.sticky_x_items:
                 item.setX(x_base + x_offset)
+            for item, y_offset in self.sticky_y_items:
+                item.setY(y_base + y_offset)
 
         def _pitch_y(
             self,
@@ -575,7 +604,8 @@ def main() -> int:
             point = self.mapToScene(event.pos())
             if point.x() < self.label_width:
                 return False
-            if point.y() > self.chord_height and not (event.modifiers() & Qt.ShiftModifier):
+            in_chord_lane = point.y() <= self.chord_height or event.pos().y() <= self.chord_height
+            if not in_chord_lane and not (event.modifiers() & Qt.ShiftModifier):
                 return False
             seconds = (point.x() - self.label_width) / self.pixels_per_second
             self._selection_anchor = max(0.0, min(seconds, max(self.project.duration, 0.0)))
