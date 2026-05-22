@@ -122,9 +122,14 @@ def main() -> int:
             self.sticky_items = []
             self.playhead = None
             self.on_position_changed = None
+            self.pending_pixels_per_second: float | None = None
+            self.pending_vertical_zoom: float | None = None
+            self.pending_zoom_center_seconds: float | None = None
+            self.pending_zoom_center_y: float | None = None
             self._panning = False
             self._last_pan_pos = None
             self.scene = QGraphicsScene(self)
+            self.scene.setItemIndexMethod(QGraphicsScene.NoIndex)
             self.setScene(self.scene)
             self.setMinimumHeight(320)
             self.setOptimizationFlag(QGraphicsView.DontSavePainterState, True)
@@ -135,6 +140,9 @@ def main() -> int:
             self.setFocusPolicy(Qt.StrongFocus)
             self.setStyleSheet("QGraphicsView { border: 1px solid #d1d5db; background: #f8fafc; }")
             self.horizontalScrollBar().valueChanged.connect(self.update_sticky_labels)
+            self.zoom_redraw_timer = QTimer(self)
+            self.zoom_redraw_timer.setSingleShot(True)
+            self.zoom_redraw_timer.timeout.connect(self.commit_pending_zoom)
 
         def set_project(self, project: EditorProject | None) -> None:
             self.project = project
@@ -149,27 +157,68 @@ def main() -> int:
         def zoom_horizontal(self, factor: float) -> None:
             if self.project is None:
                 return
-            center_seconds = self._view_center_seconds()
-            self.pixels_per_second = max(28, min(420, self.pixels_per_second * factor))
-            self.redraw()
-            self._center_on_seconds(center_seconds)
+            if self.pending_zoom_center_seconds is None:
+                self.pending_zoom_center_seconds = self._view_center_seconds()
+            base = self.pending_pixels_per_second or self.pixels_per_second
+            self.pending_pixels_per_second = max(28, min(420, base * factor))
+            self.zoom_redraw_timer.start(70)
 
         def zoom_vertical(self, factor: float) -> None:
             if self.project is None:
                 return
-            center_y = self.mapToScene(self.viewport().rect().center()).y()
-            self.vertical_zoom = max(0.45, min(3.6, self.vertical_zoom * factor))
-            self.redraw()
-            self.centerOn(self.mapToScene(self.viewport().rect().center()).x(), center_y)
+            if self.pending_zoom_center_y is None:
+                self.pending_zoom_center_y = self.mapToScene(self.viewport().rect().center()).y()
+            base = self.pending_vertical_zoom or self.vertical_zoom
+            self.pending_vertical_zoom = max(0.45, min(3.6, base * factor))
+            self.zoom_redraw_timer.start(70)
 
         def reset_zoom(self) -> None:
             if self.project is None:
                 return
+            self.zoom_redraw_timer.stop()
+            self.pending_pixels_per_second = None
+            self.pending_vertical_zoom = None
+            self.pending_zoom_center_seconds = None
+            self.pending_zoom_center_y = None
             center_seconds = self._view_center_seconds()
             self.pixels_per_second = 92
             self.vertical_zoom = 1.0
             self.redraw()
             self._center_on_seconds(center_seconds)
+
+        def commit_pending_zoom(self) -> None:
+            if self.project is None:
+                self.pending_pixels_per_second = None
+                self.pending_vertical_zoom = None
+                self.pending_zoom_center_seconds = None
+                self.pending_zoom_center_y = None
+                return
+            has_time_zoom = self.pending_pixels_per_second is not None
+            has_pitch_zoom = self.pending_vertical_zoom is not None
+            if not has_time_zoom and not has_pitch_zoom:
+                return
+
+            center_seconds = self.pending_zoom_center_seconds or self._view_center_seconds()
+            center_y = self.pending_zoom_center_y
+            if center_y is None:
+                center_y = self.mapToScene(self.viewport().rect().center()).y()
+            if self.pending_pixels_per_second is not None:
+                self.pixels_per_second = self.pending_pixels_per_second
+            if self.pending_vertical_zoom is not None:
+                self.vertical_zoom = self.pending_vertical_zoom
+
+            self.pending_pixels_per_second = None
+            self.pending_vertical_zoom = None
+            self.pending_zoom_center_seconds = None
+            self.pending_zoom_center_y = None
+
+            self.redraw()
+            if has_time_zoom:
+                self._center_on_seconds(center_seconds)
+            if has_pitch_zoom:
+                x = self._x(center_seconds) if has_time_zoom else self.mapToScene(self.viewport().rect().center()).x()
+                self.centerOn(x, center_y)
+            self.update_sticky_labels()
 
         def set_position(self, seconds: float) -> None:
             if self.project is None:
@@ -179,28 +228,33 @@ def main() -> int:
             self._move_playhead()
 
         def redraw(self) -> None:
-            self.scene.clear()
-            self.playhead = None
-            self.track_geometries = {}
-            self.sticky_items = []
-            if self.project is None:
-                self.scene.addText("Run separation + MIDI to create an editor timeline.").setPos(18, 18)
-                self.scene.setSceneRect(0, 0, 760, 320)
-                return
+            self.setUpdatesEnabled(False)
+            try:
+                self.scene.clear()
+                self.playhead = None
+                self.track_geometries = {}
+                self.sticky_items = []
+                if self.project is None:
+                    self.scene.addText("Run separation + MIDI to create an editor timeline.").setPos(18, 18)
+                    self.scene.setSceneRect(0, 0, 760, 320)
+                    return
 
-            duration = max(self.project.duration, 10.0)
-            self.track_geometries = self._build_track_geometries()
-            width = self.label_width + duration * self.pixels_per_second + 80
-            height = self.chord_height + sum(
-                geometry[1] for geometry in self.track_geometries.values()
-            ) + 34
-            self.scene.setSceneRect(0, 0, width, height)
-            self.scene.addRect(0, 0, width, height, QPen(Qt.NoPen), QBrush(QColor("#f8fafc")))
-            self._draw_time_grid(duration, width, height)
-            self._draw_chords()
-            self._draw_tracks()
-            self._draw_playhead(height)
-            self.update_sticky_labels()
+                duration = max(self.project.duration, 10.0)
+                self.track_geometries = self._build_track_geometries()
+                width = self.label_width + duration * self.pixels_per_second + 80
+                height = self.chord_height + sum(
+                    geometry[1] for geometry in self.track_geometries.values()
+                ) + 34
+                self.scene.setSceneRect(0, 0, width, height)
+                self.scene.addRect(0, 0, width, height, QPen(Qt.NoPen), QBrush(QColor("#f8fafc")))
+                self._draw_time_grid(duration, width, height)
+                self._draw_chords()
+                self._draw_tracks()
+                self._draw_playhead(height)
+                self.update_sticky_labels()
+            finally:
+                self.setUpdatesEnabled(True)
+                self.viewport().update()
 
         def _draw_time_grid(self, duration: float, width: float, height: float) -> None:
             self.scene.addRect(0, 0, self.label_width, height, QPen(Qt.NoPen), QBrush(QColor("#eef2f7")))
