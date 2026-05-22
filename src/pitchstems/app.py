@@ -120,6 +120,8 @@ def main() -> int:
             self.chord_height = 38
             self.visible_tracks: set[str] = set()
             self.track_geometries: dict[str, tuple[float, float, int, int]] = {}
+            self.notes_by_track: dict[str, list] = {}
+            self.pitch_ranges: dict[str, tuple[int, int]] = {}
             self.sticky_x_items = []
             self.sticky_y_items = []
             self.playhead = None
@@ -156,11 +158,27 @@ def main() -> int:
         def set_project(self, project: EditorProject | None) -> None:
             self.project = project
             self.visible_tracks = {track.name.lower() for track in project.tracks} if project else set()
+            self._index_project()
             self.position = 0.0
             self.selection_start = None
             self.selection_end = None
             self._selecting = False
             self.redraw()
+
+        def _index_project(self) -> None:
+            self.notes_by_track = {}
+            self.pitch_ranges = {}
+            if self.project is None:
+                return
+            for note in self.project.notes:
+                self.notes_by_track.setdefault(note.stem.lower(), []).append(note)
+            for track in self.project.tracks:
+                pitches = [note.pitch for note in self.notes_by_track.get(track.name.lower(), [])]
+                if pitches:
+                    self.pitch_ranges[track.name.lower()] = (
+                        max(0, min(pitches) - 2),
+                        min(127, max(pitches) + 2),
+                    )
 
         def set_visible_tracks(self, tracks: set[str]) -> None:
             self.visible_tracks = {track.lower() for track in tracks}
@@ -347,43 +365,96 @@ def main() -> int:
                 )
                 self._draw_pitch_guides(y, height, low_pitch, high_pitch)
 
+            draw_density = len(self.project.notes) > 8000 and self.pixels_per_second < 80
             draw_note_labels = self.pixels_per_second >= 150 and len(self.project.notes) <= 900
-            for note in self.project.notes:
-                if note.stem.lower() not in self.visible_tracks:
+            for track in self.project.tracks:
+                track_key = track.name.lower()
+                if track_key not in self.visible_tracks:
                     continue
-                geometry = self.track_geometries.get(note.stem.lower())
+                geometry = self.track_geometries.get(track_key)
                 if geometry is None:
                     continue
                 y, height, low_pitch, high_pitch = geometry
-                note_height = self._note_height(height, low_pitch, high_pitch)
-                pitch_y = self._pitch_y(note.pitch, y, height, low_pitch, high_pitch, note_height)
-                x = self._x(note.start)
-                width = max(3, note.duration * self.pixels_per_second)
-                color = _track_color(note.stem)
-                velocity = max(1, min(note.velocity, 127))
-                velocity_ratio = velocity / 127
+                track_notes = self.notes_by_track.get(track_key, [])
+                if draw_density:
+                    self._draw_note_density(track.name, track_notes, y, height)
+                    continue
+                for note in track_notes:
+                    self._draw_note_event(note, y, height, low_pitch, high_pitch, draw_note_labels)
+
+        def _draw_note_event(
+            self,
+            note,
+            y: float,
+            height: float,
+            low_pitch: int,
+            high_pitch: int,
+            draw_note_labels: bool,
+        ) -> None:
+            note_height = self._note_height(height, low_pitch, high_pitch)
+            pitch_y = self._pitch_y(note.pitch, y, height, low_pitch, high_pitch, note_height)
+            x = self._x(note.start)
+            width = max(3, note.duration * self.pixels_per_second)
+            color = _track_color(note.stem)
+            velocity = max(1, min(note.velocity, 127))
+            velocity_ratio = velocity / 127
+            fill_color = QColor(color)
+            fill_color.setAlpha(int(70 + velocity_ratio * 185))
+            pen_color = QColor(color.darker(150 if velocity_ratio < 0.55 else 125))
+            pen_width = 1 if velocity_ratio < 0.72 else 2
+            rect = self.scene.addRect(
+                x,
+                pitch_y,
+                width,
+                note_height,
+                QPen(pen_color, pen_width),
+                QBrush(fill_color),
+            )
+            rect.setToolTip(
+                f"{note.stem}: {note.name}\n"
+                f"{_format_time(note.start)} - {_format_time(note.end)}"
+                f"  duration {note.duration:.2f}s\n"
+                f"Velocity: {velocity}/127 ({velocity_ratio:.0%})"
+            )
+            if draw_note_labels and width >= 36:
+                label = self.scene.addText(note.name)
+                label.setDefaultTextColor(QColor("#0f172a"))
+                label.setPos(x + 3, pitch_y - 3)
+
+        def _draw_note_density(self, stem_name: str, notes: list, y: float, height: float) -> None:
+            if not notes:
+                return
+            duration = max(self.project.duration if self.project else 0.0, 1.0)
+            bin_seconds = max(0.25, 5 / self.pixels_per_second)
+            bins: dict[int, float] = {}
+            for note in notes:
+                start_bin = int(note.start / bin_seconds)
+                end_bin = max(start_bin, int(note.end / bin_seconds))
+                velocity_ratio = max(1, min(note.velocity, 127)) / 127
+                contribution = max(0.2, velocity_ratio) * max(0.04, note.duration)
+                for bin_index in range(start_bin, end_bin + 1):
+                    bins[bin_index] = bins.get(bin_index, 0.0) + contribution
+            if not bins:
+                return
+            max_weight = max(bins.values())
+            color = _track_color(stem_name)
+            lane_y = y + 12
+            lane_height = max(8.0, height - 24)
+            for bin_index, weight in bins.items():
+                seconds = bin_index * bin_seconds
+                if seconds > duration:
+                    continue
+                intensity = min(1.0, weight / max_weight)
                 fill_color = QColor(color)
-                fill_color.setAlpha(int(70 + velocity_ratio * 185))
-                pen_color = QColor(color.darker(150 if velocity_ratio < 0.55 else 125))
-                pen_width = 1 if velocity_ratio < 0.72 else 2
-                rect = self.scene.addRect(
-                    x,
-                    pitch_y,
-                    width,
-                    note_height,
-                    QPen(pen_color, pen_width),
+                fill_color.setAlpha(int(35 + intensity * 160))
+                self.scene.addRect(
+                    self._x(seconds),
+                    lane_y,
+                    max(2.0, bin_seconds * self.pixels_per_second),
+                    lane_height,
+                    QPen(Qt.NoPen),
                     QBrush(fill_color),
-                )
-                rect.setToolTip(
-                    f"{note.stem}: {note.name}\n"
-                    f"{_format_time(note.start)} - {_format_time(note.end)}"
-                    f"  duration {note.duration:.2f}s\n"
-                    f"Velocity: {velocity}/127 ({velocity_ratio:.0%})"
-                )
-                if draw_note_labels and width >= 36:
-                    label = self.scene.addText(note.name)
-                    label.setDefaultTextColor(QColor("#0f172a"))
-                    label.setPos(x + 3, pitch_y - 3)
+                ).setToolTip(f"{stem_name}: dense note overview. Zoom in to inspect individual MIDI notes.")
 
         def _draw_playhead(self, height: float) -> None:
             self.playhead = self.scene.addLine(0, 0, 0, height, QPen(QColor("#ef4444"), 2))
@@ -451,10 +522,9 @@ def main() -> int:
             geometries: dict[str, tuple[float, float, int, int]] = {}
             y = self.chord_height
             for track in self.project.tracks:
-                pitches = [note.pitch for note in self.project.notes if note.stem.lower() == track.name.lower()]
-                if pitches:
-                    low_pitch = max(0, min(pitches) - 2)
-                    high_pitch = min(127, max(pitches) + 2)
+                pitch_range = self.pitch_ranges.get(track.name.lower())
+                if pitch_range:
+                    low_pitch, high_pitch = pitch_range
                     base_height = max(96, (high_pitch - low_pitch + 1) * 8 + 28)
                     height = base_height * self.vertical_zoom
                 else:
@@ -794,6 +864,9 @@ def main() -> int:
             self.playback_controls = QGridLayout()
             self.playback_controls.setHorizontalSpacing(8)
             self.playback_controls.setVerticalSpacing(4)
+            self.track_visibility_checks: dict[str, QCheckBox] = {}
+            self.track_note_counts: dict[str, int] = {}
+            self.editor_track_visibility: dict[str, bool] = {}
             self.chord_list = QListWidget()
             self.chord_list.setMaximumWidth(240)
             self.chord_list.setAlternatingRowColors(True)
@@ -969,11 +1042,9 @@ def main() -> int:
             editor_body.setSpacing(10)
             editor_side = QVBoxLayout()
             editor_side.setSpacing(8)
-            editor_side.addWidget(_section_label("Tracks"))
-            editor_side.addWidget(self.track_list, 1)
-            editor_side.addWidget(_section_label("Playback"))
+            editor_side.addWidget(_section_label("Tracks & Mix"))
             editor_side.addLayout(self.playback_controls)
-            editor_side.addWidget(_section_label("Chords"))
+            editor_side.addWidget(_section_label("Chord Inspector"))
             editor_side.addWidget(self.chord_list, 1)
             editor_body.addLayout(editor_side)
             editor_body.addWidget(self.timeline, 1)
@@ -1006,7 +1077,6 @@ def main() -> int:
             self.play_button.clicked.connect(self.toggle_playback)
             self.stop_button.clicked.connect(self.stop_transport)
             self.timeline_slider.valueChanged.connect(self.set_editor_position)
-            self.track_list.itemChanged.connect(self.refresh_visible_tracks)
             self.bs_device.currentIndexChanged.connect(self.refresh_model_details)
             self.generate_midi.toggled.connect(self.refresh_midi_stem_checks)
             self.sonify_midi.toggled.connect(self.sonification_samplerate.setEnabled)
@@ -1314,22 +1384,13 @@ def main() -> int:
 
         def refresh_editor_lists(self, track_visibility: dict[str, bool] | None = None) -> None:
             track_visibility = track_visibility or {}
-            self.track_list.blockSignals(True)
-            self.track_list.clear()
+            self.editor_track_visibility = track_visibility
+            self.track_note_counts = {}
             self.chord_list.clear()
             if self.editor_project is None:
-                self.track_list.blockSignals(False)
                 return
-            note_counts: dict[str, int] = {}
             for note in self.editor_project.notes:
-                note_counts[note.stem] = note_counts.get(note.stem, 0) + 1
-            for track in self.editor_project.tracks:
-                item = QListWidgetItem(f"{track.name}  ({note_counts.get(track.name, 0)} notes)")
-                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-                item.setCheckState(Qt.Checked if track_visibility.get(track.name, True) else Qt.Unchecked)
-                item.setData(Qt.UserRole, track.name)
-                self.track_list.addItem(item)
-            self.track_list.blockSignals(False)
+                self.track_note_counts[note.stem] = self.track_note_counts.get(note.stem, 0) + 1
             self.refresh_detected_chord_list()
 
         def refresh_detected_chord_list(self) -> None:
@@ -1352,23 +1413,33 @@ def main() -> int:
             self.track_audio_sliders.clear()
             self.track_midi_checks.clear()
             self.track_midi_sliders.clear()
+            self.track_visibility_checks.clear()
             if self.editor_project is None:
                 return
 
+            track_visibility = self.editor_track_visibility
             audio_enabled = editor_state.get("track_audio_enabled", {})
             audio_volume = editor_state.get("track_audio_volume", {})
             midi_enabled = editor_state.get("track_midi_enabled", {})
             midi_volume = editor_state.get("track_midi_volume", {})
 
-            for column, text in enumerate(["Stem", "Audio", "Vol", "MIDI", "Vol"]):
+            for column, text in enumerate(["Show", "Stem", "Audio", "Vol", "MIDI", "Vol", "Notes"]):
                 label = QLabel(text)
                 label.setStyleSheet("font-weight: 600; color: #334155;")
                 self.playback_controls.addWidget(label, 0, column)
 
             for row, track in enumerate(self.editor_project.tracks, 1):
+                show_check = QCheckBox()
+                show_check.setChecked(track_visibility.get(track.name, True))
+                show_check.setToolTip("Show this track's MIDI notes in the timeline.")
+                show_check.toggled.connect(lambda *_args: self.refresh_visible_tracks())
+                show_check.toggled.connect(lambda *_args: self.save_editor_state())
+                self.track_visibility_checks[track.name] = show_check
+                self.playback_controls.addWidget(show_check, row, 0)
+
                 name = QLabel(track.name)
                 name.setMinimumWidth(58)
-                self.playback_controls.addWidget(name, row, 0)
+                self.playback_controls.addWidget(name, row, 1)
 
                 audio_check = QCheckBox()
                 audio_check.setChecked(audio_enabled.get(track.name, True))
@@ -1384,8 +1455,8 @@ def main() -> int:
                 audio_slider.valueChanged.connect(lambda *_args: self.save_editor_state())
                 self.track_audio_checks[track.name] = audio_check
                 self.track_audio_sliders[track.name] = audio_slider
-                self.playback_controls.addWidget(audio_check, row, 1)
-                self.playback_controls.addWidget(audio_slider, row, 2)
+                self.playback_controls.addWidget(audio_check, row, 2)
+                self.playback_controls.addWidget(audio_slider, row, 3)
 
                 midi_check = QCheckBox()
                 midi_check.setChecked(midi_enabled.get(track.name, False))
@@ -1403,8 +1474,12 @@ def main() -> int:
                 midi_slider.valueChanged.connect(lambda *_args: self.save_editor_state())
                 self.track_midi_checks[track.name] = midi_check
                 self.track_midi_sliders[track.name] = midi_slider
-                self.playback_controls.addWidget(midi_check, row, 3)
-                self.playback_controls.addWidget(midi_slider, row, 4)
+                self.playback_controls.addWidget(midi_check, row, 4)
+                self.playback_controls.addWidget(midi_slider, row, 5)
+
+                notes = QLabel(str(self.track_note_counts.get(track.name, 0)))
+                notes.setStyleSheet("color: #64748b;")
+                self.playback_controls.addWidget(notes, row, 6)
 
         def prepare_transport_players(self, result: PipelineResult) -> None:
             self.pause_transport()
@@ -1666,11 +1741,9 @@ def main() -> int:
         def _set_chord_candidates(self, analysis) -> None:
             if analysis.candidates:
                 self.chord_list.clear()
-                options = ", ".join(
-                    f"{label} ({confidence:.0%}: {self._candidate_notes_text(analysis, label)})"
-                    for label, confidence in analysis.candidates
+                self.current_chord_options.setText(
+                    f"Possible: {len(analysis.candidates)} candidates shown in Chord Inspector."
                 )
-                self.current_chord_options.setText(f"Possible: {options}")
                 for label, confidence in analysis.candidates:
                     notes = self._candidate_notes_text(analysis, label)
                     item = QListWidgetItem(f"{label}  {confidence:.0%}\n{notes}")
@@ -1695,11 +1768,11 @@ def main() -> int:
             return text
 
         def refresh_visible_tracks(self) -> None:
-            visible = set()
-            for index in range(self.track_list.count()):
-                item = self.track_list.item(index)
-                if item.checkState() == Qt.Checked:
-                    visible.add(item.data(Qt.UserRole))
+            visible = {
+                stem_name
+                for stem_name, checkbox in self.track_visibility_checks.items()
+                if checkbox.isChecked()
+            }
             self.timeline.set_visible_tracks(visible)
             self.save_editor_state()
 
@@ -1707,11 +1780,8 @@ def main() -> int:
             if self.current_result is None or self.editor_project is None:
                 return
             visibility = {}
-            for index in range(self.track_list.count()):
-                item = self.track_list.item(index)
-                stem_name = item.data(Qt.UserRole)
-                if stem_name:
-                    visibility[stem_name] = item.checkState() == Qt.Checked
+            for stem_name, checkbox in self.track_visibility_checks.items():
+                visibility[stem_name] = checkbox.isChecked()
             audio_enabled = {
                 stem_name: checkbox.isChecked()
                 for stem_name, checkbox in self.track_audio_checks.items()
@@ -1760,6 +1830,9 @@ def main() -> int:
             self.current_chord_options.setText("Possible: -")
             self.current_notes.setText("Notes: -")
             self.track_list.clear()
+            self.track_visibility_checks.clear()
+            self.track_note_counts.clear()
+            self.editor_track_visibility = {}
             _clear_layout(self.playback_controls)
             self.chord_list.clear()
             self.timeline.set_project(None)
