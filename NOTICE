@@ -1,0 +1,9 @@
+PitchStems
+Copyright (c) 2026 PitchStems contributors
+
+PitchStems is not affiliated with Spotify, OpenMIRLab, Jarredou, Basic Pitch,
+BS-RoFormer, PyTorch, ONNX Runtime, FFmpeg, or Qt/PySide.
+
+PitchStems does not bundle model weights, user audio, FFmpeg binaries, PyTorch,
+ONNX Runtime, Basic Pitch, or BS-RoFormer. Those components are installed or
+downloaded separately under their own licenses.
