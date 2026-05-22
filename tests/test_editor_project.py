@@ -10,6 +10,7 @@ from pitchstems.editor_project import (
     analyze_chord_region,
     chord_tones_for_label,
     detect_chords,
+    exact_chord_names_for_pitch_classes,
     identify_chord,
     midi_note_name,
     read_midi_notes,
@@ -48,6 +49,25 @@ def test_analyze_chord_names_extensions_and_inversions() -> None:
     assert analyze_chord([60, 65, 67, 70]).label == "C7sus4"
 
 
+def test_analyze_chord_names_omitted_third_major_ninth_sound() -> None:
+    analysis = analyze_chord([55, 62, 66, 69], required_pitch_classes={2, 6, 7, 9})
+    labels = [label for label, _confidence in analysis.candidates]
+
+    assert analysis.label == "Gmaj9(no3)"
+    assert "Gmaj7sus2" in analysis.candidate_aliases["Gmaj9(no3)"]
+    assert "Dadd4/G" in analysis.candidate_aliases["Gmaj9(no3)"]
+    assert all({"G", "D", "F#", "A"} <= set(analysis.candidate_notes[label]) for label in labels)
+    assert all("B" not in analysis.candidate_notes[label] for label in labels[:2])
+
+
+def test_exact_chord_names_include_contextual_omitted_third_aliases() -> None:
+    names = exact_chord_names_for_pitch_classes({2, 6, 7, 9}, bass=7)
+
+    assert "Gmaj9(no3)" in names
+    assert "Gmaj7sus2" in names
+    assert "Dadd4/G" in names
+
+
 def test_analyze_chord_includes_contextual_candidates() -> None:
     analysis = analyze_chord([60, 64, 67, 69])
     labels = [label for label, _confidence in analysis.candidates]
@@ -80,6 +100,7 @@ def test_chord_constraints_force_and_exclude_candidate_tones() -> None:
 def test_chord_tones_for_label_orders_extensions_from_root() -> None:
     assert chord_tones_for_label("Cmaj9") == ["C", "E", "G", "B", "D"]
     assert chord_tones_for_label("F#7sus4/C#") == ["F#", "B", "C#", "E"]
+    assert chord_tones_for_label("Gmaj9(no3)") == ["G", "D", "F#", "A"]
 
 
 def test_analyze_chord_at_uses_notes_active_at_playhead() -> None:

@@ -270,7 +270,14 @@ def analyze_chord(
     if not scored_roots:
         return ChordAnalysis(None, 0.0, active_note_names, pitch_classes, bass=bass)
 
-    scored_roots.sort(key=lambda item: item[1], reverse=True)
+    scored_roots.sort(
+        key=lambda item: (
+            item[1],
+            1 if item[2] == bass else 0,
+            1 if item[2] in pitch_classes else 0,
+        ),
+        reverse=True,
+    )
     best_label, best_score, best_root, _best_explanation = scored_roots[0]
     candidates = _candidate_labels(
         scored_roots,
@@ -326,7 +333,14 @@ def _analyze_weighted_pitch_classes(
             scored_roots.append((label, score, explanation, root))
     if not scored_roots:
         return ChordAnalysis(None, 0.0, active_note_names, pitch_classes, bass=bass, note_weights=note_weights)
-    scored_roots.sort(key=lambda item: item[1], reverse=True)
+    scored_roots.sort(
+        key=lambda item: (
+            item[1],
+            1 if item[3] == bass else 0,
+            1 if item[3] in pitch_classes else 0,
+        ),
+        reverse=True,
+    )
     best_label, best_score, _best_explanation, best_root = scored_roots[0]
     candidates = _candidate_labels(
         scored_roots,
@@ -706,9 +720,13 @@ def _interval_names(root: int, intervals) -> list[str]:
 
 def _chord_qualities() -> list[tuple[str, tuple[int, ...]]]:
     return [
+        ("maj9(no3)", (0, 7, 11, 2)),
+        ("9(no3)", (0, 7, 10, 2)),
         ("maj9", (0, 4, 7, 11, 2)),
         ("9", (0, 4, 7, 10, 2)),
         ("m9", (0, 3, 7, 10, 2)),
+        ("maj7sus2", (0, 2, 7, 11)),
+        ("7sus2", (0, 2, 7, 10)),
         ("maj7", (0, 4, 7, 11)),
         ("7", (0, 4, 7, 10)),
         ("m7", (0, 3, 7, 10)),
@@ -719,6 +737,9 @@ def _chord_qualities() -> list[tuple[str, tuple[int, ...]]]:
         ("m6", (0, 3, 7, 9)),
         ("add9", (0, 4, 7, 2)),
         ("madd9", (0, 3, 7, 2)),
+        ("add4", (0, 4, 5, 7)),
+        ("add11", (0, 4, 7, 5)),
+        ("add9(no3)", (0, 7, 2)),
         ("7sus4", (0, 5, 7, 10)),
         ("sus2", (0, 2, 7)),
         ("sus4", (0, 5, 7)),
