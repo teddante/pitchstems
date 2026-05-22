@@ -1307,9 +1307,8 @@ def main() -> int:
             self.track_list = QListWidget()
             self.track_list.setMaximumWidth(240)
             self.track_list.setAlternatingRowColors(True)
-            self.playback_controls = QGridLayout()
-            self.playback_controls.setHorizontalSpacing(8)
-            self.playback_controls.setVerticalSpacing(4)
+            self.playback_controls = QVBoxLayout()
+            self.playback_controls.setSpacing(6)
             self.track_visibility_checks: dict[str, QCheckBox] = {}
             self.track_analysis_checks: dict[str, QCheckBox] = {}
             self.track_note_counts: dict[str, int] = {}
@@ -1497,7 +1496,7 @@ def main() -> int:
             editor_body = QHBoxLayout()
             editor_body.setSpacing(10)
             editor_side_panel = QWidget()
-            editor_side_panel.setFixedWidth(300)
+            editor_side_panel.setFixedWidth(330)
             editor_side = QVBoxLayout()
             editor_side.setContentsMargins(0, 0, 0, 0)
             editor_side.setSpacing(8)
@@ -2137,56 +2136,66 @@ def main() -> int:
             midi_enabled = editor_state.get("track_midi_enabled", {})
             midi_volume = editor_state.get("track_midi_volume", {})
 
-            headers = [
-                ("Stem", "Separated stem / generated MIDI track."),
-                ("View", "Draw this track's MIDI notes on the timeline only."),
-                ("Chord", "Include this track's MIDI notes in Chord Inspector analysis."),
-                ("Audio", "Play separated stem audio in the editor transport."),
-                ("MIDI", "Play generated MIDI preview audio in the editor transport."),
-            ]
-            for column, (text, tooltip) in enumerate(headers):
+            header = QWidget()
+            header_layout = QHBoxLayout()
+            header_layout.setContentsMargins(0, 0, 0, 0)
+            header_layout.setSpacing(4)
+            for text, width, tooltip in [
+                ("Stem", 92, "Separated stem / generated MIDI track."),
+                ("View", 42, "Draw this track's MIDI notes on the timeline only."),
+                ("Chord", 48, "Include this track's MIDI notes in Chord Inspector analysis."),
+                ("Audio", 46, "Play separated stem audio in the editor transport."),
+                ("MIDI", 38, "Play generated MIDI preview audio in the editor transport."),
+            ]:
                 label = QLabel(text)
+                label.setFixedWidth(width)
                 label.setStyleSheet("font-weight: 600; color: #334155;")
                 label.setToolTip(tooltip)
-                self.playback_controls.addWidget(label, 0, column)
-            self.playback_controls.setColumnStretch(0, 1)
-            self.playback_controls.setColumnMinimumWidth(1, 38)
-            self.playback_controls.setColumnMinimumWidth(2, 48)
-            self.playback_controls.setColumnMinimumWidth(3, 46)
-            self.playback_controls.setColumnMinimumWidth(4, 42)
-            self.playback_controls.setColumnMinimumWidth(5, 12)
-            self.playback_controls.setColumnMinimumWidth(6, 12)
+                header_layout.addWidget(label)
+            header.setLayout(header_layout)
+            self.playback_controls.addWidget(header)
 
-            for track_index, track in enumerate(self.editor_project.tracks):
-                row = 1 + track_index * 2
+            for track in self.editor_project.tracks:
+                track_panel = QWidget()
+                track_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                track_layout = QVBoxLayout()
+                track_layout.setContentsMargins(0, 0, 0, 2)
+                track_layout.setSpacing(2)
+
+                toggle_row = QHBoxLayout()
+                toggle_row.setContentsMargins(0, 0, 0, 0)
+                toggle_row.setSpacing(4)
                 name = QLabel(track.name)
-                name.setMinimumWidth(72)
+                name.setFixedWidth(92)
                 name.setToolTip(f"{track.name}: {self.track_note_counts.get(track.name, 0)} MIDI notes")
-                self.playback_controls.addWidget(name, row, 0)
+                toggle_row.addWidget(name)
 
                 show_check = QCheckBox()
+                show_check.setFixedWidth(42)
                 show_check.setChecked(track_visibility.get(track.name, True))
                 show_check.setToolTip("Draw this track's MIDI notes on the timeline. This does not affect chord detection or playback.")
                 show_check.toggled.connect(lambda *_args: self.refresh_visible_tracks())
                 show_check.toggled.connect(lambda *_args: self.save_editor_state())
                 self.track_visibility_checks[track.name] = show_check
-                self.playback_controls.addWidget(show_check, row, 1)
+                toggle_row.addWidget(show_check)
 
                 analysis_check = QCheckBox()
+                analysis_check.setFixedWidth(48)
                 analysis_check.setChecked(analysis_enabled.get(track.name, track_visibility.get(track.name, True)))
                 analysis_check.setToolTip("Include this track's generated MIDI notes in the Chord Inspector sample.")
                 analysis_check.toggled.connect(lambda *_args: self.refresh_current_harmony(self.timeline.position))
                 analysis_check.toggled.connect(lambda *_args: self.save_editor_state())
                 self.track_analysis_checks[track.name] = analysis_check
-                self.playback_controls.addWidget(analysis_check, row, 2)
+                toggle_row.addWidget(analysis_check)
 
                 audio_check = QCheckBox()
+                audio_check.setFixedWidth(46)
                 audio_check.setChecked(audio_enabled.get(track.name, True))
                 audio_check.setToolTip("Play this separated stem audio in the editor transport. This does not affect chord detection.")
                 audio_slider = QSlider(Qt.Horizontal)
                 audio_slider.setRange(0, 100)
                 audio_slider.setValue(int(audio_volume.get(track.name, 80)))
-                audio_slider.setFixedWidth(76)
+                audio_slider.setFixedWidth(92)
                 audio_slider.setToolTip("Separated stem audio volume.")
                 audio_check.toggled.connect(lambda *_args: self.refresh_playback_mix())
                 audio_check.toggled.connect(lambda *_args: self.save_editor_state())
@@ -2194,16 +2203,17 @@ def main() -> int:
                 audio_slider.valueChanged.connect(lambda *_args: self.save_editor_state())
                 self.track_audio_checks[track.name] = audio_check
                 self.track_audio_sliders[track.name] = audio_slider
-                self.playback_controls.addWidget(audio_check, row, 3)
+                toggle_row.addWidget(audio_check)
 
                 midi_check = QCheckBox()
+                midi_check.setFixedWidth(38)
                 midi_check.setChecked(midi_enabled.get(track.name, False))
                 midi_check.setEnabled(False)
                 midi_check.setToolTip("Play this stem's generated MIDI preview audio. This does not affect chord detection.")
                 midi_slider = QSlider(Qt.Horizontal)
                 midi_slider.setRange(0, 100)
                 midi_slider.setValue(int(midi_volume.get(track.name, 70)))
-                midi_slider.setFixedWidth(76)
+                midi_slider.setFixedWidth(92)
                 midi_slider.setEnabled(False)
                 midi_slider.setToolTip("Reserved for MIDI synth playback volume.")
                 midi_check.toggled.connect(lambda *_args: self.refresh_playback_mix())
@@ -2212,22 +2222,33 @@ def main() -> int:
                 midi_slider.valueChanged.connect(lambda *_args: self.save_editor_state())
                 self.track_midi_checks[track.name] = midi_check
                 self.track_midi_sliders[track.name] = midi_slider
-                self.playback_controls.addWidget(midi_check, row, 4)
+                toggle_row.addWidget(midi_check)
+                track_layout.addLayout(toggle_row)
 
+                slider_row = QHBoxLayout()
+                slider_row.setContentsMargins(0, 0, 0, 0)
+                slider_row.setSpacing(4)
                 notes = QLabel(str(self.track_note_counts.get(track.name, 0)))
+                notes.setFixedWidth(92)
                 notes.setStyleSheet("color: #64748b;")
                 notes.setToolTip("Generated MIDI note count.")
-                self.playback_controls.addWidget(notes, row + 1, 0)
+                slider_row.addWidget(notes)
                 audio_label = QLabel("A")
+                audio_label.setFixedWidth(12)
                 audio_label.setStyleSheet("color: #64748b;")
                 audio_label.setToolTip("Separated stem audio volume.")
                 midi_label = QLabel("M")
+                midi_label.setFixedWidth(12)
                 midi_label.setStyleSheet("color: #64748b;")
                 midi_label.setToolTip("Generated MIDI preview volume.")
-                self.playback_controls.addWidget(audio_label, row + 1, 1)
-                self.playback_controls.addWidget(audio_slider, row + 1, 2, 1, 2)
-                self.playback_controls.addWidget(midi_label, row + 1, 4)
-                self.playback_controls.addWidget(midi_slider, row + 1, 5, 1, 2)
+                slider_row.addWidget(audio_label)
+                slider_row.addWidget(audio_slider)
+                slider_row.addWidget(midi_label)
+                slider_row.addWidget(midi_slider)
+                slider_row.addStretch(1)
+                track_layout.addLayout(slider_row)
+                track_panel.setLayout(track_layout)
+                self.playback_controls.addWidget(track_panel)
 
         def prepare_transport_players(self, result: PipelineResult) -> None:
             self.set_activity_message("Preparing audio players...")
