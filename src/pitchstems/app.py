@@ -1876,7 +1876,8 @@ def main() -> int:
                     item.setToolTip(
                         f"{label}\n"
                         f"Official chord tones: {notes}\n"
-                        f"Detector confidence: {confidence:.0%}"
+                        f"Detector confidence: {confidence:.0%}\n\n"
+                        + "\n".join(analysis.candidate_explanations.get(label, []))
                     )
                     self.chord_list.addItem(item)
             else:

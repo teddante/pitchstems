@@ -57,6 +57,8 @@ def test_analyze_chord_includes_contextual_candidates() -> None:
     assert "Am7/C" in labels
     assert analysis.candidate_notes["C6"] == ["C", "E", "G", "A"]
     assert analysis.candidate_notes["Am7/C"] == ["A", "C", "E", "G"]
+    assert any("Formula:" in line for line in analysis.candidate_explanations["C6"])
+    assert any("Matched tones:" in line for line in analysis.candidate_explanations["C6"])
 
 
 def test_chord_tones_for_label_orders_extensions_from_root() -> None:
@@ -94,6 +96,8 @@ def test_analyze_chord_region_weights_overlap_and_velocity() -> None:
     assert analysis.label == "C"
     assert analysis.note_weights[0][0] == "C"
     assert dict(analysis.note_weights)["D"] < 0.1
+    assert any("weighted notes" in line for line in analysis.candidate_explanations["C"])
+    assert any("required-tone weight" in line for line in analysis.candidate_explanations["C"])
 
 
 def test_analyze_chord_region_can_name_ambiguous_selection_candidates() -> None:
