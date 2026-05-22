@@ -420,21 +420,59 @@ def main() -> int:
                 QBrush(QColor("#eef2f7")),
             )
             self._make_sticky_y(header, 26)
-            tick_step = 1 if self.pixels_per_second >= 48 else 5
-            tick = max(0, int(visible_start // tick_step) * tick_step)
-            while tick <= min(int(duration) + 1, int(visible_end) + tick_step):
+            minor_step, major_step = self._time_grid_steps()
+            tick = max(0.0, int(visible_start // minor_step) * minor_step)
+            end_tick = min(duration + minor_step, visible_end + minor_step)
+            while tick <= end_tick:
                 x = self._x(tick)
-                color = QColor("#cbd5e1") if tick % 5 == 0 else QColor("#e5e7eb")
+                is_major = self._is_major_tick(tick, major_step)
+                color = QColor("#cbd5e1") if is_major else QColor("#e5e7eb")
                 self.scene.addLine(x, 0, x, height, QPen(color, 1))
-                if tick % 5 == 0:
+                if is_major:
                     text = self.scene.addText(_format_time(tick))
                     text.setDefaultTextColor(QColor("#475569"))
                     text.setPos(x + 4, 3)
                     self._make_sticky_y(text, 32)
-                tick += tick_step
+                tick += minor_step
             self.scene.addLine(self.label_width, 0, self.label_width, height, QPen(QColor("#cbd5e1"), 1))
             header_line = self.scene.addLine(0, self.chord_height, width, self.chord_height, QPen(QColor("#cbd5e1"), 1))
             self._make_sticky_y(header_line, 33)
+
+        def _time_grid_steps(self) -> tuple[float, float]:
+            nice_steps = [
+                0.25,
+                0.5,
+                1,
+                2,
+                5,
+                10,
+                15,
+                30,
+                60,
+                120,
+                300,
+                600,
+            ]
+            target_label_px = 92
+            major_step = nice_steps[-1]
+            for step in nice_steps:
+                if step * self.pixels_per_second >= target_label_px:
+                    major_step = step
+                    break
+            minor_step = self._minor_step_for_major(major_step)
+            return minor_step, major_step
+
+        def _minor_step_for_major(self, major_step: float) -> float:
+            if major_step <= 1:
+                return major_step / 2
+            if major_step in {2, 10, 30, 120, 600}:
+                return major_step / 2
+            if major_step in {5, 15, 60, 300}:
+                return major_step / 5
+            return major_step
+
+        def _is_major_tick(self, tick: float, major_step: float) -> bool:
+            return abs((tick / major_step) - round(tick / major_step)) < 0.0001
 
         def _draw_chords(self, visible_start: float, visible_end: float) -> None:
             label = self.scene.addText("Chords")
