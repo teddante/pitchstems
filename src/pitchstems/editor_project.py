@@ -59,6 +59,7 @@ class ChordAnalysis:
     root: int | None = None
     bass: int | None = None
     candidates: list[tuple[str, float]] = field(default_factory=list)
+    candidate_notes: dict[str, list[str]] = field(default_factory=dict)
     note_weights: list[tuple[str, float]] = field(default_factory=list)
 
 
@@ -240,10 +241,23 @@ def analyze_chord(pitches: list[int]) -> ChordAnalysis:
         for label, score, _root in scored_roots
         if score >= 0.72 and score >= best_score - 0.18
     ][:6]
+    candidate_notes = {
+        label: chord_tones_for_label(label)
+        for label, _score in candidates
+    }
 
     if best_label is None or best_score < 0.72:
         return ChordAnalysis(None, best_score, active_note_names, pitch_classes, best_root, bass)
-    return ChordAnalysis(best_label, best_score, active_note_names, pitch_classes, best_root, bass, candidates)
+    return ChordAnalysis(
+        best_label,
+        best_score,
+        active_note_names,
+        pitch_classes,
+        best_root,
+        bass,
+        candidates,
+        candidate_notes,
+    )
 
 
 def _analyze_weighted_pitch_classes(
@@ -264,9 +278,33 @@ def _analyze_weighted_pitch_classes(
         for label, score, _root in scored_roots
         if score >= 0.58 and score >= best_score - 0.22
     ][:6]
+    candidate_notes = {
+        label: chord_tones_for_label(label)
+        for label, _score in candidates
+    }
     if best_score < 0.58:
-        return ChordAnalysis(None, best_score, active_note_names, pitch_classes, best_root, bass, candidates, note_weights)
-    return ChordAnalysis(best_label, best_score, active_note_names, pitch_classes, best_root, bass, candidates, note_weights)
+        return ChordAnalysis(
+            None,
+            best_score,
+            active_note_names,
+            pitch_classes,
+            best_root,
+            bass,
+            candidates,
+            candidate_notes,
+            note_weights,
+        )
+    return ChordAnalysis(
+        best_label,
+        best_score,
+        active_note_names,
+        pitch_classes,
+        best_root,
+        bass,
+        candidates,
+        candidate_notes,
+        note_weights,
+    )
 
 
 def identify_chord(pitches: list[int]) -> tuple[str | None, float]:
@@ -279,6 +317,33 @@ def midi_note_name(pitch: int) -> str:
     return f"{PITCH_NAMES[pitch % 12]}{octave}"
 
 
+def chord_tones_for_label(label: str) -> list[str]:
+    base_label = label.split("/", 1)[0]
+    root_name = next(
+        (
+            name
+            for name in sorted(PITCH_NAMES, key=len, reverse=True)
+            if base_label.startswith(name)
+        ),
+        None,
+    )
+    if root_name is None:
+        return []
+    suffix = base_label[len(root_name):]
+    quality = next(
+        (
+            intervals
+            for quality_suffix, intervals in _chord_qualities()
+            if quality_suffix == suffix
+        ),
+        None,
+    )
+    if quality is None:
+        return []
+    root = PITCH_NAMES.index(root_name)
+    return [PITCH_NAMES[(root + interval) % 12] for interval in quality]
+
+
 def _score_root(root: int, pitch_classes: set[int], bass: int) -> tuple[str, float]:
     intervals = {(pitch - root) % 12 for pitch in pitch_classes}
     qualities = _chord_qualities()
@@ -286,12 +351,13 @@ def _score_root(root: int, pitch_classes: set[int], bass: int) -> tuple[str, flo
     best_quality = ""
     best_score = 0.0
     for suffix, required in qualities:
-        matched = len(intervals & required)
-        extras = len(intervals - required)
-        missing = len(required - intervals)
-        exact_bonus = 0.18 if intervals == required else 0.0
+        required_set = set(required)
+        matched = len(intervals & required_set)
+        extras = len(intervals - required_set)
+        missing = len(required_set - intervals)
+        exact_bonus = 0.18 if intervals == required_set else 0.0
         score = (
-            (matched / len(required))
+            (matched / len(required_set))
             - (extras * 0.10)
             - (missing * 0.22)
             + root_bonus
@@ -317,13 +383,14 @@ def _score_weighted_root(root: int, pitch_weights: dict[int, float], bass: int) 
     best_quality = ""
     best_score = 0.0
     for suffix, required in _chord_qualities():
+        required_set = set(required)
         required_weight = sum(interval_weights.get(interval, 0.0) for interval in required) / total_weight
         extra_weight = sum(
             weight
             for interval, weight in interval_weights.items()
-            if interval not in required
+            if interval not in required_set
         ) / total_weight
-        missing = sum(1 for interval in required if interval not in interval_weights)
+        missing = sum(1 for interval in required_set if interval not in interval_weights)
         presence = sum(
             min(1.0, interval_weights.get(interval, 0.0) / max_weight)
             for interval in required
@@ -348,26 +415,26 @@ def _score_weighted_root(root: int, pitch_weights: dict[int, float], bass: int) 
     return label, max(0.0, min(1.0, best_score))
 
 
-def _chord_qualities() -> list[tuple[str, set[int]]]:
+def _chord_qualities() -> list[tuple[str, tuple[int, ...]]]:
     return [
-        ("maj9", {0, 2, 4, 7, 11}),
-        ("9", {0, 2, 4, 7, 10}),
-        ("m9", {0, 2, 3, 7, 10}),
-        ("maj7", {0, 4, 7, 11}),
-        ("7", {0, 4, 7, 10}),
-        ("m7", {0, 3, 7, 10}),
-        ("mMaj7", {0, 3, 7, 11}),
-        ("m7b5", {0, 3, 6, 10}),
-        ("dim7", {0, 3, 6, 9}),
-        ("6", {0, 4, 7, 9}),
-        ("m6", {0, 3, 7, 9}),
-        ("add9", {0, 2, 4, 7}),
-        ("madd9", {0, 2, 3, 7}),
-        ("7sus4", {0, 5, 7, 10}),
-        ("sus2", {0, 2, 7}),
-        ("sus4", {0, 5, 7}),
-        ("dim", {0, 3, 6}),
-        ("aug", {0, 4, 8}),
-        ("m", {0, 3, 7}),
-        ("", {0, 4, 7}),
+        ("maj9", (0, 4, 7, 11, 2)),
+        ("9", (0, 4, 7, 10, 2)),
+        ("m9", (0, 3, 7, 10, 2)),
+        ("maj7", (0, 4, 7, 11)),
+        ("7", (0, 4, 7, 10)),
+        ("m7", (0, 3, 7, 10)),
+        ("mMaj7", (0, 3, 7, 11)),
+        ("m7b5", (0, 3, 6, 10)),
+        ("dim7", (0, 3, 6, 9)),
+        ("6", (0, 4, 7, 9)),
+        ("m6", (0, 3, 7, 9)),
+        ("add9", (0, 4, 7, 2)),
+        ("madd9", (0, 3, 7, 2)),
+        ("7sus4", (0, 5, 7, 10)),
+        ("sus2", (0, 2, 7)),
+        ("sus4", (0, 5, 7)),
+        ("dim", (0, 3, 6)),
+        ("aug", (0, 4, 8)),
+        ("m", (0, 3, 7)),
+        ("", (0, 4, 7)),
     ]

@@ -360,15 +360,26 @@ def main() -> int:
                 x = self._x(note.start)
                 width = max(3, note.duration * self.pixels_per_second)
                 color = _track_color(note.stem)
+                velocity = max(1, min(note.velocity, 127))
+                velocity_ratio = velocity / 127
+                fill_color = QColor(color)
+                fill_color.setAlpha(int(70 + velocity_ratio * 185))
+                pen_color = QColor(color.darker(150 if velocity_ratio < 0.55 else 125))
+                pen_width = 1 if velocity_ratio < 0.72 else 2
                 rect = self.scene.addRect(
                     x,
                     pitch_y,
                     width,
                     note_height,
-                    QPen(color.darker(120), 1),
-                    QBrush(color),
+                    QPen(pen_color, pen_width),
+                    QBrush(fill_color),
                 )
-                rect.setToolTip(f"{note.stem}: {note.name}  {_format_time(note.start)} - {_format_time(note.end)}")
+                rect.setToolTip(
+                    f"{note.stem}: {note.name}\n"
+                    f"{_format_time(note.start)} - {_format_time(note.end)}"
+                    f"  duration {note.duration:.2f}s\n"
+                    f"Velocity: {velocity}/127 ({velocity_ratio:.0%})"
+                )
                 if draw_note_labels and width >= 36:
                     label = self.scene.addText(note.name)
                     label.setDefaultTextColor(QColor("#0f172a"))
@@ -1319,6 +1330,12 @@ def main() -> int:
                 item.setData(Qt.UserRole, track.name)
                 self.track_list.addItem(item)
             self.track_list.blockSignals(False)
+            self.refresh_detected_chord_list()
+
+        def refresh_detected_chord_list(self) -> None:
+            self.chord_list.clear()
+            if self.editor_project is None:
+                return
             for chord in self.editor_project.chords[:200]:
                 self.chord_list.addItem(
                     f"{_format_time(chord.start)}  {chord.label}  ({chord.confidence:.0%})"
@@ -1648,13 +1665,34 @@ def main() -> int:
 
         def _set_chord_candidates(self, analysis) -> None:
             if analysis.candidates:
+                self.chord_list.clear()
                 options = ", ".join(
-                    f"{label} ({confidence:.0%})"
+                    f"{label} ({confidence:.0%}: {self._candidate_notes_text(analysis, label)})"
                     for label, confidence in analysis.candidates
                 )
                 self.current_chord_options.setText(f"Possible: {options}")
+                for label, confidence in analysis.candidates:
+                    notes = self._candidate_notes_text(analysis, label)
+                    item = QListWidgetItem(f"{label}  {confidence:.0%}\n{notes}")
+                    item.setToolTip(
+                        f"{label}\n"
+                        f"Official chord tones: {notes}\n"
+                        f"Detector confidence: {confidence:.0%}"
+                    )
+                    self.chord_list.addItem(item)
             else:
                 self.current_chord_options.setText("Possible: -")
+                self.chord_list.clear()
+                self.chord_list.addItem("No chord candidates here.")
+
+        def _candidate_notes_text(self, analysis, label: str) -> str:
+            notes = analysis.candidate_notes.get(label, [])
+            if not notes:
+                return "-"
+            text = " - ".join(notes)
+            if "/" in label:
+                text += f"  bass {label.split('/', 1)[1]}"
+            return text
 
         def refresh_visible_tracks(self) -> None:
             visible = set()

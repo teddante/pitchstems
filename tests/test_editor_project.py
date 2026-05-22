@@ -8,6 +8,7 @@ from pitchstems.editor_project import (
     analyze_chord,
     analyze_chord_at,
     analyze_chord_region,
+    chord_tones_for_label,
     detect_chords,
     identify_chord,
     midi_note_name,
@@ -54,6 +55,13 @@ def test_analyze_chord_includes_contextual_candidates() -> None:
     assert analysis.label == "C6"
     assert "C6" in labels
     assert "Am7/C" in labels
+    assert analysis.candidate_notes["C6"] == ["C", "E", "G", "A"]
+    assert analysis.candidate_notes["Am7/C"] == ["A", "C", "E", "G"]
+
+
+def test_chord_tones_for_label_orders_extensions_from_root() -> None:
+    assert chord_tones_for_label("Cmaj9") == ["C", "E", "G", "B", "D"]
+    assert chord_tones_for_label("F#7sus4/C#") == ["F#", "B", "C#", "E"]
 
 
 def test_analyze_chord_at_uses_notes_active_at_playhead() -> None:
