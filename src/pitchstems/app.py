@@ -1246,13 +1246,16 @@ def main() -> int:
             self.editor_position = QLabel("00:00.000")
             self.editor_position.setMinimumWidth(86)
             self.current_chord = QLabel("Chord: -")
-            self.current_chord.setMinimumWidth(220)
+            self.current_chord.setFixedWidth(320)
             self.current_chord.setStyleSheet("font-weight: 700; color: #4c1d95;")
             self.chord_context = QLabel("Notes: -")
             self.chord_context.setWordWrap(True)
+            self.chord_context.setFixedHeight(74)
+            self.chord_context.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+            self.chord_context.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             self.chord_context.setStyleSheet("color: #475569;")
             self.note_filter_list = QListWidget()
-            self.note_filter_list.setMaximumHeight(150)
+            self.note_filter_list.setFixedHeight(150)
             self.note_filter_list.setAlternatingRowColors(True)
             self.note_filter_list.setToolTip("Three states: Exclude rejects chords containing this note, Auto uses detector evidence naturally, Force requires chords containing this note.")
             self.note_filter_help = QLabel(
@@ -1312,7 +1315,7 @@ def main() -> int:
             self.track_note_counts: dict[str, int] = {}
             self.editor_track_visibility: dict[str, bool] = {}
             self.chord_list = QListWidget()
-            self.chord_list.setMaximumWidth(240)
+            self.chord_list.setMinimumHeight(160)
             self.chord_list.setAlternatingRowColors(True)
             self.preview_chord_button = QPushButton("Play Chord")
             self.use_chord_button = QPushButton("Use for Selection")
@@ -1493,7 +1496,10 @@ def main() -> int:
 
             editor_body = QHBoxLayout()
             editor_body.setSpacing(10)
+            editor_side_panel = QWidget()
+            editor_side_panel.setFixedWidth(300)
             editor_side = QVBoxLayout()
+            editor_side.setContentsMargins(0, 0, 0, 0)
             editor_side.setSpacing(8)
             editor_side.addWidget(_section_label("Tracks & Mix"))
             editor_side.addLayout(self.playback_controls)
@@ -1522,7 +1528,8 @@ def main() -> int:
             chord_action_row.addWidget(self.reset_note_filter_button)
             editor_side.addLayout(chord_action_row)
             editor_side.addWidget(self.chord_list, 1)
-            editor_body.addLayout(editor_side)
+            editor_side_panel.setLayout(editor_side)
+            editor_body.addWidget(editor_side_panel)
             editor_body.addWidget(self.timeline, 1)
             editor_layout.addLayout(editor_body, 1)
             editor_page.setLayout(editor_layout)
@@ -2444,6 +2451,10 @@ def main() -> int:
             self.timeline.clear_selection()
             self.refresh_current_harmony(self.timeline.position)
 
+        def set_chord_context_text(self, text: str) -> None:
+            self.chord_context.setText(text)
+            self.chord_context.setToolTip(text)
+
         def load_chord_detector_settings(self) -> None:
             preset = self.settings.value("chordDetector/preset", "Balanced")
             if preset not in {"Balanced", "Evidence Only", "Custom"}:
@@ -2546,7 +2557,7 @@ def main() -> int:
         def refresh_current_harmony(self, seconds: float) -> None:
             if self.editor_project is None:
                 self.current_chord.setText("Chord: -")
-                self.chord_context.setText("Notes: -")
+                self.set_chord_context_text("Notes: -")
                 self.chord_list.clear()
                 self.note_filter_list.clear()
                 return
@@ -2583,14 +2594,14 @@ def main() -> int:
                         f"{name} ({weight:.0%})"
                         for name, weight in analysis.note_weights[:12]
                     )
-                    self.chord_context.setText(f"{sample_text}\nWeighted notes: {note_text}")
+                    self.set_chord_context_text(f"{sample_text}\nWeighted notes: {note_text}")
                 elif analysis.active_note_names:
                     note_text = ", ".join(analysis.active_note_names[:32])
                     if len(analysis.active_note_names) > 32:
                         note_text += f", +{len(analysis.active_note_names) - 32} more"
-                    self.chord_context.setText(f"{sample_text}\nNotes in selection: {note_text}")
+                    self.set_chord_context_text(f"{sample_text}\nNotes in selection: {note_text}")
                 else:
-                    self.chord_context.setText(f"{sample_text}\nNotes in selection: -")
+                    self.set_chord_context_text(f"{sample_text}\nNotes in selection: -")
                 return
 
             required, excluded = self.chord_note_constraints()
@@ -2612,9 +2623,9 @@ def main() -> int:
                 note_text = ", ".join(midi_note_name(pitch) for pitch in shown_pitches)
                 if len(unique_pitches) > len(shown_pitches):
                     note_text += f", +{len(unique_pitches) - len(shown_pitches)} more"
-                self.chord_context.setText(f"{sample_text}\nNotes: {note_text}")
+                self.set_chord_context_text(f"{sample_text}\nNotes: {note_text}")
             else:
-                self.chord_context.setText(f"{sample_text}\nNotes: -")
+                self.set_chord_context_text(f"{sample_text}\nNotes: -")
 
         def chord_context_key(self, seconds: float):
             selection = self.timeline.selection_range()
@@ -3037,7 +3048,7 @@ def main() -> int:
             self.fit_song_button.setEnabled(False)
             self.editor_position.setText(_format_time(0))
             self.current_chord.setText("Chord: -")
-            self.chord_context.setText("Notes: -")
+            self.set_chord_context_text("Notes: -")
             self.track_list.clear()
             self.note_filter_list.clear()
             self.track_visibility_checks.clear()
