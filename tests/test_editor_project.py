@@ -176,6 +176,24 @@ def test_energy_chord_scoring_prefers_strong_core_over_weak_color() -> None:
     assert dict(analysis.note_weights)["B"] < dict(analysis.note_weights)["F#"]
 
 
+def test_weighted_chord_candidates_reject_required_tones_with_no_visible_energy() -> None:
+    notes = [
+        _note(0.0, 1.00, 55, velocity=127),  # G
+        _note(0.0, 0.30, 62, velocity=127),  # D
+        _note(0.0, 0.20, 71, velocity=127),  # B
+        _note(0.0, 0.01, 69, velocity=127),  # A
+        _note(0.0, 0.001, 60, velocity=127),  # C, shown as 0%
+        _note(0.0, 0.001, 64, velocity=127),  # E, shown as 0%
+    ]
+
+    analysis = analyze_chord_region(notes, 0.0, 1.0)
+    labels = [label for label, _confidence in analysis.candidates]
+
+    assert analysis.label == "G"
+    assert "Cmaj9(no3)/G" not in labels
+    assert "Em7/G" not in labels
+
+
 def test_detect_chords_merges_adjacent_matching_regions() -> None:
     notes = [
         _note(0.0, 1.0, 60),

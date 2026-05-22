@@ -12,9 +12,10 @@ from pitchstems.pipeline import PipelineResult
 DEFAULT_TEMPO = 500000
 PITCH_NAMES = ("C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B")
 PLAIN_CHORD_THRESHOLD = 0.70
-WEIGHTED_CHORD_THRESHOLD = 0.56
+WEIGHTED_CHORD_THRESHOLD = 0.30
 PLAIN_CANDIDATE_MARGIN = 0.18
 WEIGHTED_CANDIDATE_MARGIN = 0.22
+MIN_WEIGHTED_TONE_SUPPORT = 0.005
 
 
 @dataclass(frozen=True)
@@ -492,14 +493,7 @@ def _score_root(
         exact_bonus = 0.10 if options.use_exact_match_bonus and intervals == required_set else 0.0
         missing_penalty = 0.08 * missing if options.use_missing_penalty else 0.0
         complexity_penalty = _complexity_penalty(required) if options.use_complexity_penalty else 0.0
-        score = (
-            coverage * options.plain_coverage_weight
-            + purity * options.plain_purity_weight
-            + bass_bonus
-            + exact_bonus
-            - missing_penalty
-            - complexity_penalty
-        )
+        score = coverage * purity + bass_bonus + exact_bonus - missing_penalty - complexity_penalty
         if score > best_score:
             best_quality = suffix
             best_score = score
@@ -555,6 +549,17 @@ def _score_weighted_root(
         if not _label_matches_constraints(label, required_pitch_classes, excluded_pitch_classes):
             continue
         required_set = set(required)
+        normalized_support = {
+            interval: interval_weights.get(interval, 0.0) / max_weight
+            for interval in required_set
+        }
+        unsupported = {
+            interval
+            for interval, support in normalized_support.items()
+            if support < MIN_WEIGHTED_TONE_SUPPORT
+        }
+        if unsupported:
+            continue
         template_weight = sum(interval_weights.get(interval, 0.0) for interval in required)
         required_weight = template_weight / total_weight
         extra_weight = 1.0 - required_weight
@@ -567,15 +572,8 @@ def _score_weighted_root(
         exact_bonus = 0.08 if options.use_exact_match_bonus and extra_weight < 0.04 and missing == 0 else 0.0
         missing_penalty = 0.10 * missing if options.use_missing_penalty else 0.0
         complexity_penalty = _complexity_penalty(required) if options.use_complexity_penalty else 0.0
-        score = (
-            coverage * options.coverage_weight
-            + purity * options.purity_weight
-            - extra_weight * options.extra_weight_penalty
-            + bass_bonus
-            + exact_bonus
-            - missing_penalty
-            - complexity_penalty
-        )
+        score = coverage * purity - extra_weight * options.extra_weight_penalty
+        score += bass_bonus + exact_bonus - missing_penalty - complexity_penalty
         if score > best_score:
             best_quality = suffix
             best_score = score
@@ -730,7 +728,7 @@ def _plain_score_explanation(
         ),
         (
             "Score formula: "
-            f"{options.plain_coverage_weight:.2f}*coverage + {options.plain_purity_weight:.2f}*purity "
+            "coverage * purity "
             f"{_formula_modifier_text(options, 0.0)}."
         ),
         f"Raw score {score:.2f}; displayed confidence is a ranking score, not a statistical probability.",
@@ -782,7 +780,7 @@ def _weighted_score_explanation(
         ),
         (
             "Score formula: "
-            f"{options.coverage_weight:.2f}*coverage + {options.purity_weight:.2f}*purity "
+            "coverage * purity "
             f"{_formula_modifier_text(options, options.extra_weight_penalty)}."
         ),
         f"Raw score {score:.2f}; displayed confidence is a ranking score, not a statistical probability.",
