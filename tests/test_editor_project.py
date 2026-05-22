@@ -7,6 +7,7 @@ from pitchstems.editor_project import (
     active_notes_at,
     analyze_chord,
     analyze_chord_at,
+    analyze_chord_region,
     detect_chords,
     identify_chord,
     midi_note_name,
@@ -72,6 +73,36 @@ def test_analyze_chord_at_uses_notes_active_at_playhead() -> None:
     assert analyze_chord_at(notes, 1.4).label is None
 
 
+def test_analyze_chord_region_weights_overlap_and_velocity() -> None:
+    notes = [
+        _note(0.0, 2.0, 60, velocity=100),
+        _note(0.0, 2.0, 64, velocity=96),
+        _note(0.0, 2.0, 67, velocity=92),
+        _note(0.15, 0.25, 62, velocity=50),
+    ]
+
+    analysis = analyze_chord_region(notes, 0.0, 2.0)
+
+    assert analysis.label == "C"
+    assert analysis.note_weights[0][0] == "C"
+    assert dict(analysis.note_weights)["D"] < 0.1
+
+
+def test_analyze_chord_region_can_name_ambiguous_selection_candidates() -> None:
+    notes = [
+        _note(0.0, 1.0, 60),
+        _note(0.0, 1.0, 64),
+        _note(0.0, 1.0, 67),
+        _note(0.0, 1.0, 69),
+    ]
+
+    analysis = analyze_chord_region(notes, 0.0, 1.0)
+    labels = [label for label, _confidence in analysis.candidates]
+
+    assert analysis.label == "C6"
+    assert "Am7/C" in labels
+
+
 def test_detect_chords_merges_adjacent_matching_regions() -> None:
     notes = [
         _note(0.0, 1.0, 60),
@@ -95,5 +126,5 @@ def test_midi_note_name_formats_octaves() -> None:
     assert midi_note_name(60) == "C4"
 
 
-def _note(start: float, end: float, pitch: int) -> NoteEvent:
-    return NoteEvent(stem="piano", start=start, end=end, pitch=pitch, velocity=80)
+def _note(start: float, end: float, pitch: int, velocity: int = 80) -> NoteEvent:
+    return NoteEvent(stem="piano", start=start, end=end, pitch=pitch, velocity=velocity)

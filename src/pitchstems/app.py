@@ -11,6 +11,7 @@ from pitchstems.editor_project import (
     EditorProject,
     active_notes_at,
     analyze_chord_at,
+    analyze_chord_region,
     build_editor_project,
     midi_note_name,
 )
@@ -121,11 +122,17 @@ def main() -> int:
             self.track_geometries: dict[str, tuple[float, float, int, int]] = {}
             self.sticky_items = []
             self.playhead = None
+            self.selection_rect = None
+            self.selection_start: float | None = None
+            self.selection_end: float | None = None
             self.on_position_changed = None
+            self.on_selection_changed = None
             self.pending_pixels_per_second: float | None = None
             self.pending_vertical_zoom: float | None = None
             self.pending_zoom_center_seconds: float | None = None
             self.pending_zoom_center_y: float | None = None
+            self._selecting = False
+            self._selection_anchor: float | None = None
             self._panning = False
             self._last_pan_pos = None
             self.scene = QGraphicsScene(self)
@@ -148,6 +155,9 @@ def main() -> int:
             self.project = project
             self.visible_tracks = {track.name.lower() for track in project.tracks} if project else set()
             self.position = 0.0
+            self.selection_start = None
+            self.selection_end = None
+            self._selecting = False
             self.redraw()
 
         def set_visible_tracks(self, tracks: set[str]) -> None:
@@ -232,6 +242,7 @@ def main() -> int:
             try:
                 self.scene.clear()
                 self.playhead = None
+                self.selection_rect = None
                 self.track_geometries = {}
                 self.sticky_items = []
                 if self.project is None:
@@ -250,6 +261,7 @@ def main() -> int:
                 self._draw_time_grid(duration, width, height)
                 self._draw_chords()
                 self._draw_tracks()
+                self._draw_selection(height)
                 self._draw_playhead(height)
                 self.update_sticky_labels()
             finally:
@@ -350,6 +362,24 @@ def main() -> int:
             self.playhead = self.scene.addLine(0, 0, 0, height, QPen(QColor("#ef4444"), 2))
             self._move_playhead()
 
+        def _draw_selection(self, height: float) -> None:
+            self.selection_rect = None
+            selection = self.selection_range()
+            if selection is None:
+                return
+            start, end = selection
+            x = self._x(start)
+            width = max(2.0, (end - start) * self.pixels_per_second)
+            self.selection_rect = self.scene.addRect(
+                x,
+                0,
+                width,
+                height,
+                QPen(QColor("#2563eb"), 1),
+                QBrush(QColor(37, 99, 235, 38)),
+            )
+            self.selection_rect.setZValue(9)
+
         def _move_playhead(self) -> None:
             if self.playhead is None:
                 return
@@ -357,6 +387,38 @@ def main() -> int:
             line = self.playhead.line()
             line.setLine(x, line.y1(), x, line.y2())
             self.playhead.setLine(line)
+
+        def selection_range(self) -> tuple[float, float] | None:
+            if self.selection_start is None or self.selection_end is None:
+                return None
+            start, end = sorted((self.selection_start, self.selection_end))
+            if end - start < 0.05:
+                return None
+            return start, end
+
+        def clear_selection(self) -> None:
+            self.selection_start = None
+            self.selection_end = None
+            self._selecting = False
+            self._selection_anchor = None
+            if self.selection_rect is not None:
+                self.scene.removeItem(self.selection_rect)
+                self.selection_rect = None
+            if self.on_selection_changed:
+                self.on_selection_changed(None)
+
+        def _set_selection(self, start: float, end: float, notify: bool = False) -> None:
+            if self.project is None:
+                return
+            duration = max(self.project.duration, 0.0)
+            self.selection_start = max(0.0, min(start, duration))
+            self.selection_end = max(0.0, min(end, duration))
+            height = self.scene.sceneRect().height()
+            if self.selection_rect is not None:
+                self.scene.removeItem(self.selection_rect)
+            self._draw_selection(height)
+            if notify and self.on_selection_changed:
+                self.on_selection_changed(self.selection_range())
 
         def _build_track_geometries(self) -> dict[str, tuple[float, float, int, int]]:
             geometries: dict[str, tuple[float, float, int, int]] = {}
@@ -436,6 +498,9 @@ def main() -> int:
                 self.setCursor(Qt.ClosedHandCursor)
                 event.accept()
                 return
+            if event.button() == Qt.LeftButton and self._start_selection_from_event(event):
+                event.accept()
+                return
             if event.button() == Qt.LeftButton and self._scrub_from_event(event):
                 event.accept()
                 return
@@ -449,6 +514,9 @@ def main() -> int:
                 self._last_pan_pos = event.pos()
                 event.accept()
                 return
+            if self._selecting and self._update_selection_from_event(event):
+                event.accept()
+                return
             if event.buttons() & Qt.LeftButton and self._scrub_from_event(event):
                 event.accept()
                 return
@@ -459,6 +527,11 @@ def main() -> int:
                 self._panning = False
                 self._last_pan_pos = None
                 self.unsetCursor()
+                event.accept()
+                return
+            if self._selecting and event.button() == Qt.LeftButton:
+                self._selecting = False
+                self._update_selection_from_event(event, notify=True)
                 event.accept()
                 return
             super().mouseReleaseEvent(event)
@@ -494,6 +567,28 @@ def main() -> int:
                 self.on_position_changed(seconds)
             else:
                 self.set_position(seconds)
+            return True
+
+        def _start_selection_from_event(self, event) -> bool:
+            if self.project is None:
+                return False
+            point = self.mapToScene(event.pos())
+            if point.x() < self.label_width:
+                return False
+            if point.y() > self.chord_height and not (event.modifiers() & Qt.ShiftModifier):
+                return False
+            seconds = (point.x() - self.label_width) / self.pixels_per_second
+            self._selection_anchor = max(0.0, min(seconds, max(self.project.duration, 0.0)))
+            self._selecting = True
+            self._set_selection(self._selection_anchor, self._selection_anchor)
+            return True
+
+        def _update_selection_from_event(self, event, notify: bool = False) -> bool:
+            if self.project is None or self._selection_anchor is None:
+                return False
+            point = self.mapToScene(event.pos())
+            seconds = (point.x() - self.label_width) / self.pixels_per_second
+            self._set_selection(self._selection_anchor, seconds, notify=notify)
             return True
 
         def _x(self, seconds: float) -> float:
@@ -647,6 +742,7 @@ def main() -> int:
             self.current_notes.setStyleSheet("color: #475569;")
             self.timeline = TimelineView()
             self.timeline.on_position_changed = self.set_editor_position_seconds
+            self.timeline.on_selection_changed = self.set_editor_selection
             self.timeline_slider = QSlider(Qt.Horizontal)
             self.timeline_slider.setRange(0, 0)
             self.timeline_slider.setEnabled(False)
@@ -855,11 +951,14 @@ def main() -> int:
             self.setCentralWidget(root)
             self.create_menus()
             self.statusBar().showMessage(
-                "Timeline: Space plays/pauses; wheel scrolls, Shift+wheel scrolls sideways, Ctrl+wheel zooms time, Ctrl+Shift+wheel zooms pitch, middle/right drag pans."
+                "Timeline: Space plays/pauses; drag chord lane or Shift+drag to select chord-analysis range; Esc clears selection; wheel scrolls, Ctrl+wheel zooms."
             )
             self.space_playback_shortcut = QShortcut(QKeySequence("Space"), self)
             self.space_playback_shortcut.setContext(Qt.ApplicationShortcut)
             self.space_playback_shortcut.activated.connect(self.toggle_playback_from_shortcut)
+            self.clear_selection_shortcut = QShortcut(QKeySequence("Esc"), self)
+            self.clear_selection_shortcut.setContext(Qt.ApplicationShortcut)
+            self.clear_selection_shortcut.activated.connect(self.clear_editor_selection)
 
             self.run_full.clicked.connect(self.start_full_processing)
             self.run_midi.clicked.connect(self.start_midi_processing)
@@ -936,7 +1035,7 @@ def main() -> int:
 
         def show_timeline_controls(self) -> None:
             self.statusBar().showMessage(
-                "Timeline controls: Space plays/pauses; click/drag sets playhead; wheel scrolls vertically; Shift+wheel scrolls horizontally; Ctrl+wheel zooms time; Ctrl+Shift+wheel zooms pitch; middle/right drag pans.",
+                "Timeline controls: Space plays/pauses; drag the chord lane or Shift+drag the timeline to select a chord-analysis range; Esc clears selection; click/drag sets playhead; wheel scrolls vertically; Shift+wheel scrolls horizontally; Ctrl+wheel zooms time; Ctrl+Shift+wheel zooms pitch; middle/right drag pans.",
                 12000,
             )
 
@@ -1456,24 +1555,57 @@ def main() -> int:
             if save:
                 self.save_editor_state()
 
+        def set_editor_selection(self, selection: tuple[float, float] | None) -> None:
+            self.refresh_current_harmony(self.timeline.position)
+            if selection is None:
+                self.statusBar().showMessage("Timeline selection cleared.", 3000)
+                return
+            start, end = selection
+            self.statusBar().showMessage(
+                f"Analysing selected range {_format_time(start)} - {_format_time(end)}.",
+                5000,
+            )
+
+        def clear_editor_selection(self) -> None:
+            self.timeline.clear_selection()
+            self.refresh_current_harmony(self.timeline.position)
+
         def refresh_current_harmony(self, seconds: float) -> None:
             if self.editor_project is None:
                 self.current_chord.setText("Chord: -")
                 self.current_chord_options.setText("Possible: -")
                 self.current_notes.setText("Notes: -")
                 return
+            selection = self.timeline.selection_range()
+            if selection is not None:
+                start, end = selection
+                analysis = analyze_chord_region(self.editor_project.notes, start, end)
+                chord = analysis.label or "No clear chord"
+                self.current_chord.setText(
+                    f"Selection: {chord}  ({analysis.confidence:.0%})  "
+                    f"{_format_time(start)} - {_format_time(end)}"
+                )
+                self._set_chord_candidates(analysis)
+                if analysis.note_weights:
+                    note_text = ", ".join(
+                        f"{name} ({weight:.0%})"
+                        for name, weight in analysis.note_weights[:12]
+                    )
+                    self.current_notes.setText(f"Weighted notes: {note_text}")
+                elif analysis.active_note_names:
+                    note_text = ", ".join(analysis.active_note_names[:32])
+                    if len(analysis.active_note_names) > 32:
+                        note_text += f", +{len(analysis.active_note_names) - 32} more"
+                    self.current_notes.setText(f"Notes in selection: {note_text}")
+                else:
+                    self.current_notes.setText("Notes in selection: -")
+                return
+
             analysis = analyze_chord_at(self.editor_project.notes, seconds)
             active_notes = active_notes_at(self.editor_project.notes, seconds)
             chord = analysis.label or "No clear chord"
             self.current_chord.setText(f"Chord: {chord}  ({analysis.confidence:.0%})")
-            if analysis.candidates:
-                options = ", ".join(
-                    f"{label} ({confidence:.0%})"
-                    for label, confidence in analysis.candidates
-                )
-                self.current_chord_options.setText(f"Possible: {options}")
-            else:
-                self.current_chord_options.setText("Possible: -")
+            self._set_chord_candidates(analysis)
             if active_notes:
                 unique_pitches = sorted({note.pitch for note in active_notes})
                 shown_pitches = unique_pitches[:32]
@@ -1483,6 +1615,16 @@ def main() -> int:
                 self.current_notes.setText(f"Notes: {note_text}")
             else:
                 self.current_notes.setText("Notes: -")
+
+        def _set_chord_candidates(self, analysis) -> None:
+            if analysis.candidates:
+                options = ", ".join(
+                    f"{label} ({confidence:.0%})"
+                    for label, confidence in analysis.candidates
+                )
+                self.current_chord_options.setText(f"Possible: {options}")
+            else:
+                self.current_chord_options.setText("Possible: -")
 
         def refresh_visible_tracks(self) -> None:
             visible = set()
