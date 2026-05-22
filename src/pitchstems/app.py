@@ -1272,20 +1272,20 @@ def main() -> int:
             self.chord_detector_preset = QComboBox()
             self.chord_detector_preset.addItems(["Balanced", "Evidence Only", "Custom"])
             self.chord_detector_preset.setToolTip(
-                "Balanced uses the musical ranking helpers. Evidence Only leans on weighted duration and MIDI velocity. Custom lets the switches decide."
+                "Evidence Only ranks from MIDI energy evidence. Balanced also applies musical naming modifiers."
             )
-            self.chord_use_bass = QCheckBox("Bass/root")
+            self.chord_use_bass = QCheckBox("Root rank")
             self.chord_use_bass.setChecked(True)
-            self.chord_use_bass.setToolTip("Give a small bonus when a candidate root is supported by the bass or present in the notes.")
-            self.chord_use_exact = QCheckBox("Exact")
+            self.chord_use_bass.setToolTip("Ranking modifier: give a small bonus when the candidate root is supported by the bass or present in the notes.")
+            self.chord_use_exact = QCheckBox("Exact rank")
             self.chord_use_exact.setChecked(True)
-            self.chord_use_exact.setToolTip("Give a small bonus when the candidate tones exactly match the evidence.")
-            self.chord_use_missing = QCheckBox("Missing")
+            self.chord_use_exact.setToolTip("Ranking modifier: give a small bonus when the candidate tones exactly match the evidence.")
+            self.chord_use_missing = QCheckBox("Missing penalty")
             self.chord_use_missing.setChecked(True)
-            self.chord_use_missing.setToolTip("Penalise candidates that require chord tones not found in the evidence.")
-            self.chord_use_complexity = QCheckBox("Simple")
+            self.chord_use_missing.setToolTip("Ranking modifier: penalise candidates that require chord tones not found in the evidence.")
+            self.chord_use_complexity = QCheckBox("Simple name")
             self.chord_use_complexity.setChecked(True)
-            self.chord_use_complexity.setToolTip("Slightly prefer shorter, simpler chord names when evidence is close.")
+            self.chord_use_complexity.setToolTip("Ranking modifier: slightly prefer shorter, simpler chord names when evidence is close.")
             self.chord_weak_note_floor = QSpinBox()
             self.chord_weak_note_floor.setRange(0, 60)
             self.chord_weak_note_floor.setSingleStep(5)
@@ -1294,6 +1294,11 @@ def main() -> int:
             self.chord_weak_note_floor.setToolTip(
                 "For selected ranges, ignore pitch classes below this percentage of the strongest weighted note when at least three notes remain."
             )
+            self.chord_detector_help = QLabel(
+                "Evidence = MIDI note overlap * velocity energy. Ranking modifiers only choose between chord names."
+            )
+            self.chord_detector_help.setWordWrap(True)
+            self.chord_detector_help.setStyleSheet("color: #64748b;")
             self.load_chord_detector_settings()
             self.timeline = TimelineView()
             self.timeline.on_position_changed = self.set_editor_position_seconds
@@ -1529,6 +1534,7 @@ def main() -> int:
             detector_layout.addWidget(self.chord_use_exact, 2, 1)
             detector_layout.addWidget(self.chord_use_missing, 3, 0)
             detector_layout.addWidget(self.chord_use_complexity, 3, 1)
+            detector_layout.addWidget(self.chord_detector_help, 4, 0, 1, 2)
             detector_group.setLayout(detector_layout)
             editor_side.addWidget(detector_group)
             editor_side.addWidget(_section_label("Note Evidence"))
@@ -2489,11 +2495,25 @@ def main() -> int:
             if preset not in {"Balanced", "Evidence Only", "Custom"}:
                 preset = "Balanced"
             self.chord_detector_preset.setCurrentText(str(preset))
-            self.chord_use_bass.setChecked(self._setting_bool("chordDetector/useBass", True))
-            self.chord_use_exact.setChecked(self._setting_bool("chordDetector/useExact", True))
-            self.chord_use_missing.setChecked(self._setting_bool("chordDetector/useMissing", True))
-            self.chord_use_complexity.setChecked(self._setting_bool("chordDetector/useComplexity", True))
-            self.chord_weak_note_floor.setValue(int(self.settings.value("chordDetector/weakNoteFloor", 0)))
+            if preset == "Evidence Only":
+                self.chord_use_bass.setChecked(False)
+                self.chord_use_exact.setChecked(False)
+                self.chord_use_missing.setChecked(False)
+                self.chord_use_complexity.setChecked(False)
+                self.chord_weak_note_floor.setValue(20)
+            elif preset == "Balanced":
+                self.chord_use_bass.setChecked(True)
+                self.chord_use_exact.setChecked(True)
+                self.chord_use_missing.setChecked(True)
+                self.chord_use_complexity.setChecked(True)
+                self.chord_weak_note_floor.setValue(0)
+            else:
+                self.chord_use_bass.setChecked(self._setting_bool("chordDetector/useBass", True))
+                self.chord_use_exact.setChecked(self._setting_bool("chordDetector/useExact", True))
+                self.chord_use_missing.setChecked(self._setting_bool("chordDetector/useMissing", True))
+                self.chord_use_complexity.setChecked(self._setting_bool("chordDetector/useComplexity", True))
+                self.chord_weak_note_floor.setValue(int(self.settings.value("chordDetector/weakNoteFloor", 0)))
+            self.update_chord_detector_modifier_controls()
 
         def save_chord_detector_settings(self) -> None:
             self.settings.setValue("chordDetector/preset", self.chord_detector_preset.currentText())
@@ -2530,6 +2550,7 @@ def main() -> int:
                     self.chord_weak_note_floor.setValue(20)
             finally:
                 self.updating_chord_detector = False
+            self.update_chord_detector_modifier_controls()
             self.save_chord_detector_settings()
             self.refresh_current_harmony(self.timeline.position)
 
@@ -2541,6 +2562,7 @@ def main() -> int:
                 self.chord_detector_preset.setCurrentText("Custom")
             finally:
                 self.updating_chord_detector = False
+            self.update_chord_detector_modifier_controls()
             self.save_chord_detector_settings()
             self.refresh_current_harmony(self.timeline.position)
 
@@ -2553,6 +2575,7 @@ def main() -> int:
                     self.chord_detector_preset.setCurrentText("Custom")
                 finally:
                     self.updating_chord_detector = False
+            self.update_chord_detector_modifier_controls()
             self.save_chord_detector_settings()
             self.refresh_current_harmony(self.timeline.position)
 
@@ -2564,24 +2587,44 @@ def main() -> int:
                 plain_coverage = 0.58
                 plain_purity = 0.42
                 extra_penalty = 0.0
+                use_ranking_modifiers = False
             else:
                 weighted_coverage = 0.48
                 weighted_purity = 0.38
                 plain_coverage = 0.62
                 plain_purity = 0.30
                 extra_penalty = 0.12
+                use_ranking_modifiers = True
             return ChordScoringOptions(
                 coverage_weight=weighted_coverage,
                 purity_weight=weighted_purity,
                 extra_weight_penalty=extra_penalty,
                 plain_coverage_weight=plain_coverage,
                 plain_purity_weight=plain_purity,
-                use_bass_root_bonus=self.chord_use_bass.isChecked(),
-                use_exact_match_bonus=self.chord_use_exact.isChecked(),
-                use_missing_penalty=self.chord_use_missing.isChecked(),
-                use_complexity_penalty=self.chord_use_complexity.isChecked(),
+                use_bass_root_bonus=use_ranking_modifiers and self.chord_use_bass.isChecked(),
+                use_exact_match_bonus=use_ranking_modifiers and self.chord_use_exact.isChecked(),
+                use_missing_penalty=use_ranking_modifiers and self.chord_use_missing.isChecked(),
+                use_complexity_penalty=use_ranking_modifiers and self.chord_use_complexity.isChecked(),
                 weak_note_floor=self.chord_weak_note_floor.value() / 100,
             )
+
+        def update_chord_detector_modifier_controls(self) -> None:
+            evidence_only = self.chord_detector_preset.currentText() == "Evidence Only"
+            for checkbox in [
+                self.chord_use_bass,
+                self.chord_use_exact,
+                self.chord_use_missing,
+                self.chord_use_complexity,
+            ]:
+                checkbox.setEnabled(not evidence_only)
+            if evidence_only:
+                self.chord_detector_help.setText(
+                    "Evidence Only: raw MIDI energy decides the ranking. Naming modifiers are disabled."
+                )
+            else:
+                self.chord_detector_help.setText(
+                    "Evidence = MIDI note overlap * velocity energy. Ranking modifiers only choose between chord names."
+                )
 
         def refresh_current_harmony(self, seconds: float) -> None:
             if self.editor_project is None:
@@ -2904,20 +2947,23 @@ def main() -> int:
                 f"Source MIDI notes in sampled tracks: {len(source_notes):,}",
                 f"Filtered/analyzed note events: {len(analysis_notes):,}",
                 "",
-                "Detector Settings",
+                "MIDI Energy Evidence",
                 "-" * 17,
                 f"Preset: {self.chord_detector_preset.currentText()}",
                 "MIDI energy model: note energy = overlap_seconds * (velocity / 127)^2",
+                f"Weak-note floor: {scoring_options.weak_note_floor:.0%}",
+                "",
+                "Chord-Name Ranking",
+                "-" * 18,
                 f"Coverage weight: {scoring_options.coverage_weight:.2f}",
                 f"Purity weight: {scoring_options.purity_weight:.2f}",
                 f"Extra-weight penalty: {scoring_options.extra_weight_penalty:.2f}",
                 f"Playhead coverage weight: {scoring_options.plain_coverage_weight:.2f}",
                 f"Playhead purity weight: {scoring_options.plain_purity_weight:.2f}",
-                f"Bass/root bonus enabled: {scoring_options.use_bass_root_bonus}",
+                f"Root-rank modifier enabled: {scoring_options.use_bass_root_bonus}",
                 f"Exact-match bonus enabled: {scoring_options.use_exact_match_bonus}",
                 f"Missing-note penalty enabled: {scoring_options.use_missing_penalty}",
-                f"Complexity penalty enabled: {scoring_options.use_complexity_penalty}",
-                f"Weak-note floor: {scoring_options.weak_note_floor:.0%}",
+                f"Simple-name modifier enabled: {scoring_options.use_complexity_penalty}",
                 "",
                 "Manual Note Evidence Overrides",
                 "-" * 30,

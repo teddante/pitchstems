@@ -720,12 +720,16 @@ def _plain_score_explanation(
         f"Chord tones expected: {' - '.join(_interval_names(root, required))}.",
         f"Matched tones: {', '.join(matched_notes) or 'none'} ({matched}/{len(required_set)}).",
         f"Missing tones: {', '.join(missing_notes) or 'none'}. Extra active tones: {', '.join(extra_notes) or 'none'}.",
-        f"Coverage: {coverage:.0%}. Purity: {purity:.0%}. Bass/root evidence: +{bass_bonus:.2f}.",
-        f"Bonuses/penalties: exact +{exact_bonus:.2f}, missing -{missing_penalty:.2f}, complexity -{complexity_penalty:.2f}.",
+        f"Evidence terms: coverage {coverage:.0%}, purity {purity:.0%}.",
+        "Ranking modifiers: "
+        f"{_modifier_value('bass/root', options.use_bass_root_bonus, bass_bonus, '+')}; "
+        f"{_modifier_value('exact match', options.use_exact_match_bonus, exact_bonus, '+')}; "
+        f"{_modifier_value('missing-note penalty', options.use_missing_penalty, missing_penalty, '-')}; "
+        f"{_modifier_value('complexity penalty', options.use_complexity_penalty, complexity_penalty, '-')}.",
         (
             "Formula: "
             f"{options.plain_coverage_weight:.2f}*coverage + {options.plain_purity_weight:.2f}*purity "
-            "+ enabled bonuses - enabled penalties."
+            "+ enabled ranking modifiers."
         ),
         f"Raw score {score:.2f}; displayed confidence is a ranking score, not a statistical probability.",
     ]
@@ -765,12 +769,17 @@ def _weighted_score_explanation(
         f"Chord tones expected: {' - '.join(_interval_names(root, required))}.",
         f"Matched weighted tones: {', '.join(matched_notes) or 'none'}; required-tone weight {required_weight:.0%}.",
         f"Missing tones: {', '.join(missing_notes) or 'none'}. Extra weighted tones: {', '.join(extra_notes) or 'none'} ({extra_weight:.0%}).",
-        f"Coverage: {coverage:.0%}. Purity: {required_weight:.0%}. Bass/root evidence: +{bass_bonus:.2f}.",
-        f"Bonuses/penalties: exact +{exact_bonus:.2f}, extra-weight -{extra_weight * options.extra_weight_penalty:.2f}, missing -{missing_penalty:.2f}, complexity -{complexity_penalty:.2f}.",
+        f"Evidence terms: coverage {coverage:.0%}, purity {required_weight:.0%}.",
+        "Ranking modifiers: "
+        f"{_modifier_value('bass/root', options.use_bass_root_bonus, bass_bonus, '+')}; "
+        f"{_modifier_value('exact match', options.use_exact_match_bonus, exact_bonus, '+')}; "
+        f"extra-weight penalty -{extra_weight * options.extra_weight_penalty:.2f}; "
+        f"{_modifier_value('missing-note penalty', options.use_missing_penalty, missing_penalty, '-')}; "
+        f"{_modifier_value('complexity penalty', options.use_complexity_penalty, complexity_penalty, '-')}.",
         (
             "Formula: "
             f"{options.coverage_weight:.2f}*coverage + {options.purity_weight:.2f}*purity "
-            f"- {options.extra_weight_penalty:.2f}*extra-weight + enabled bonuses - enabled penalties."
+            f"- {options.extra_weight_penalty:.2f}*extra-weight + enabled ranking modifiers."
         ),
         f"Raw score {score:.2f}; displayed confidence is a ranking score, not a statistical probability.",
     ]
@@ -778,6 +787,12 @@ def _weighted_score_explanation(
 
 def _interval_names(root: int, intervals) -> list[str]:
     return [PITCH_NAMES[(root + interval) % 12] for interval in intervals]
+
+
+def _modifier_value(name: str, enabled: bool, value: float, sign: str) -> str:
+    if not enabled:
+        return f"{name} disabled"
+    return f"{name} {sign}{value:.2f}"
 
 
 def _chord_qualities() -> list[tuple[str, tuple[int, ...]]]:
