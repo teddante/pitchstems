@@ -2,6 +2,7 @@
 
 PitchStems is a local-first desktop and CLI app for turning ordinary audio files into:
 
+- reusable `.pitchstems` project folders
 - separated stems
 - per-stem MIDI files
 - one combined multitrack MIDI file
@@ -10,7 +11,7 @@ PitchStems is a local-first desktop and CLI app for turning ordinary audio files
 The intended pipeline is:
 
 ```text
-audio file -> FFmpeg WAV normalization -> local stem separation -> Basic Pitch per stem -> MIDI export
+audio file -> .pitchstems project -> FFmpeg WAV normalization -> local stem separation -> Basic Pitch per stem -> MIDI export
 ```
 
 No user audio needs to be uploaded to a cloud service.
@@ -21,6 +22,8 @@ No user audio needs to be uploaded to a cloud service.
 - CLI for scripted local processing
 - Fixed BS-RoFormer SW six-stem separation path
 - Basic Pitch MIDI transcription per selected stem
+- First-pass editor timeline for inspecting stem MIDI notes and inferred chord regions
+- Project manifest for reopening completed stem/MIDI/editor timelines without rerunning models
 - Rerun MIDI without rerunning stem separation
 - Windows NVIDIA GPU path for PyTorch and ONNX Runtime
 - Local model cache; no bundled model weights
@@ -125,6 +128,17 @@ The app also exposes:
 - ZIP export on/off
 - open output folder when finished
 - open latest output folder button
+
+After a successful GUI run, the Editor tab builds a first-pass timeline from the generated
+MIDI files. It shows stem lanes, note events, inferred chord regions, a scrubber/playhead,
+and per-track checkboxes for hiding or showing MIDI notes while reviewing the transcription.
+The editor transport can play separated stem audio and lightweight generated MIDI preview
+audio in sync, with per-track mute and volume controls saved in the project.
+
+Each full GUI or CLI run creates a project folder ending in `.pitchstems`. The folder contains
+the copied source audio, normalized work audio, generated stems, MIDI, exports, and a
+`pitchstems.project.json` manifest. Use **Open Project** in the GUI to reopen that manifest
+without rerunning the expensive separation step.
 
 The curated model catalog lives in `src/pitchstems/model_catalog.py`; the native BS-RoFormer runtime bridge lives in `src/pitchstems/separation.py`.
 

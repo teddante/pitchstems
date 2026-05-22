@@ -148,7 +148,7 @@ def separate_stems(
         device=options.device,
         device_ids=list(options.device_ids) if options.device_ids else None,
     )
-    with _redirect_stdout(log):
+    with _redirect_output(log):
         proc_folder(args)
 
     produced = sorted(path for path in output_dir.glob("*.wav") if path.resolve() not in before)
@@ -176,7 +176,7 @@ def _model_cache_dir() -> Path:
 
 
 @contextlib.contextmanager
-def _redirect_stdout(log: Callable[[str], None] | None):
+def _redirect_output(log: Callable[[str], None] | None):
     if log is None:
         yield
         return
@@ -199,7 +199,7 @@ def _redirect_stdout(log: Callable[[str], None] | None):
             self.buffer = ""
 
     writer = LogWriter()
-    with contextlib.redirect_stdout(writer):
+    with contextlib.redirect_stdout(writer), contextlib.redirect_stderr(writer):
         yield
     writer.flush()
 

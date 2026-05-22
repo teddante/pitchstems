@@ -9,6 +9,7 @@ from typing import Callable
 
 from pitchstems.audio import normalize_to_wav
 from pitchstems.midi import combine_midi_tracks
+from pitchstems.project_store import save_project_manifest
 from pitchstems.separation import SeparationOptions, StemResult, separate_stems
 from pitchstems.transcription import MidiOptions, MidiResult, transcribe_stem_to_midi
 
@@ -21,6 +22,7 @@ class PipelineResult:
     midi_files: list[MidiResult]
     combined_midi: Path | None
     zip_path: Path | None
+    source_audio: Path | None = None
 
 
 def process_audio_file(
@@ -42,18 +44,20 @@ def process_audio_file(
         raise FileNotFoundError(input_path)
 
     project_dir = _project_dir(output_root, input_path)
+    audio_dir = project_dir / "audio"
     work_dir = project_dir / "work"
     stems_dir = project_dir / "stems"
     midi_dir = project_dir / "midi"
     export_dir = project_dir / "export"
 
-    for directory in [work_dir, stems_dir, midi_dir, export_dir]:
+    for directory in [audio_dir, work_dir, stems_dir, midi_dir, export_dir]:
         directory.mkdir(parents=True, exist_ok=True)
 
+    project_source_audio = _copy_source_audio(input_path, audio_dir)
     if log:
         log(f"Preparing {input_path.name}...")
         log("Audio prep: FFmpeg -> stereo 44.1 kHz PCM WAV for native BS-RoFormer.")
-    normalized_audio = normalize_to_wav(input_path, work_dir / f"{input_path.stem}.wav")
+    normalized_audio = normalize_to_wav(project_source_audio, work_dir / f"{input_path.stem}.wav")
 
     stems = separate_stems(normalized_audio, stems_dir, profile=quality, options=separation_options, log=log)
 
@@ -86,14 +90,25 @@ def process_audio_file(
     if log:
         log(f"Done: {zip_path or export_dir}")
 
-    return PipelineResult(
+    result = PipelineResult(
         project_dir=project_dir,
         normalized_audio=normalized_audio,
         stems=stems,
         midi_files=midi_files,
         combined_midi=combined_midi,
         zip_path=zip_path,
+        source_audio=project_source_audio,
     )
+    save_project_manifest(
+        result,
+        separation_options=separation_options,
+        midi_options=midi_options,
+        midi_stems=midi_stems,
+        generate_midi=generate_midi,
+        midi_policy=midi_policy,
+        create_zip=create_zip,
+    )
+    return result
 
 
 def process_midi_from_stems(
@@ -146,7 +161,7 @@ def process_midi_from_stems(
     if log:
         log(f"MIDI stage done: {zip_path or export_dir}")
 
-    return PipelineResult(
+    result = PipelineResult(
         project_dir=project_dir,
         normalized_audio=normalized_audio or project_dir / "work" / f"{input_stem}.wav",
         stems=stems,
@@ -154,12 +169,27 @@ def process_midi_from_stems(
         combined_midi=combined_midi,
         zip_path=zip_path,
     )
+    save_project_manifest(
+        result,
+        midi_options=midi_options,
+        midi_stems=midi_stems,
+        generate_midi=True,
+        midi_policy=midi_policy,
+        create_zip=create_zip,
+    )
+    return result
 
 
 def _project_dir(output_root: Path, input_path: Path) -> Path:
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     safe_name = "".join(char if char.isalnum() or char in "-_" else "_" for char in input_path.stem)
-    return output_root / f"{safe_name}-{timestamp}"
+    return output_root / f"{safe_name}-{timestamp}.pitchstems"
+
+
+def _copy_source_audio(input_path: Path, audio_dir: Path) -> Path:
+    target = audio_dir / input_path.name
+    shutil.copy2(input_path, target)
+    return target
 
 
 def _zip_export(export_dir: Path, zip_path: Path) -> Path:
