@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 
 from pitchstems.acceleration import onnxruntime_status, torch_status
+from pitchstems.app_logging import app_logger, logs_dir, setup_app_logging
 from pitchstems.editor_project import (
     EditorProject,
     active_notes_at,
@@ -27,6 +28,8 @@ from pitchstems.transcription import MidiOptions
 
 
 def main() -> int:
+    log_path = setup_app_logging()
+    logger = app_logger()
     try:
         from PySide6.QtCore import QTimer, Qt, QUrl
         from PySide6.QtGui import QAction, QColor, QBrush, QKeySequence, QPen
@@ -436,6 +439,8 @@ def main() -> int:
             self.setWindowTitle("PitchStems")
             self.resize(1220, 780)
             self.choice = model_choice("bs_roformer_sw")
+            self.log_path = log_path
+            self.logger = logger
             self.messages: queue.Queue[str] = queue.Queue()
             self.worker: threading.Thread | None = None
             self.midi_preview_worker: threading.Thread | None = None
@@ -803,6 +808,7 @@ def main() -> int:
             self._add_action(file_menu, "&Save Project", "Ctrl+S", self.save_project_now)
             self._add_action(file_menu, "Choose Output &Folder...", None, self.pick_output_dir)
             self._add_action(file_menu, "Open Output Folder", "Ctrl+E", self.open_latest_output)
+            self._add_action(file_menu, "Open Logs Folder", None, self.open_logs_folder)
             file_menu.addSeparator()
             self._add_action(file_menu, "E&xit", "Alt+F4", self.close)
 
@@ -890,8 +896,10 @@ def main() -> int:
             if not filename:
                 return
             try:
+                self.logger.info("Opening project manifest: %s", filename)
                 result = load_pipeline_result(Path(filename))
             except Exception as exc:
+                self.logger.exception("Could not open project manifest")
                 self.append_log(f"Could not open project: {exc}")
                 return
             self.output_dir.setText(str(result.project_dir.parent))
@@ -902,9 +910,12 @@ def main() -> int:
                 self.drop_zone.path = None
                 self.drop_zone.setText(f"Project: {result.project_dir.name}")
             try:
+                self.logger.info("Building editor for project: %s", result.project_dir)
                 self.set_current_result(result, open_output=False)
             except Exception as exc:
+                self.logger.exception("Could not open project editor")
                 self.append_log(f"Could not open project editor: {exc}")
+                self.append_log(f"Log file: {self.log_path}")
                 self.reset_stage_state()
                 return
             self.append_log(f"Opened project: {result.project_dir}")
@@ -937,6 +948,7 @@ def main() -> int:
         def run_full_pipeline(self) -> None:
             try:
                 midi_stems = self.selected_midi_stems()
+                self.logger.info("Starting full pipeline for %s", self.drop_zone.path)
                 result = process_audio_file(
                     self.drop_zone.path,
                     Path(self.output_dir.text()),
@@ -951,6 +963,7 @@ def main() -> int:
                 self.messages.put(("RESULT", result))
                 self.messages.put(f"Export ready: {result.zip_path or result.project_dir / 'export'}")
             except Exception as exc:
+                self.logger.exception("Full pipeline failed")
                 self.messages.put(f"Error: {exc}")
             finally:
                 self.messages.put("__ENABLE_PROCESS__")
@@ -958,6 +971,7 @@ def main() -> int:
         def run_midi_stage(self) -> None:
             try:
                 midi_stems = self.selected_midi_stems()
+                self.logger.info("Starting MIDI rerun for %s", self.current_result.project_dir)
                 result = process_midi_from_stems(
                     project_dir=self.current_result.project_dir,
                     input_stem=self.current_input_stem,
@@ -972,6 +986,7 @@ def main() -> int:
                 self.messages.put(("RESULT", result))
                 self.messages.put(f"Updated MIDI export: {result.zip_path or result.project_dir / 'export'}")
             except Exception as exc:
+                self.logger.exception("MIDI rerun failed")
                 self.messages.put(f"Error: {exc}")
             finally:
                 self.messages.put("__ENABLE_PROCESS__")
@@ -997,9 +1012,11 @@ def main() -> int:
                     self.append_log(message)
 
         def append_log(self, message: str) -> None:
+            self.logger.info(message)
             self.log.append(message)
 
         def set_current_result(self, result: PipelineResult, open_output: bool = True) -> None:
+            self.logger.info("Setting current result: %s", result.project_dir)
             self.current_result = result
             self.current_stems = result.stems
             self.current_input_stem = (result.source_audio or result.normalized_audio).stem
@@ -1015,7 +1032,14 @@ def main() -> int:
                 self.open_latest_output()
 
         def load_editor_project(self, result: PipelineResult) -> None:
+            self.logger.info("Building editor project model")
             self.editor_project = build_editor_project(result)
+            self.logger.info(
+                "Editor model built: tracks=%d notes=%d chords=%d",
+                len(self.editor_project.tracks),
+                len(self.editor_project.notes),
+                len(self.editor_project.chords),
+            )
             project = self.editor_project
             editor_state = self.load_editor_state(result)
             track_visibility = editor_state.get("track_visibility", {})
@@ -1034,12 +1058,14 @@ def main() -> int:
             self.refresh_editor_lists(track_visibility)
             self.refresh_playback_controls(editor_state)
             self.clear_transport_players()
+            self.logger.info("Drawing editor timeline")
             self.timeline.set_project(project)
             self.timeline.set_visible_tracks(
                 {track.name for track in project.tracks if track_visibility.get(track.name, True)}
             )
             self.set_editor_position_seconds(playhead_seconds)
             self.main_tabs.setCurrentIndex(1)
+            self.logger.info("Editor project loaded")
 
         def load_editor_state(self, result: PipelineResult) -> dict:
             try:
@@ -1201,6 +1227,7 @@ def main() -> int:
                             previews[stem_name] = preview
                     self.messages.put(("MIDI_PREVIEWS", previews))
                 except Exception as exc:
+                    self.logger.exception("MIDI preview render failed")
                     self.messages.put(f"Could not render MIDI previews: {exc}")
 
             self.midi_preview_worker = threading.Thread(target=worker, daemon=True)
@@ -1530,6 +1557,11 @@ def main() -> int:
 
         def open_latest_output(self) -> None:
             target = self.latest_output_dir or Path(self.output_dir.text())
+            target.mkdir(parents=True, exist_ok=True)
+            os.startfile(target)
+
+        def open_logs_folder(self) -> None:
+            target = logs_dir()
             target.mkdir(parents=True, exist_ok=True)
             os.startfile(target)
 
