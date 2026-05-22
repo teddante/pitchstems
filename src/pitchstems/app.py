@@ -1574,7 +1574,10 @@ def main() -> int:
                 self.append_log("Preparing playback...")
                 self.prepare_transport_players(self.current_result)
             self.refresh_playback_mix()
-            position_ms = int(self.timeline.position * 1000)
+            start_position = self.loop_playback_start_seconds()
+            if start_position != self.timeline.position:
+                self.set_editor_position_seconds(start_position, save=False, seek_players=False)
+            position_ms = int(start_position * 1000)
             for player in self.transport_players():
                 player.setPosition(position_ms)
                 player.play()
@@ -1619,7 +1622,23 @@ def main() -> int:
             if master is None:
                 return
             seconds = master.position() / 1000
+            selection = self.timeline.selection_range()
+            if selection is not None:
+                start, end = selection
+                if seconds >= end:
+                    self.seek_audio_players(start)
+                    self.set_editor_position_seconds(start, save=False, seek_players=False)
+                    return
             self.set_editor_position_seconds(seconds, save=False, seek_players=False)
+
+        def loop_playback_start_seconds(self) -> float:
+            selection = self.timeline.selection_range()
+            if selection is None:
+                return self.timeline.position
+            start, end = selection
+            if start <= self.timeline.position < end:
+                return self.timeline.position
+            return start
 
         def set_editor_position_seconds(
             self,
@@ -1648,7 +1667,7 @@ def main() -> int:
                 return
             start, end = selection
             self.statusBar().showMessage(
-                f"Analysing selected range {_format_time(start)} - {_format_time(end)}.",
+                f"Loop selection active: {_format_time(start)} - {_format_time(end)}. Press Play to loop this range.",
                 5000,
             )
 
