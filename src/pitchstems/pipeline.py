@@ -61,9 +61,6 @@ def process_audio_file(
 
     stems = separate_stems(normalized_audio, stems_dir, profile=quality, options=separation_options, log=log)
 
-    for stem in stems:
-        shutil.copy2(stem.path, export_dir / stem.path.name)
-
     midi_files: list[MidiResult] = []
     combined_midi = None
     zip_path = None
@@ -85,10 +82,16 @@ def process_audio_file(
     else:
         if log:
             log("Skipping MIDI transcription.")
-        zip_path = _zip_export(export_dir, project_dir / f"{input_path.stem}_pitchstems.zip") if create_zip else None
+        zip_path = _zip_project_outputs(
+            project_dir,
+            stems,
+            [],
+            None,
+            project_dir / f"{input_path.stem}_pitchstems.zip",
+        ) if create_zip else None
 
     if log:
-        log(f"Done: {zip_path or export_dir}")
+        log(f"Done: {zip_path or project_dir}")
 
     result = PipelineResult(
         project_dir=project_dir,
@@ -130,6 +133,7 @@ def process_midi_from_stems(
     export_dir.mkdir(parents=True, exist_ok=True)
 
     _clear_midi_outputs(midi_dir, export_dir)
+    _remove_export_stem_copies(export_dir, stems)
 
     midi_files: list[MidiResult] = []
     selected_midi_stems = {stem.lower() for stem in midi_stems} if midi_stems is not None else None
@@ -157,9 +161,15 @@ def process_midi_from_stems(
     for midi in midi_files:
         shutil.copy2(midi.path, export_dir / f"{midi.stem}.mid")
 
-    zip_path = _zip_export(export_dir, project_dir / f"{input_stem}_pitchstems.zip") if create_zip else None
+    zip_path = _zip_project_outputs(
+        project_dir,
+        stems,
+        midi_files,
+        combined_midi,
+        project_dir / f"{input_stem}_pitchstems.zip",
+    ) if create_zip else None
     if log:
-        log(f"MIDI stage done: {zip_path or export_dir}")
+        log(f"MIDI stage done: {zip_path or project_dir}")
 
     result = PipelineResult(
         project_dir=project_dir,
@@ -192,11 +202,25 @@ def _copy_source_audio(input_path: Path, audio_dir: Path) -> Path:
     return target
 
 
-def _zip_export(export_dir: Path, zip_path: Path) -> Path:
+def _zip_project_outputs(
+    project_dir: Path,
+    stems: list[StemResult],
+    midi_files: list[MidiResult],
+    combined_midi: Path | None,
+    zip_path: Path,
+) -> Path:
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
-        for path in sorted(export_dir.rglob("*")):
-            if path.is_file():
-                archive.write(path, path.relative_to(export_dir))
+        for stem in stems:
+            if stem.path.is_file():
+                archive.write(stem.path, Path("stems") / stem.path.name)
+        for midi in midi_files:
+            if midi.path.is_file():
+                archive.write(midi.path, Path("midi") / f"{midi.stem}.mid")
+        if combined_midi and combined_midi.is_file():
+            archive.write(combined_midi, Path("midi") / combined_midi.name)
+        manifest = project_dir / "pitchstems.project.json"
+        if manifest.is_file():
+            archive.write(manifest, manifest.name)
     return zip_path
 
 
@@ -208,3 +232,10 @@ def _clear_midi_outputs(midi_dir: Path, export_dir: Path) -> None:
         for path in export_dir.glob(pattern):
             if path.is_file():
                 path.unlink()
+
+
+def _remove_export_stem_copies(export_dir: Path, stems: list[StemResult]) -> None:
+    for stem in stems:
+        duplicate = export_dir / stem.path.name
+        if duplicate.is_file():
+            duplicate.unlink()

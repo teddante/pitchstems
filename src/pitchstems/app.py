@@ -1232,8 +1232,9 @@ def main() -> int:
             self.sonification_samplerate.setValue(44100)
             self.sonification_samplerate.setEnabled(False)
 
-            self.create_zip = QCheckBox("Create ZIP export")
-            self.create_zip.setChecked(True)
+            self.create_zip = QCheckBox("Create ZIP export package")
+            self.create_zip.setChecked(False)
+            self.create_zip.setToolTip("Optional. Creates a shareable ZIP without duplicating stem WAVs inside the project folder.")
             self.open_when_done = QCheckBox("Open output folder when finished")
             self.open_when_done.setChecked(False)
 
@@ -1891,7 +1892,7 @@ def main() -> int:
                     log=self.messages.put,
                 )
                 self.messages.put(("RESULT", result))
-                self.messages.put(f"Export ready: {result.zip_path or result.project_dir / 'export'}")
+                self.messages.put(f"Project ready: {result.project_dir}")
             except Exception as exc:
                 self.logger.exception("Full pipeline failed")
                 self.messages.put(f"Error: {exc}")
@@ -1914,7 +1915,7 @@ def main() -> int:
                     log=self.messages.put,
                 )
                 self.messages.put(("RESULT", result))
-                self.messages.put(f"Updated MIDI export: {result.zip_path or result.project_dir / 'export'}")
+                self.messages.put(f"Updated project MIDI: {result.project_dir}")
             except Exception as exc:
                 self.logger.exception("MIDI rerun failed")
                 self.messages.put(f"Error: {exc}")
@@ -1957,7 +1958,7 @@ def main() -> int:
             self.current_result = result
             self.current_stems = result.stems
             self.current_input_stem = (result.source_audio or result.normalized_audio).stem
-            self.latest_output_dir = result.project_dir / "export"
+            self.latest_output_dir = result.project_dir
             self.open_output.setEnabled(True)
             self.run_midi.setEnabled(True)
             self.separation_status.setText(f"Ready: {len(result.stems)} stems saved in {result.project_dir / 'stems'}")
