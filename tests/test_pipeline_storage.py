@@ -214,6 +214,37 @@ def test_midi_rerun_validates_staged_paths_before_replacing_existing_outputs(
     assert not (project_dir / "export.tmp").exists()
 
 
+def test_midi_rerun_keeps_unrelated_export_midi_files(tmp_path: Path, monkeypatch) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    stems_dir = project_dir / "stems"
+    stem_path = stems_dir / "song_bass.wav"
+    manual_midi = project_dir / "export" / "manual_edit.mid"
+    old_generated = project_dir / "export" / "bass.mid"
+    for path in [stem_path, manual_midi, old_generated]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"old")
+
+    def fake_transcribe(stem_name, _audio_path, output_dir, **_kwargs):
+        midi_path = output_dir / f"{stem_name}.mid"
+        _write_midi(midi_path, 40)
+        return MidiResult(stem_name, midi_path)
+
+    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", fake_transcribe)
+
+    result = process_midi_from_stems(
+        project_dir=project_dir,
+        input_stem="source",
+        normalized_audio=None,
+        stems=[StemResult("bass", stem_path)],
+        midi_stems={"bass"},
+        create_zip=False,
+    )
+
+    assert result.midi_files
+    assert manual_midi.read_bytes() == b"old"
+    assert old_generated.read_bytes() != b"old"
+
+
 def test_full_pipeline_packages_once_after_final_manifest(tmp_path: Path, monkeypatch) -> None:
     input_path = tmp_path / "source.mp3"
     input_path.write_bytes(b"audio")

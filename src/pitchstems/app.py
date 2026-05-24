@@ -1804,8 +1804,8 @@ def main() -> int:
             if self.current_result is None:
                 self.append_log("No project is open yet.")
                 return
-            self.save_editor_state()
-            self.append_log(f"Saved project: {self.current_result.project_dir / PROJECT_FILENAME}")
+            if self.save_editor_state():
+                self.append_log(f"Saved project: {self.current_result.project_dir / PROJECT_FILENAME}")
 
         def pick_output_dir(self) -> None:
             directory = QFileDialog.getExistingDirectory(self, "Choose output directory")
@@ -1955,10 +1955,12 @@ def main() -> int:
                     self.open_output.setEnabled(True)
                     if self.open_when_done.isChecked():
                         self.open_latest_output()
-                else:
+                elif isinstance(message, str):
                     self.append_log(message)
                     if message and not message.startswith("Tracks:"):
                         self.set_activity_message(message[:120])
+                else:
+                    self.logger.warning("Ignored unknown worker message: %r", message)
 
         def append_log(self, message: str) -> None:
             self.logger.info(message)
@@ -3058,9 +3060,9 @@ def main() -> int:
             self.refresh_current_harmony(self.timeline.position)
             self.save_editor_state()
 
-        def save_editor_state(self) -> None:
+        def save_editor_state(self) -> bool:
             if self.current_result is None or self.editor_project is None:
-                return
+                return False
             visibility = {}
             for stem_name, checkbox in self.track_visibility_checks.items():
                 visibility[stem_name] = checkbox.isChecked()
@@ -3113,6 +3115,8 @@ def main() -> int:
             except Exception as exc:
                 self.logger.exception("Could not save editor state")
                 self.statusBar().showMessage(f"Could not save project state: {exc}", 6000)
+                return False
+            return True
 
         def reset_stage_state(self, _path: Path | None = None) -> None:
             self.stop_transport()

@@ -80,3 +80,41 @@ def test_write_json_atomic_replaces_existing_manifest_without_temp_file(tmp_path
 
     assert json.loads(manifest_path.read_text(encoding="utf-8")) == {"new": True}
     assert not list(tmp_path.glob(f".{PROJECT_FILENAME}.*.tmp"))
+
+
+def test_load_project_manifest_rejects_incomplete_project(tmp_path: Path) -> None:
+    manifest_path = tmp_path / PROJECT_FILENAME
+    manifest_path.write_text(
+        json.dumps({"format": "pitchstems-project", "format_version": 1}),
+        encoding="utf-8",
+    )
+
+    try:
+        load_project_manifest(manifest_path)
+    except ValueError as exc:
+        assert "missing required project field" in str(exc)
+    else:
+        raise AssertionError("Expected incomplete project to be rejected")
+
+
+def test_load_project_manifest_rejects_bad_format_version(tmp_path: Path) -> None:
+    manifest_path = tmp_path / PROJECT_FILENAME
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "format": "pitchstems-project",
+                "format_version": "abc",
+                "normalized_audio": "work/source.wav",
+                "stems": [],
+                "midi_files": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        load_project_manifest(manifest_path)
+    except ValueError as exc:
+        assert "invalid PitchStems project format version" in str(exc)
+    else:
+        raise AssertionError("Expected bad project format version to be rejected")

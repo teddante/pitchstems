@@ -173,7 +173,11 @@ def process_midi_from_stems(
             combined_midi = export_dir / staged_combined_midi.name
         staged_export_paths = list(staged_export_dir.iterdir())
 
-        _clear_midi_outputs(midi_dir, export_dir)
+        generated_export_midi = {f"{input_stem}_combined.mid"} | {
+            f"{stem.name}.mid"
+            for stem in stems
+        }
+        _clear_midi_outputs(midi_dir, export_dir, generated_export_midi)
         _remove_export_stem_copies(export_dir, stems)
         if midi_dir.exists():
             shutil.rmtree(midi_dir)
@@ -263,14 +267,20 @@ def _zip_project_outputs(
     return zip_path
 
 
-def _clear_midi_outputs(midi_dir: Path, export_dir: Path) -> None:
+def _clear_midi_outputs(
+    midi_dir: Path,
+    export_dir: Path,
+    generated_export_midi: set[str] | None = None,
+) -> None:
     if midi_dir.exists():
         shutil.rmtree(midi_dir)
     midi_dir.mkdir(parents=True, exist_ok=True)
-    for pattern in ["*.mid", "*.midi"]:
-        for path in export_dir.glob(pattern):
-            if path.is_file():
-                path.unlink()
+    if generated_export_midi is None:
+        return
+    generated_names = {name.lower() for name in generated_export_midi}
+    for path in export_dir.iterdir():
+        if path.is_file() and path.name.lower() in generated_names:
+            path.unlink()
 
 
 def _reset_staging_dir(path: Path) -> None:

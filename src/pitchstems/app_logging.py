@@ -9,6 +9,11 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 
+_ORIGINAL_EXCEPTHOOK = sys.excepthook
+_ORIGINAL_THREADING_EXCEPTHOOK = threading.excepthook
+_FAULT_STREAM = None
+
+
 def logs_dir() -> Path:
     root = os.environ.get("LOCALAPPDATA")
     if root:
@@ -24,7 +29,9 @@ def setup_app_logging() -> Path:
 
     logger = logging.getLogger("pitchstems")
     logger.setLevel(logging.INFO)
-    logger.handlers.clear()
+    for existing_handler in list(logger.handlers):
+        existing_handler.close()
+        logger.removeHandler(existing_handler)
     handler = RotatingFileHandler(
         log_path,
         maxBytes=1_000_000,
@@ -37,18 +44,18 @@ def setup_app_logging() -> Path:
     logger.addHandler(handler)
     logger.info("Starting PitchStems")
 
-    fault_stream = fault_path.open("a", encoding="utf-8")
-    faulthandler.enable(file=fault_stream, all_threads=True)
-
-    original_excepthook = sys.excepthook
-    original_threading_excepthook = threading.excepthook
+    global _FAULT_STREAM
+    if _FAULT_STREAM is not None:
+        _FAULT_STREAM.close()
+    _FAULT_STREAM = fault_path.open("a", encoding="utf-8")
+    faulthandler.enable(file=_FAULT_STREAM, all_threads=True)
 
     def log_exception(exc_type, exc_value, exc_traceback) -> None:
         logger.critical(
             "Uncaught exception",
             exc_info=(exc_type, exc_value, exc_traceback),
         )
-        original_excepthook(exc_type, exc_value, exc_traceback)
+        _ORIGINAL_EXCEPTHOOK(exc_type, exc_value, exc_traceback)
 
     def log_thread_exception(args: threading.ExceptHookArgs) -> None:
         logger.critical(
@@ -56,7 +63,7 @@ def setup_app_logging() -> Path:
             args.thread.name if args.thread else "unknown thread",
             exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
         )
-        original_threading_excepthook(args)
+        _ORIGINAL_THREADING_EXCEPTHOOK(args)
 
     sys.excepthook = log_exception
     threading.excepthook = log_thread_exception

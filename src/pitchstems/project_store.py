@@ -158,8 +158,20 @@ def load_project_manifest(path: Path) -> dict[str, Any]:
 def _validate_manifest(path: Path, manifest: dict[str, Any]) -> None:
     if manifest.get("format") != "pitchstems-project":
         raise ValueError(f"{path} is not a PitchStems project")
-    if int(manifest.get("format_version", 0)) > PROJECT_FORMAT_VERSION:
+    try:
+        format_version = int(manifest.get("format_version", 0))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{path} has an invalid PitchStems project format version") from exc
+    if format_version > PROJECT_FORMAT_VERSION:
         raise ValueError(f"{path} was created by a newer PitchStems project format")
+    required_fields = {
+        "normalized_audio": str,
+        "stems": list,
+        "midi_files": list,
+    }
+    for field_name, expected_type in required_fields.items():
+        if not isinstance(manifest.get(field_name), expected_type):
+            raise ValueError(f"{path} is missing required project field: {field_name}")
 
 
 def _dataclass_dict(value) -> dict[str, Any]:
