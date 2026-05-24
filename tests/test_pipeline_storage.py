@@ -132,6 +132,45 @@ def test_midi_rerun_zip_includes_current_manifest(tmp_path: Path, monkeypatch) -
     assert '"zip_path": "source_pitchstems.zip"' in manifest
 
 
+def test_midi_rerun_keeps_existing_outputs_when_transcription_fails(tmp_path: Path, monkeypatch) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    stems_dir = project_dir / "stems"
+    midi_dir = project_dir / "midi" / "bass"
+    export_dir = project_dir / "export"
+    stem_path = stems_dir / "song_bass.wav"
+    old_midi = midi_dir / "old.mid"
+    old_export = export_dir / "bass.mid"
+    old_combined = export_dir / "source_combined.mid"
+    for path in [stem_path, old_midi, old_export, old_combined]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"old")
+
+    def failing_transcribe(*_args, **_kwargs):
+        raise RuntimeError("basic pitch failed")
+
+    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", failing_transcribe)
+
+    try:
+        process_midi_from_stems(
+            project_dir=project_dir,
+            input_stem="source",
+            normalized_audio=None,
+            stems=[StemResult("bass", stem_path)],
+            midi_stems={"bass"},
+            create_zip=False,
+        )
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("Expected MIDI rerun failure")
+
+    assert old_midi.read_bytes() == b"old"
+    assert old_export.read_bytes() == b"old"
+    assert old_combined.read_bytes() == b"old"
+    assert not (project_dir / "midi.tmp").exists()
+    assert not (project_dir / "export.tmp").exists()
+
+
 def test_full_pipeline_packages_once_after_final_manifest(tmp_path: Path, monkeypatch) -> None:
     input_path = tmp_path / "source.mp3"
     input_path.write_bytes(b"audio")

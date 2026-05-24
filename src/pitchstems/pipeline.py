@@ -127,11 +127,13 @@ def process_midi_from_stems(
     project_dir = project_dir.expanduser().resolve()
     midi_dir = project_dir / "midi"
     export_dir = project_dir / "export"
+    staged_midi_dir = project_dir / "midi.tmp"
+    staged_export_dir = project_dir / "export.tmp"
     midi_dir.mkdir(parents=True, exist_ok=True)
     export_dir.mkdir(parents=True, exist_ok=True)
 
-    _clear_midi_outputs(midi_dir, export_dir)
-    _remove_export_stem_copies(export_dir, stems)
+    _reset_staging_dir(staged_midi_dir)
+    _reset_staging_dir(staged_export_dir)
 
     midi_files: list[MidiResult] = []
     selected_midi_stems = {stem.lower() for stem in midi_stems} if midi_stems is not None else None
@@ -139,25 +141,48 @@ def process_midi_from_stems(
     if log:
         log("Running Basic Pitch from existing separated stems.")
 
-    for stem in stems:
-        if selected_midi_stems is not None and stem.name.lower() not in selected_midi_stems:
-            if log:
-                log(f"Skipping MIDI for {stem.name}: not selected for Basic Pitch analysis.")
-            continue
-        midi = transcribe_stem_to_midi(
-            stem.name,
-            stem.path,
-            midi_dir / stem.name,
-            skip_percussion=skip_percussion,
-            options=midi_options,
-            log=log,
-        )
-        if midi:
-            midi_files.append(midi)
+    try:
+        for stem in stems:
+            if selected_midi_stems is not None and stem.name.lower() not in selected_midi_stems:
+                if log:
+                    log(f"Skipping MIDI for {stem.name}: not selected for Basic Pitch analysis.")
+                continue
+            midi = transcribe_stem_to_midi(
+                stem.name,
+                stem.path,
+                staged_midi_dir / stem.name,
+                skip_percussion=skip_percussion,
+                options=midi_options,
+                log=log,
+            )
+            if midi:
+                midi_files.append(midi)
 
-    combined_midi = combine_midi_tracks(midi_files, export_dir / f"{input_stem}_combined.mid")
-    for midi in midi_files:
-        shutil.copy2(midi.path, export_dir / f"{midi.stem}.mid")
+        staged_combined_midi = combine_midi_tracks(midi_files, staged_export_dir / f"{input_stem}_combined.mid")
+        for midi in midi_files:
+            shutil.copy2(midi.path, staged_export_dir / f"{midi.stem}.mid")
+
+        _clear_midi_outputs(midi_dir, export_dir)
+        _remove_export_stem_copies(export_dir, stems)
+        if midi_dir.exists():
+            shutil.rmtree(midi_dir)
+        shutil.move(str(staged_midi_dir), str(midi_dir))
+
+        final_midi_files = [
+            MidiResult(midi.stem, midi_dir / midi.path.relative_to(staged_midi_dir))
+            for midi in midi_files
+        ]
+        combined_midi = None
+        if staged_combined_midi is not None:
+            combined_midi = export_dir / staged_combined_midi.name
+        for staged_path in staged_export_dir.iterdir():
+            shutil.move(str(staged_path), str(export_dir / staged_path.name))
+        shutil.rmtree(staged_export_dir)
+        midi_files = final_midi_files
+    except Exception:
+        _remove_staging_dir(staged_midi_dir)
+        _remove_staging_dir(staged_export_dir)
+        raise
 
     zip_path = project_dir / f"{input_stem}_pitchstems.zip" if create_zip else None
     if log:
@@ -235,6 +260,16 @@ def _clear_midi_outputs(midi_dir: Path, export_dir: Path) -> None:
         for path in export_dir.glob(pattern):
             if path.is_file():
                 path.unlink()
+
+
+def _reset_staging_dir(path: Path) -> None:
+    _remove_staging_dir(path)
+    path.mkdir(parents=True, exist_ok=True)
+
+
+def _remove_staging_dir(path: Path) -> None:
+    if path.exists():
+        shutil.rmtree(path)
 
 
 def _remove_export_stem_copies(export_dir: Path, stems: list[StemResult]) -> None:

@@ -1931,10 +1931,20 @@ def main() -> int:
                 if isinstance(message, tuple) and message[0] == "RESULT":
                     self.set_current_result(message[1])
                 elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEWS":
-                    self.attach_midi_preview_players(message[1])
+                    _kind, project_dir, previews = message
+                    if self.current_result is not None and self.current_result.project_dir == project_dir:
+                        self.attach_midi_preview_players(previews)
+                    else:
+                        self.logger.info("Ignored stale MIDI preview render for %s", project_dir)
+                        self.end_activity("Ready")
                 elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEW_FAILED":
-                    self.append_log(message[1])
-                    self.end_activity("MIDI preview audio failed")
+                    _kind, project_dir, error = message
+                    if self.current_result is not None and self.current_result.project_dir == project_dir:
+                        self.append_log(error)
+                        self.end_activity("MIDI preview audio failed")
+                    else:
+                        self.logger.info("Ignored stale MIDI preview failure for %s: %s", project_dir, error)
+                        self.end_activity("Ready")
                 elif message == "__ENABLE_PROCESS__":
                     self.set_processing_state(False)
                     self.end_activity("Processing complete")
@@ -2238,8 +2248,11 @@ def main() -> int:
                 try:
                     player.pause()
                     player.setSource(QUrl())
+                    player.deleteLater()
                 except RuntimeError:
                     self.logger.exception("Transport player cleanup failed")
+            for output in [*self.track_audio_outputs.values(), *self.midi_audio_outputs.values()]:
+                output.deleteLater()
             self.track_players.clear()
             self.track_audio_outputs.clear()
             self.midi_players.clear()
@@ -2288,10 +2301,10 @@ def main() -> int:
                         )
                         if preview:
                             previews[stem_name] = preview
-                    self.messages.put(("MIDI_PREVIEWS", previews))
+                    self.messages.put(("MIDI_PREVIEWS", result.project_dir, previews))
                 except Exception as exc:
                     self.logger.exception("MIDI preview render failed")
-                    self.messages.put(("MIDI_PREVIEW_FAILED", f"Could not render MIDI previews: {exc}"))
+                    self.messages.put(("MIDI_PREVIEW_FAILED", result.project_dir, f"Could not render MIDI previews: {exc}"))
 
             self.midi_preview_worker = threading.Thread(target=worker, daemon=True)
             self.midi_preview_worker.start()
@@ -3113,6 +3126,8 @@ def main() -> int:
             self.track_midi_checks.clear()
             self.track_midi_sliders.clear()
             self.track_analysis_checks.clear()
+            self.latest_output_dir = None
+            self.open_output.setEnabled(False)
             self.run_midi.setEnabled(False)
             self.separation_status.setText("Not run yet.")
             self.midi_status.setText("Run the full pipeline first, then MIDI can be rerun without separating again.")
