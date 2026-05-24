@@ -4,7 +4,7 @@ import os
 import queue
 import threading
 from bisect import bisect_left, bisect_right
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from pitchstems.acceleration import onnxruntime_status, torch_status
@@ -33,6 +33,27 @@ from pitchstems.project_store import (
 )
 from pitchstems.separation import SeparationOptions, StemResult
 from pitchstems.transcription import MidiOptions
+
+
+@dataclass(frozen=True)
+class FullRunRequest:
+    input_path: Path
+    output_root: Path
+    separation_options: SeparationOptions
+    generate_midi: bool
+    midi_options: MidiOptions
+    midi_stems: set[str]
+    create_zip: bool
+
+
+@dataclass(frozen=True)
+class MidiRunRequest:
+    result: PipelineResult
+    input_stem: str
+    stems: list[StemResult]
+    midi_options: MidiOptions
+    midi_stems: set[str]
+    create_zip: bool
 
 
 def main() -> int:
@@ -1855,12 +1876,22 @@ def main() -> int:
             if not self.drop_zone.path:
                 self.append_log("Drop an audio file first.")
                 return
+            midi_stems = self.selected_midi_stems()
+            request = FullRunRequest(
+                input_path=self.drop_zone.path,
+                output_root=Path(self.output_dir.text()),
+                separation_options=self.selected_separation_options(),
+                generate_midi=self.generate_midi.isChecked() and bool(midi_stems),
+                midi_options=self.selected_midi_options(),
+                midi_stems=midi_stems,
+                create_zip=self.create_zip.isChecked(),
+            )
 
             self.set_processing_state(True)
             self.begin_activity("Running separation + MIDI...")
             self.open_output.setEnabled(False)
             self.append_log("Starting separation + MIDI pipeline...")
-            self.worker = threading.Thread(target=self.run_full_pipeline, daemon=True)
+            self.worker = threading.Thread(target=self.run_full_pipeline, args=(request,), daemon=True)
             self.worker.start()
 
         def start_midi_processing(self) -> None:
@@ -1869,26 +1900,33 @@ def main() -> int:
             if not self.current_result or not self.current_stems or not self.current_input_stem:
                 self.append_log("Run separation first. Then MIDI can be rerun from those stems.")
                 return
+            request = MidiRunRequest(
+                result=self.current_result,
+                input_stem=self.current_input_stem,
+                stems=list(self.current_stems),
+                midi_options=self.selected_midi_options(),
+                midi_stems=self.selected_midi_stems(),
+                create_zip=self.create_zip.isChecked(),
+            )
 
             self.set_processing_state(True)
             self.begin_activity("Rerunning MIDI...")
             self.append_log("Rerunning MIDI from existing stems...")
-            self.worker = threading.Thread(target=self.run_midi_stage, daemon=True)
+            self.worker = threading.Thread(target=self.run_midi_stage, args=(request,), daemon=True)
             self.worker.start()
 
-        def run_full_pipeline(self) -> None:
+        def run_full_pipeline(self, request: FullRunRequest) -> None:
             try:
-                midi_stems = self.selected_midi_stems()
-                self.logger.info("Starting full pipeline for %s", self.drop_zone.path)
+                self.logger.info("Starting full pipeline for %s", request.input_path)
                 result = process_audio_file(
-                    self.drop_zone.path,
-                    Path(self.output_dir.text()),
-                    separation_options=self.selected_separation_options(),
-                    generate_midi=self.generate_midi.isChecked() and bool(midi_stems),
+                    request.input_path,
+                    request.output_root,
+                    separation_options=request.separation_options,
+                    generate_midi=request.generate_midi,
                     midi_policy="all",
-                    midi_options=self.selected_midi_options(),
-                    midi_stems=midi_stems,
-                    create_zip=self.create_zip.isChecked(),
+                    midi_options=request.midi_options,
+                    midi_stems=request.midi_stems,
+                    create_zip=request.create_zip,
                     log=self.messages.put,
                 )
                 self.messages.put(("RESULT", result))
@@ -1899,19 +1937,18 @@ def main() -> int:
             finally:
                 self.messages.put("__ENABLE_PROCESS__")
 
-        def run_midi_stage(self) -> None:
+        def run_midi_stage(self, request: MidiRunRequest) -> None:
             try:
-                midi_stems = self.selected_midi_stems()
-                self.logger.info("Starting MIDI rerun for %s", self.current_result.project_dir)
+                self.logger.info("Starting MIDI rerun for %s", request.result.project_dir)
                 result = process_midi_from_stems(
-                    project_dir=self.current_result.project_dir,
-                    input_stem=self.current_input_stem,
-                    normalized_audio=self.current_result.normalized_audio,
-                    stems=self.current_stems,
+                    project_dir=request.result.project_dir,
+                    input_stem=request.input_stem,
+                    normalized_audio=request.result.normalized_audio,
+                    stems=request.stems,
                     midi_policy="all",
-                    midi_options=self.selected_midi_options(),
-                    midi_stems=midi_stems,
-                    create_zip=self.create_zip.isChecked(),
+                    midi_options=request.midi_options,
+                    midi_stems=request.midi_stems,
+                    create_zip=request.create_zip,
                     log=self.messages.put,
                 )
                 self.messages.put(("RESULT", result))
@@ -1950,7 +1987,7 @@ def main() -> int:
                 elif message == "__ENABLE_PROCESS__":
                     self.set_processing_state(False)
                     self.end_activity("Processing complete")
-                elif message.startswith("__OUTPUT_DIR__"):
+                elif isinstance(message, str) and message.startswith("__OUTPUT_DIR__"):
                     self.latest_output_dir = Path(message.removeprefix("__OUTPUT_DIR__"))
                     self.open_output.setEnabled(True)
                     if self.open_when_done.isChecked():
