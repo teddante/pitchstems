@@ -1,4 +1,5 @@
 from pathlib import Path
+import wave
 
 from mido import Message, MetaMessage, MidiFile, MidiTrack
 
@@ -9,6 +10,7 @@ from pitchstems.editor_project import (
     analyze_chord,
     analyze_chord_at,
     analyze_chord_region,
+    build_editor_project,
     chord_tones_for_label,
     detect_chords,
     exact_chord_names_for_pitch_classes,
@@ -17,6 +19,8 @@ from pitchstems.editor_project import (
     midi_note_name,
     read_midi_notes,
 )
+from pitchstems.pipeline import PipelineResult
+from pitchstems.separation import StemResult
 
 
 def test_read_midi_notes_returns_absolute_seconds(tmp_path: Path) -> None:
@@ -36,6 +40,27 @@ def test_read_midi_notes_returns_absolute_seconds(tmp_path: Path) -> None:
     assert notes[0].start == 0
     assert notes[0].end == 0.5
     assert notes[0].name == "E2"
+
+
+def test_build_editor_project_uses_audio_duration_when_midi_is_empty(tmp_path: Path) -> None:
+    normalized = tmp_path / "work" / "song.wav"
+    stem_path = tmp_path / "stems" / "song_bass.wav"
+    _write_wav(normalized, duration_seconds=1.0)
+    _write_wav(stem_path, duration_seconds=2.25)
+    result = PipelineResult(
+        project_dir=tmp_path,
+        normalized_audio=normalized,
+        stems=[StemResult("bass", stem_path)],
+        midi_files=[],
+        combined_midi=None,
+        zip_path=None,
+    )
+
+    project = build_editor_project(result)
+
+    assert project.duration == 2.25
+    assert project.tracks[0].audio_path == stem_path
+    assert project.notes == []
 
 
 def test_read_midi_notes_uses_global_format_one_tempo_map(tmp_path: Path) -> None:
@@ -390,3 +415,13 @@ def test_midi_note_name_formats_octaves() -> None:
 
 def _note(start: float, end: float, pitch: int, velocity: int = 80) -> NoteEvent:
     return NoteEvent(stem="piano", start=start, end=end, pitch=pitch, velocity=velocity)
+
+
+def _write_wav(path: Path, duration_seconds: float, sample_rate: int = 8_000) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    frame_count = int(duration_seconds * sample_rate)
+    with wave.open(str(path), "wb") as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(sample_rate)
+        audio.writeframes(b"\x00\x00" * frame_count)

@@ -6,11 +6,11 @@ from pitchstems.midi import combine_midi_tracks
 from pitchstems.transcription import MidiResult
 
 
-def _write_midi(path: Path, note: int) -> None:
-    midi = MidiFile()
+def _write_midi(path: Path, note: int, ticks_per_beat: int = 480, note_off_ticks: int = 120) -> None:
+    midi = MidiFile(ticks_per_beat=ticks_per_beat)
     track = MidiTrack()
     track.append(Message("note_on", note=note, velocity=64, time=0))
-    track.append(Message("note_off", note=note, velocity=0, time=120))
+    track.append(Message("note_off", note=note, velocity=0, time=note_off_ticks))
     midi.tracks.append(track)
     midi.save(path)
 
@@ -31,3 +31,20 @@ def test_combine_midi_tracks_creates_multitrack_file(tmp_path: Path) -> None:
     combined = MidiFile(output)
     assert combined.type == 1
     assert len(combined.tracks) == 2
+
+
+def test_combine_midi_tracks_rescales_different_ticks_per_beat(tmp_path: Path) -> None:
+    first = tmp_path / "first.mid"
+    second = tmp_path / "second.mid"
+    _write_midi(first, 60, ticks_per_beat=480, note_off_ticks=480)
+    _write_midi(second, 64, ticks_per_beat=960, note_off_ticks=960)
+
+    output = tmp_path / "combined.mid"
+    combine_midi_tracks(
+        [MidiResult("first", first), MidiResult("second", second)],
+        output,
+    )
+
+    combined = MidiFile(output)
+    assert combined.ticks_per_beat == 480
+    assert combined.tracks[1][2].time == 480

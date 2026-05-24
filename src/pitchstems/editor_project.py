@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import wave
 from bisect import bisect_right
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -106,7 +107,8 @@ def build_editor_project(result: PipelineResult) -> EditorProject:
     notes.sort(key=lambda note: (note.start, note.stem, note.pitch, note.end))
     duration = max(
         [note.end for note in notes]
-        + [0.0]
+        + [_audio_duration_seconds(track.audio_path) for track in tracks]
+        + [_audio_duration_seconds(result.normalized_audio), 0.0]
     )
     chords = detect_chords(notes)
     return EditorProject(
@@ -117,6 +119,15 @@ def build_editor_project(result: PipelineResult) -> EditorProject:
         chords=chords,
         duration=duration,
     )
+
+
+def _audio_duration_seconds(path: Path) -> float:
+    with contextlib.suppress(OSError, wave.Error, EOFError):
+        with wave.open(str(path), "rb") as audio:
+            frame_rate = audio.getframerate()
+            if frame_rate > 0:
+                return audio.getnframes() / frame_rate
+    return 0.0
 
 
 def read_midi_notes(path: Path, stem: str) -> list[NoteEvent]:
