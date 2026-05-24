@@ -1170,10 +1170,6 @@ def main() -> int:
             self.drop_zone.on_path_changed = self.reset_stage_state
             self.output_dir = QLineEdit(str(Path.home() / "PitchStems Projects"))
             self.output_dir.setReadOnly(True)
-            self.choose_output = QPushButton("Choose Output")
-            self.open_project = QPushButton("Open Project")
-            self.open_output = QPushButton("Open Output Folder")
-            self.open_output.setEnabled(False)
 
             self.separation_status = QLabel("Not run yet.")
             self.separation_status.setWordWrap(True)
@@ -1889,7 +1885,6 @@ def main() -> int:
 
             self.set_processing_state(True)
             self.begin_activity("Running separation + MIDI...")
-            self.open_output.setEnabled(False)
             self.append_log("Starting separation + MIDI pipeline...")
             self.worker = threading.Thread(target=self.run_full_pipeline, args=(request,), daemon=True)
             self.worker.start()
@@ -1989,7 +1984,6 @@ def main() -> int:
                     self.end_activity("Processing complete")
                 elif isinstance(message, str) and message.startswith("__OUTPUT_DIR__"):
                     self.latest_output_dir = Path(message.removeprefix("__OUTPUT_DIR__"))
-                    self.open_output.setEnabled(True)
                     if self.open_when_done.isChecked():
                         self.open_latest_output()
                 elif isinstance(message, str):
@@ -2010,7 +2004,6 @@ def main() -> int:
             self.current_stems = result.stems
             self.current_input_stem = (result.source_audio or result.normalized_audio).stem
             self.latest_output_dir = result.project_dir
-            self.open_output.setEnabled(True)
             self.run_midi.setEnabled(True)
             self.separation_status.setText(f"Ready: {len(result.stems)} stems saved in {result.project_dir / 'stems'}")
             self.midi_status.setText(
@@ -3178,7 +3171,6 @@ def main() -> int:
             self.track_midi_sliders.clear()
             self.track_analysis_checks.clear()
             self.latest_output_dir = None
-            self.open_output.setEnabled(False)
             self.run_midi.setEnabled(False)
             self.separation_status.setText("Not run yet.")
             self.midi_status.setText("Run the full pipeline first, then MIDI can be rerun without separating again.")
@@ -3201,7 +3193,6 @@ def main() -> int:
 
         def set_processing_state(self, busy: bool) -> None:
             self.drop_zone.setEnabled(not busy)
-            self.choose_output.setEnabled(not busy)
             self.run_full.setEnabled(not busy)
             self.run_midi.setEnabled((not busy) and self.current_result is not None)
             self.stem.setEnabled(not busy)

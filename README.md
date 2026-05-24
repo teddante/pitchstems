@@ -127,7 +127,7 @@ The app also exposes:
 - Basic Pitch's official MIDI parameters: onset threshold, frame threshold, minimum note length, note frequency limits, pitch-bend behavior, melodia post-processing, MIDI tempo, note CSV output, raw NPZ output, and MIDI sonification
 - ZIP export package on/off
 - open output folder when finished
-- open latest output folder button
+- File menu actions for opening projects, choosing the output folder, and opening the latest output folder
 
 After a successful GUI run, the Editor tab builds a first-pass timeline from the generated
 MIDI files. It shows stem lanes, note events, inferred chord regions, a scrubber/playhead,
