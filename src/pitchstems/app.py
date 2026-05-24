@@ -1115,9 +1115,9 @@ def main() -> int:
             self.choice = model_choice("bs_roformer_sw")
             self.log_path = log_path
             self.logger = logger
-            self.messages: queue.Queue[str] = queue.Queue()
+            self.messages: queue.Queue[object] = queue.Queue()
             self.worker: threading.Thread | None = None
-            self.midi_preview_worker: threading.Thread | None = None
+            self.midi_preview_workers: dict[Path, threading.Thread] = {}
             self.latest_output_dir: Path | None = None
             self.current_result: PipelineResult | None = None
             self.current_stems: list[StemResult] = []
@@ -1932,6 +1932,7 @@ def main() -> int:
                     self.set_current_result(message[1])
                 elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEWS":
                     _kind, project_dir, previews = message
+                    self.midi_preview_workers.pop(project_dir, None)
                     if self.current_result is not None and self.current_result.project_dir == project_dir:
                         self.attach_midi_preview_players(previews)
                     else:
@@ -1939,6 +1940,7 @@ def main() -> int:
                         self.end_activity("Ready")
                 elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEW_FAILED":
                     _kind, project_dir, error = message
+                    self.midi_preview_workers.pop(project_dir, None)
                     if self.current_result is not None and self.current_result.project_dir == project_dir:
                         self.append_log(error)
                         self.end_activity("MIDI preview audio failed")
@@ -2274,7 +2276,8 @@ def main() -> int:
         def start_midi_preview_render(self, result: PipelineResult) -> None:
             if self.editor_project is None or not self.editor_project.notes:
                 return
-            if self.midi_preview_worker and self.midi_preview_worker.is_alive():
+            existing_worker = self.midi_preview_workers.get(result.project_dir)
+            if existing_worker and existing_worker.is_alive():
                 return
             missing = [
                 track.name
@@ -2306,8 +2309,9 @@ def main() -> int:
                     self.logger.exception("MIDI preview render failed")
                     self.messages.put(("MIDI_PREVIEW_FAILED", result.project_dir, f"Could not render MIDI previews: {exc}"))
 
-            self.midi_preview_worker = threading.Thread(target=worker, daemon=True)
-            self.midi_preview_worker.start()
+            worker_thread = threading.Thread(target=worker, daemon=True)
+            self.midi_preview_workers[result.project_dir] = worker_thread
+            worker_thread.start()
 
         def attach_midi_preview_players(self, previews: dict[str, Path]) -> None:
             if not previews:
@@ -3093,18 +3097,22 @@ def main() -> int:
                 {"start": start, "end": end}
                 for start, end in self.removed_chord_ranges
             ]
-            save_project_manifest(
-                self.current_result,
-                track_visibility=visibility,
-                track_analysis_enabled=analysis_enabled,
-                track_audio_enabled=audio_enabled,
-                track_audio_volume=audio_volume,
-                track_midi_enabled=midi_enabled,
-                track_midi_volume=midi_volume,
-                playhead_seconds=self.timeline.position,
-                chord_overrides=chord_overrides,
-                chord_removals=chord_removals,
-            )
+            try:
+                save_project_manifest(
+                    self.current_result,
+                    track_visibility=visibility,
+                    track_analysis_enabled=analysis_enabled,
+                    track_audio_enabled=audio_enabled,
+                    track_audio_volume=audio_volume,
+                    track_midi_enabled=midi_enabled,
+                    track_midi_volume=midi_volume,
+                    playhead_seconds=self.timeline.position,
+                    chord_overrides=chord_overrides,
+                    chord_removals=chord_removals,
+                )
+            except Exception as exc:
+                self.logger.exception("Could not save editor state")
+                self.statusBar().showMessage(f"Could not save project state: {exc}", 6000)
 
         def reset_stage_state(self, _path: Path | None = None) -> None:
             self.stop_transport()

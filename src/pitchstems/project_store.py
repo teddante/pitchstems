@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import contextlib
 import json
+import os
+import threading
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,6 +15,7 @@ from pitchstems.transcription import MidiOptions, MidiResult
 
 PROJECT_FILENAME = "pitchstems.project.json"
 PROJECT_FORMAT_VERSION = 1
+_MANIFEST_LOCK = threading.Lock()
 
 
 def project_manifest_path(project_dir: Path) -> Path:
@@ -52,69 +56,70 @@ def save_project_manifest(
     project_dir = result.project_dir.expanduser().resolve()
     project_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = project_manifest_path(project_dir)
-    existing = _read_json(manifest_path) if manifest_path.exists() else {}
-    created_at = existing.get("created_at") or _now()
-    source_audio = result.source_audio or _path_from_manifest(project_dir, existing.get("source_audio"))
+    with _MANIFEST_LOCK:
+        existing = _read_json(manifest_path) if manifest_path.exists() else {}
+        created_at = existing.get("created_at") or _now()
+        source_audio = result.source_audio or _path_from_manifest(project_dir, existing.get("source_audio"))
 
-    manifest = {
-        "format": "pitchstems-project",
-        "format_version": PROJECT_FORMAT_VERSION,
-        "created_at": created_at,
-        "updated_at": _now(),
-        "name": project_dir.name.removesuffix(".pitchstems"),
-        "source_audio": _relative_or_absolute(project_dir, source_audio),
-        "normalized_audio": _relative_or_absolute(project_dir, result.normalized_audio),
-        "stems": [
-            {"name": stem.name, "path": _relative_or_absolute(project_dir, stem.path)}
-            for stem in result.stems
-        ],
-        "midi_files": [
-            {"stem": midi.stem, "path": _relative_or_absolute(project_dir, midi.path)}
-            for midi in result.midi_files
-        ],
-        "combined_midi": _relative_or_absolute(project_dir, result.combined_midi),
-        "zip_path": _relative_or_absolute(project_dir, result.zip_path),
-        "settings": {
-            "separation": _dataclass_dict(separation_options)
-            or existing.get("settings", {}).get("separation", {}),
-            "midi": _dataclass_dict(midi_options) or existing.get("settings", {}).get("midi", {}),
-            "midi_stems": sorted(midi_stems) if midi_stems is not None else existing.get("settings", {}).get("midi_stems", []),
-            "generate_midi": generate_midi if generate_midi is not None else existing.get("settings", {}).get("generate_midi"),
-            "midi_policy": midi_policy or existing.get("settings", {}).get("midi_policy"),
-            "create_zip": create_zip if create_zip is not None else existing.get("settings", {}).get("create_zip"),
-        },
-        "editor": {
-            "track_visibility": track_visibility
-            if track_visibility is not None
-            else existing.get("editor", {}).get("track_visibility", {}),
-            "track_analysis_enabled": track_analysis_enabled
-            if track_analysis_enabled is not None
-            else existing.get("editor", {}).get("track_analysis_enabled", {}),
-            "track_audio_enabled": track_audio_enabled
-            if track_audio_enabled is not None
-            else existing.get("editor", {}).get("track_audio_enabled", {}),
-            "track_audio_volume": track_audio_volume
-            if track_audio_volume is not None
-            else existing.get("editor", {}).get("track_audio_volume", {}),
-            "track_midi_enabled": track_midi_enabled
-            if track_midi_enabled is not None
-            else existing.get("editor", {}).get("track_midi_enabled", {}),
-            "track_midi_volume": track_midi_volume
-            if track_midi_volume is not None
-            else existing.get("editor", {}).get("track_midi_volume", {}),
-            "playhead_seconds": playhead_seconds
-            if playhead_seconds is not None
-            else existing.get("editor", {}).get("playhead_seconds", 0.0),
-            "chord_overrides": chord_overrides
-            if chord_overrides is not None
-            else existing.get("editor", {}).get("chord_overrides", []),
-            "chord_removals": chord_removals
-            if chord_removals is not None
-            else existing.get("editor", {}).get("chord_removals", []),
-            "note_edits": existing.get("editor", {}).get("note_edits", []),
-        },
-    }
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+        manifest = {
+            "format": "pitchstems-project",
+            "format_version": PROJECT_FORMAT_VERSION,
+            "created_at": created_at,
+            "updated_at": _now(),
+            "name": project_dir.name.removesuffix(".pitchstems"),
+            "source_audio": _relative_or_absolute(project_dir, source_audio),
+            "normalized_audio": _relative_or_absolute(project_dir, result.normalized_audio),
+            "stems": [
+                {"name": stem.name, "path": _relative_or_absolute(project_dir, stem.path)}
+                for stem in result.stems
+            ],
+            "midi_files": [
+                {"stem": midi.stem, "path": _relative_or_absolute(project_dir, midi.path)}
+                for midi in result.midi_files
+            ],
+            "combined_midi": _relative_or_absolute(project_dir, result.combined_midi),
+            "zip_path": _relative_or_absolute(project_dir, result.zip_path),
+            "settings": {
+                "separation": _dataclass_dict(separation_options)
+                or existing.get("settings", {}).get("separation", {}),
+                "midi": _dataclass_dict(midi_options) or existing.get("settings", {}).get("midi", {}),
+                "midi_stems": sorted(midi_stems) if midi_stems is not None else existing.get("settings", {}).get("midi_stems", []),
+                "generate_midi": generate_midi if generate_midi is not None else existing.get("settings", {}).get("generate_midi"),
+                "midi_policy": midi_policy or existing.get("settings", {}).get("midi_policy"),
+                "create_zip": create_zip if create_zip is not None else existing.get("settings", {}).get("create_zip"),
+            },
+            "editor": {
+                "track_visibility": track_visibility
+                if track_visibility is not None
+                else existing.get("editor", {}).get("track_visibility", {}),
+                "track_analysis_enabled": track_analysis_enabled
+                if track_analysis_enabled is not None
+                else existing.get("editor", {}).get("track_analysis_enabled", {}),
+                "track_audio_enabled": track_audio_enabled
+                if track_audio_enabled is not None
+                else existing.get("editor", {}).get("track_audio_enabled", {}),
+                "track_audio_volume": track_audio_volume
+                if track_audio_volume is not None
+                else existing.get("editor", {}).get("track_audio_volume", {}),
+                "track_midi_enabled": track_midi_enabled
+                if track_midi_enabled is not None
+                else existing.get("editor", {}).get("track_midi_enabled", {}),
+                "track_midi_volume": track_midi_volume
+                if track_midi_volume is not None
+                else existing.get("editor", {}).get("track_midi_volume", {}),
+                "playhead_seconds": playhead_seconds
+                if playhead_seconds is not None
+                else existing.get("editor", {}).get("playhead_seconds", 0.0),
+                "chord_overrides": chord_overrides
+                if chord_overrides is not None
+                else existing.get("editor", {}).get("chord_overrides", []),
+                "chord_removals": chord_removals
+                if chord_removals is not None
+                else existing.get("editor", {}).get("chord_removals", []),
+                "note_edits": existing.get("editor", {}).get("note_edits", []),
+            },
+        }
+        _write_json_atomic(manifest_path, manifest)
     return manifest_path
 
 
@@ -176,6 +181,17 @@ def _jsonable(value):
 
 def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _write_json_atomic(path: Path, data: dict[str, Any]) -> None:
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        temporary.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+        temporary.replace(path)
+    finally:
+        with contextlib.suppress(OSError):
+            if temporary.exists():
+                temporary.unlink()
 
 
 def _now() -> str:

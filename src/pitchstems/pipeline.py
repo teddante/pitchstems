@@ -43,6 +43,7 @@ def process_audio_file(
     if not input_path.exists():
         raise FileNotFoundError(input_path)
 
+    input_stem = _safe_stem(input_path.stem)
     project_dir = _project_dir(output_root, input_path)
     audio_dir = project_dir / "audio"
     work_dir = project_dir / "work"
@@ -57,7 +58,7 @@ def process_audio_file(
     if log:
         log(f"Preparing {input_path.name}...")
         log("Audio prep: FFmpeg -> stereo 44.1 kHz PCM WAV for native BS-RoFormer.")
-    normalized_audio = normalize_to_wav(project_source_audio, work_dir / f"{input_path.stem}.wav")
+    normalized_audio = normalize_to_wav(project_source_audio, work_dir / f"{input_stem}.wav")
 
     stems = separate_stems(normalized_audio, stems_dir, profile=quality, options=separation_options, log=log)
 
@@ -67,7 +68,7 @@ def process_audio_file(
     if generate_midi and midi_policy != "none":
         midi_result = process_midi_from_stems(
             project_dir=project_dir,
-            input_stem=input_path.stem,
+            input_stem=input_stem,
             normalized_audio=normalized_audio,
             stems=stems,
             source_audio=project_source_audio,
@@ -79,11 +80,11 @@ def process_audio_file(
         )
         midi_files = midi_result.midi_files
         combined_midi = midi_result.combined_midi
-        zip_path = project_dir / f"{input_path.stem}_pitchstems.zip" if create_zip else None
+        zip_path = project_dir / f"{input_stem}_pitchstems.zip" if create_zip else None
     else:
         if log:
             log("Skipping MIDI transcription.")
-        zip_path = project_dir / f"{input_path.stem}_pitchstems.zip" if create_zip else None
+        zip_path = project_dir / f"{input_stem}_pitchstems.zip" if create_zip else None
 
     if log:
         log(f"Done: {zip_path or project_dir}")
@@ -129,6 +130,7 @@ def process_midi_from_stems(
     export_dir = project_dir / "export"
     staged_midi_dir = project_dir / "midi.tmp"
     staged_export_dir = project_dir / "export.tmp"
+    input_stem = _safe_stem(input_stem)
     midi_dir.mkdir(parents=True, exist_ok=True)
     export_dir.mkdir(parents=True, exist_ok=True)
 
@@ -162,12 +164,6 @@ def process_midi_from_stems(
         for midi in midi_files:
             shutil.copy2(midi.path, staged_export_dir / f"{midi.stem}.mid")
 
-        _clear_midi_outputs(midi_dir, export_dir)
-        _remove_export_stem_copies(export_dir, stems)
-        if midi_dir.exists():
-            shutil.rmtree(midi_dir)
-        shutil.move(str(staged_midi_dir), str(midi_dir))
-
         final_midi_files = [
             MidiResult(midi.stem, midi_dir / midi.path.relative_to(staged_midi_dir))
             for midi in midi_files
@@ -175,7 +171,15 @@ def process_midi_from_stems(
         combined_midi = None
         if staged_combined_midi is not None:
             combined_midi = export_dir / staged_combined_midi.name
-        for staged_path in staged_export_dir.iterdir():
+        staged_export_paths = list(staged_export_dir.iterdir())
+
+        _clear_midi_outputs(midi_dir, export_dir)
+        _remove_export_stem_copies(export_dir, stems)
+        if midi_dir.exists():
+            shutil.rmtree(midi_dir)
+        shutil.move(str(staged_midi_dir), str(midi_dir))
+
+        for staged_path in staged_export_paths:
             shutil.move(str(staged_path), str(export_dir / staged_path.name))
         shutil.rmtree(staged_export_dir)
         midi_files = final_midi_files
@@ -212,7 +216,7 @@ def process_midi_from_stems(
 
 def _project_dir(output_root: Path, input_path: Path) -> Path:
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    safe_name = "".join(char if char.isalnum() or char in "-_" else "_" for char in input_path.stem)
+    safe_name = _safe_stem(input_path.stem)
     candidate = output_root / f"{safe_name}-{timestamp}.pitchstems"
     if not candidate.exists():
         return candidate
@@ -225,9 +229,16 @@ def _project_dir(output_root: Path, input_path: Path) -> Path:
 
 
 def _copy_source_audio(input_path: Path, audio_dir: Path) -> Path:
-    target = audio_dir / input_path.name
+    target = audio_dir / f"{_safe_stem(input_path.stem)}{input_path.suffix.lower()}"
     shutil.copy2(input_path, target)
     return target
+
+
+def _safe_stem(stem: str, max_length: int = 80) -> str:
+    safe = "".join(char if char.isalnum() or char in "-_" else "_" for char in stem).strip("._-")
+    if not safe:
+        safe = "audio"
+    return safe[:max_length].rstrip("._-") or "audio"
 
 
 def _zip_project_outputs(

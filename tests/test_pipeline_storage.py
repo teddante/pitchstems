@@ -8,6 +8,7 @@ import pitchstems.pipeline as pipeline
 from pitchstems.pipeline import (
     _project_dir,
     _remove_export_stem_copies,
+    _safe_stem,
     _zip_project_outputs,
     process_audio_file,
     process_midi_from_stems,
@@ -171,6 +172,48 @@ def test_midi_rerun_keeps_existing_outputs_when_transcription_fails(tmp_path: Pa
     assert not (project_dir / "export.tmp").exists()
 
 
+def test_midi_rerun_validates_staged_paths_before_replacing_existing_outputs(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    stems_dir = project_dir / "stems"
+    midi_dir = project_dir / "midi" / "bass"
+    export_dir = project_dir / "export"
+    stem_path = stems_dir / "song_bass.wav"
+    old_midi = midi_dir / "old.mid"
+    old_export = export_dir / "bass.mid"
+    outside_midi = tmp_path / "outside.mid"
+    for path in [stem_path, old_midi, old_export]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"old")
+    _write_midi(outside_midi, 40)
+
+    def bad_transcribe(stem_name, _audio_path, _output_dir, **_kwargs):
+        return MidiResult(stem_name, outside_midi)
+
+    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", bad_transcribe)
+
+    try:
+        process_midi_from_stems(
+            project_dir=project_dir,
+            input_stem="source",
+            normalized_audio=None,
+            stems=[StemResult("bass", stem_path)],
+            midi_stems={"bass"},
+            create_zip=False,
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Expected staged path validation failure")
+
+    assert old_midi.read_bytes() == b"old"
+    assert old_export.read_bytes() == b"old"
+    assert not (project_dir / "midi.tmp").exists()
+    assert not (project_dir / "export.tmp").exists()
+
+
 def test_full_pipeline_packages_once_after_final_manifest(tmp_path: Path, monkeypatch) -> None:
     input_path = tmp_path / "source.mp3"
     input_path.write_bytes(b"audio")
@@ -224,6 +267,36 @@ def test_project_dir_avoids_same_second_name_collision(tmp_path: Path) -> None:
 
     assert second != first
     assert second.name.endswith("-2.pitchstems")
+
+
+def test_pipeline_uses_bounded_safe_names_for_long_audio_files(tmp_path: Path, monkeypatch) -> None:
+    long_stem = "YTDown_YouTube_" + ("Very-Long-Title_" * 6)
+    input_path = tmp_path / f"{long_stem}.mp3"
+    input_path.write_bytes(b"audio")
+
+    def fake_normalize(_input_path, output_path):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"wav")
+        return output_path
+
+    def fake_separate(_audio_path, output_dir, **_kwargs):
+        stem_path = output_dir / "source_bass.wav"
+        stem_path.parent.mkdir(parents=True, exist_ok=True)
+        stem_path.write_bytes(b"stem")
+        return [StemResult("bass", stem_path)]
+
+    monkeypatch.setattr(pipeline, "normalize_to_wav", fake_normalize)
+    monkeypatch.setattr(pipeline, "separate_stems", fake_separate)
+
+    result = process_audio_file(input_path, tmp_path / "out", generate_midi=False, create_zip=True)
+    safe_stem = _safe_stem(input_path.stem)
+
+    assert len(safe_stem) <= 80
+    assert result.project_dir.name.startswith(safe_stem)
+    assert result.source_audio == result.project_dir / "audio" / f"{safe_stem}.mp3"
+    assert result.normalized_audio == result.project_dir / "work" / f"{safe_stem}.wav"
+    assert result.zip_path == result.project_dir / f"{safe_stem}_pitchstems.zip"
+    assert max(len(part) for part in result.project_dir.parts) <= 110
 
 
 def _write_midi(path: Path, note: int) -> None:

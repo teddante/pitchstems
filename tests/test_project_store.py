@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from pitchstems.pipeline import PipelineResult
@@ -6,6 +7,7 @@ from pitchstems.project_store import (
     load_pipeline_result,
     load_project_manifest,
     save_project_manifest,
+    _write_json_atomic,
 )
 from pitchstems.separation import SeparationOptions, StemResult
 from pitchstems.transcription import MidiOptions, MidiResult
@@ -68,3 +70,13 @@ def test_save_and_load_project_manifest_round_trip(tmp_path: Path) -> None:
     ]
     assert manifest["editor"]["chord_removals"] == [{"start": 8.0, "end": 9.5}]
     assert manifest["editor"]["track_analysis_enabled"] == {"bass": True}
+
+
+def test_write_json_atomic_replaces_existing_manifest_without_temp_file(tmp_path: Path) -> None:
+    manifest_path = tmp_path / PROJECT_FILENAME
+    manifest_path.write_text('{"old": true}', encoding="utf-8")
+
+    _write_json_atomic(manifest_path, {"new": True})
+
+    assert json.loads(manifest_path.read_text(encoding="utf-8")) == {"new": True}
+    assert not list(tmp_path.glob(f".{PROJECT_FILENAME}.*.tmp"))
