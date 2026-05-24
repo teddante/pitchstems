@@ -70,25 +70,20 @@ def process_audio_file(
             input_stem=input_path.stem,
             normalized_audio=normalized_audio,
             stems=stems,
+            source_audio=project_source_audio,
             midi_policy=midi_policy,
             midi_options=midi_options,
             midi_stems=midi_stems,
-            create_zip=create_zip,
+            create_zip=False,
             log=log,
         )
         midi_files = midi_result.midi_files
         combined_midi = midi_result.combined_midi
-        zip_path = midi_result.zip_path
+        zip_path = project_dir / f"{input_path.stem}_pitchstems.zip" if create_zip else None
     else:
         if log:
             log("Skipping MIDI transcription.")
-        zip_path = _zip_project_outputs(
-            project_dir,
-            stems,
-            [],
-            None,
-            project_dir / f"{input_path.stem}_pitchstems.zip",
-        ) if create_zip else None
+        zip_path = project_dir / f"{input_path.stem}_pitchstems.zip" if create_zip else None
 
     if log:
         log(f"Done: {zip_path or project_dir}")
@@ -111,6 +106,8 @@ def process_audio_file(
         midi_policy=midi_policy,
         create_zip=create_zip,
     )
+    if zip_path:
+        _zip_project_outputs(project_dir, stems, midi_files, combined_midi, zip_path)
     return result
 
 
@@ -119,6 +116,7 @@ def process_midi_from_stems(
     input_stem: str,
     normalized_audio: Path | None,
     stems: list[StemResult],
+    source_audio: Path | None = None,
     midi_policy: str = "pitched",
     midi_options: MidiOptions | None = None,
     midi_stems: set[str] | None = None,
@@ -161,13 +159,7 @@ def process_midi_from_stems(
     for midi in midi_files:
         shutil.copy2(midi.path, export_dir / f"{midi.stem}.mid")
 
-    zip_path = _zip_project_outputs(
-        project_dir,
-        stems,
-        midi_files,
-        combined_midi,
-        project_dir / f"{input_stem}_pitchstems.zip",
-    ) if create_zip else None
+    zip_path = project_dir / f"{input_stem}_pitchstems.zip" if create_zip else None
     if log:
         log(f"MIDI stage done: {zip_path or project_dir}")
 
@@ -178,6 +170,7 @@ def process_midi_from_stems(
         midi_files=midi_files,
         combined_midi=combined_midi,
         zip_path=zip_path,
+        source_audio=source_audio,
     )
     save_project_manifest(
         result,
@@ -187,13 +180,23 @@ def process_midi_from_stems(
         midi_policy=midi_policy,
         create_zip=create_zip,
     )
+    if zip_path:
+        _zip_project_outputs(project_dir, stems, midi_files, combined_midi, zip_path)
     return result
 
 
 def _project_dir(output_root: Path, input_path: Path) -> Path:
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     safe_name = "".join(char if char.isalnum() or char in "-_" else "_" for char in input_path.stem)
-    return output_root / f"{safe_name}-{timestamp}.pitchstems"
+    candidate = output_root / f"{safe_name}-{timestamp}.pitchstems"
+    if not candidate.exists():
+        return candidate
+    index = 2
+    while True:
+        candidate = output_root / f"{safe_name}-{timestamp}-{index}.pitchstems"
+        if not candidate.exists():
+            return candidate
+        index += 1
 
 
 def _copy_source_audio(input_path: Path, audio_dir: Path) -> Path:
@@ -237,5 +240,19 @@ def _clear_midi_outputs(midi_dir: Path, export_dir: Path) -> None:
 def _remove_export_stem_copies(export_dir: Path, stems: list[StemResult]) -> None:
     for stem in stems:
         duplicate = export_dir / stem.path.name
-        if duplicate.is_file():
+        if _looks_like_copied_file(stem.path, duplicate):
             duplicate.unlink()
+
+
+def _looks_like_copied_file(source: Path, candidate: Path) -> bool:
+    if not source.is_file() or not candidate.is_file():
+        return False
+    try:
+        source_stat = source.stat()
+        candidate_stat = candidate.stat()
+    except OSError:
+        return False
+    return (
+        source_stat.st_size == candidate_stat.st_size
+        and source_stat.st_mtime_ns == candidate_stat.st_mtime_ns
+    )

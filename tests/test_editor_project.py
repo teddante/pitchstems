@@ -38,6 +38,43 @@ def test_read_midi_notes_returns_absolute_seconds(tmp_path: Path) -> None:
     assert notes[0].name == "E2"
 
 
+def test_read_midi_notes_uses_global_format_one_tempo_map(tmp_path: Path) -> None:
+    path = tmp_path / "tempo-map.mid"
+    midi = MidiFile(type=1, ticks_per_beat=480)
+    tempo_track = MidiTrack()
+    tempo_track.append(MetaMessage("set_tempo", tempo=1_000_000, time=0))
+    note_track = MidiTrack()
+    note_track.append(Message("note_on", note=60, velocity=90, time=0))
+    note_track.append(Message("note_off", note=60, velocity=0, time=480))
+    midi.tracks.extend([tempo_track, note_track])
+    midi.save(path)
+
+    notes = read_midi_notes(path, "piano")
+
+    assert len(notes) == 1
+    assert notes[0].start == 0
+    assert notes[0].end == 1.0
+
+
+def test_read_midi_notes_applies_tempo_changes_across_note_tracks(tmp_path: Path) -> None:
+    path = tmp_path / "tempo-change.mid"
+    midi = MidiFile(type=1, ticks_per_beat=480)
+    tempo_track = MidiTrack()
+    tempo_track.append(MetaMessage("set_tempo", tempo=500_000, time=0))
+    tempo_track.append(MetaMessage("set_tempo", tempo=1_000_000, time=480))
+    note_track = MidiTrack()
+    note_track.append(Message("note_on", note=60, velocity=90, time=0))
+    note_track.append(Message("note_off", note=60, velocity=0, time=960))
+    midi.tracks.extend([tempo_track, note_track])
+    midi.save(path)
+
+    notes = read_midi_notes(path, "piano")
+
+    assert len(notes) == 1
+    assert notes[0].start == 0
+    assert notes[0].end == 1.5
+
+
 def test_identify_chord_names_common_triads() -> None:
     assert identify_chord([60, 64, 67])[0] == "C"
     assert identify_chord([57, 60, 64])[0] == "Am"
@@ -241,6 +278,19 @@ def test_weighted_force_can_complete_two_note_selection() -> None:
 
     assert analysis.label == "G"
     assert analysis.candidate_notes["G"] == ["G", "B", "D"]
+
+
+def test_playhead_force_can_complete_two_note_chord() -> None:
+    notes = [
+        _note(0.0, 1.0, 55),  # G
+        _note(0.0, 1.0, 62),  # D
+    ]
+
+    analysis = analyze_chord_at(notes, 0.5, required_pitch_classes={11})
+
+    assert analysis.label == "G"
+    assert analysis.candidate_notes["G"] == ["G", "B", "D"]
+    assert "B4" not in analysis.active_note_names
 
 
 def test_weighted_note_floor_removes_trace_extensions_from_candidates() -> None:

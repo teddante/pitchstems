@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from bisect import bisect_right
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -121,16 +122,17 @@ def build_editor_project(result: PipelineResult) -> EditorProject:
 def read_midi_notes(path: Path, stem: str) -> list[NoteEvent]:
     """Read note on/off events from a MIDI file into absolute seconds."""
     midi = MidiFile(path)
+    tempo_map = _tempo_map(midi)
+    tempo_ticks = [tick for tick, _tempo, _seconds in tempo_map]
     notes: list[NoteEvent] = []
 
     for track in midi.tracks:
-        tempo = DEFAULT_TEMPO
-        seconds = 0.0
+        ticks = 0
         active: dict[int, list[tuple[float, int]]] = {}
         for message in track:
-            seconds += tick2second(message.time, midi.ticks_per_beat, tempo)
+            ticks += message.time
+            seconds = _ticks_to_seconds(ticks, tempo_map, tempo_ticks, midi.ticks_per_beat)
             if message.type == "set_tempo":
-                tempo = message.tempo
                 continue
             if message.type == "note_on" and message.velocity > 0:
                 active.setdefault(message.note, []).append((seconds, message.velocity))
@@ -151,6 +153,43 @@ def read_midi_notes(path: Path, stem: str) -> list[NoteEvent]:
                         )
                     )
     return notes
+
+
+def _tempo_map(midi: MidiFile) -> list[tuple[int, int, float]]:
+    tempo_events: list[tuple[int, int]] = []
+    for track in midi.tracks:
+        ticks = 0
+        for message in track:
+            ticks += message.time
+            if message.type == "set_tempo":
+                tempo_events.append((ticks, message.tempo))
+
+    tempo_events.sort(key=lambda item: item[0])
+    current_tempo = DEFAULT_TEMPO
+    last_tick = 0
+    seconds = 0.0
+    segments: list[tuple[int, int, float]] = [(0, current_tempo, 0.0)]
+    for tick, tempo in tempo_events:
+        if tick > last_tick:
+            seconds += tick2second(tick - last_tick, midi.ticks_per_beat, current_tempo)
+            last_tick = tick
+        current_tempo = tempo
+        if segments[-1][0] == tick:
+            segments[-1] = (tick, current_tempo, seconds)
+        else:
+            segments.append((tick, current_tempo, seconds))
+    return segments
+
+
+def _ticks_to_seconds(
+    ticks: int,
+    tempo_map: list[tuple[int, int, float]],
+    tempo_ticks: list[int],
+    ticks_per_beat: int,
+) -> float:
+    index = max(0, bisect_right(tempo_ticks, ticks) - 1)
+    segment_tick, tempo, segment_seconds = tempo_map[index]
+    return segment_seconds + tick2second(ticks - segment_tick, ticks_per_beat, tempo)
 
 
 def detect_chords(notes: list[NoteEvent], minimum_region: float = 0.18) -> list[ChordRegion]:
@@ -335,27 +374,31 @@ def analyze_chord(
 ) -> ChordAnalysis:
     options = scoring_options or ChordScoringOptions()
     active_note_names = [midi_note_name(pitch) for pitch in sorted(set(pitches))]
-    pitch_classes = sorted({pitch % 12 for pitch in pitches})
-    if len(pitch_classes) < 3:
+    observed_pitch_classes = {pitch % 12 for pitch in pitches}
+    effective_pitch_classes = set(observed_pitch_classes)
+    if required_pitch_classes:
+        effective_pitch_classes |= required_pitch_classes
+    pitch_classes = sorted(effective_pitch_classes)
+    if len(effective_pitch_classes) < 3:
         bass = min(pitches) % 12 if pitches else None
         return ChordAnalysis(
             None,
             0.0,
             active_note_names,
-            pitch_classes,
+            sorted(observed_pitch_classes),
             bass=bass,
             partial_hints=partial_harmony_hints(
-                set(pitch_classes),
+                set(observed_pitch_classes),
                 bass,
                 required_pitch_classes=required_pitch_classes,
                 excluded_pitch_classes=excluded_pitch_classes,
             ),
         )
 
-    bass = min(pitches) % 12
+    bass = min(pitches) % 12 if pitches else min(effective_pitch_classes)
     scored_roots: list[tuple[str, float, int, list[str]]] = []
     for root in range(12):
-        scored = _score_root(root, set(pitch_classes), bass, required_pitch_classes, excluded_pitch_classes, options)
+        scored = _score_root(root, effective_pitch_classes, bass, required_pitch_classes, excluded_pitch_classes, options)
         if scored is not None:
             label, score, explanation = scored
             scored_roots.append((label, score, root, explanation))
