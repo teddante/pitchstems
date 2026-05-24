@@ -167,9 +167,41 @@ def test_midi_rerun_keeps_existing_outputs_when_transcription_fails(tmp_path: Pa
 
     assert old_midi.read_bytes() == b"old"
     assert old_export.read_bytes() == b"old"
+    assert not (project_dir / "midi.tmp").exists()
+    assert not (project_dir / "export.tmp").exists()
     assert old_combined.read_bytes() == b"old"
     assert not (project_dir / "midi.tmp").exists()
     assert not (project_dir / "export.tmp").exists()
+
+
+def test_midi_rerun_rejects_empty_explicit_stem_selection_without_replacing_outputs(
+    tmp_path: Path,
+) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    midi_dir = project_dir / "midi" / "bass"
+    export_dir = project_dir / "export"
+    old_midi = midi_dir / "old.mid"
+    old_export = export_dir / "bass.mid"
+    for path in [old_midi, old_export]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"old")
+
+    try:
+        process_midi_from_stems(
+            project_dir=project_dir,
+            input_stem="source",
+            normalized_audio=None,
+            stems=[],
+            midi_stems=set(),
+            create_zip=False,
+        )
+    except ValueError as exc:
+        assert "Choose at least one stem" in str(exc)
+    else:
+        raise AssertionError("Expected empty MIDI stem selection to be rejected")
+
+    assert old_midi.read_bytes() == b"old"
+    assert old_export.read_bytes() == b"old"
 
 
 def test_midi_rerun_validates_staged_paths_before_replacing_existing_outputs(
@@ -243,6 +275,58 @@ def test_midi_rerun_keeps_unrelated_export_midi_files(tmp_path: Path, monkeypatc
     assert result.midi_files
     assert manual_midi.read_bytes() == b"old"
     assert old_generated.read_bytes() != b"old"
+
+
+def test_midi_rerun_restores_previous_outputs_if_replacement_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    stems_dir = project_dir / "stems"
+    midi_dir = project_dir / "midi" / "bass"
+    export_dir = project_dir / "export"
+    stem_path = stems_dir / "song_bass.wav"
+    old_midi = midi_dir / "old.mid"
+    old_export = export_dir / "bass.mid"
+    old_combined = export_dir / "source_combined.mid"
+    for path in [stem_path, old_midi, old_export, old_combined]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"old")
+
+    def fake_transcribe(stem_name, _audio_path, output_dir, **_kwargs):
+        midi_path = output_dir / f"{stem_name}.mid"
+        _write_midi(midi_path, 40)
+        return MidiResult(stem_name, midi_path)
+
+    real_move = pipeline.shutil.move
+
+    def flaky_move(source, destination, *args, **kwargs):
+        if Path(source).name == "midi.tmp":
+            raise OSError("simulated replace failure")
+        return real_move(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", fake_transcribe)
+    monkeypatch.setattr(pipeline.shutil, "move", flaky_move)
+
+    try:
+        process_midi_from_stems(
+            project_dir=project_dir,
+            input_stem="source",
+            normalized_audio=None,
+            stems=[StemResult("bass", stem_path)],
+            midi_stems={"bass"},
+            create_zip=False,
+        )
+    except OSError:
+        pass
+    else:
+        raise AssertionError("Expected MIDI replacement failure")
+
+    assert old_midi.read_bytes() == b"old"
+    assert old_export.read_bytes() == b"old"
+    assert old_combined.read_bytes() == b"old"
+    assert not (project_dir / "midi.backup.tmp").exists()
+    assert not (project_dir / "export.backup.tmp").exists()
 
 
 def test_full_pipeline_packages_once_after_final_manifest(tmp_path: Path, monkeypatch) -> None:
@@ -328,6 +412,14 @@ def test_pipeline_uses_bounded_safe_names_for_long_audio_files(tmp_path: Path, m
     assert result.normalized_audio == result.project_dir / "work" / f"{safe_stem}.wav"
     assert result.zip_path == result.project_dir / f"{safe_stem}_pitchstems.zip"
     assert max(len(part) for part in result.project_dir.parts) <= 110
+
+
+def test_safe_stem_avoids_empty_and_windows_reserved_names() -> None:
+    assert _safe_stem("...") == "audio"
+    assert _safe_stem("CON") == "audio_CON"
+    assert _safe_stem("nul") == "audio_nul"
+    assert _safe_stem("COM1") == "audio_COM1"
+    assert _safe_stem("song?title") == "song_title"
 
 
 def _write_midi(path: Path, note: int) -> None:

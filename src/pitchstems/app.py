@@ -2243,7 +2243,7 @@ def main() -> int:
                 player.setSource(QUrl.fromLocalFile(str(stem.path)))
                 self.track_players[stem.name] = player
                 self.track_audio_outputs[stem.name] = output
-            self.attach_midi_preview_players(self.midi_preview_paths)
+            self.attach_midi_preview_players(self.midi_preview_paths, finish_activity=False)
             self.start_midi_preview_render(result)
             self.refresh_playback_mix()
 
@@ -2315,9 +2315,10 @@ def main() -> int:
             self.midi_preview_workers[result.project_dir] = worker_thread
             worker_thread.start()
 
-        def attach_midi_preview_players(self, previews: dict[str, Path]) -> None:
+        def attach_midi_preview_players(self, previews: dict[str, Path], finish_activity: bool = True) -> None:
             if not previews:
-                self.end_activity("No MIDI preview audio rendered")
+                if finish_activity:
+                    self.end_activity("No MIDI preview audio rendered")
                 return
             self.midi_preview_paths.update(previews)
             for stem_name, midi_preview in previews.items():
@@ -2338,8 +2339,9 @@ def main() -> int:
                     midi_slider.setEnabled(True)
                     midi_slider.setToolTip("MIDI preview audio volume.")
             self.refresh_playback_mix()
-            self.append_log(f"MIDI preview audio ready: {len(previews)} tracks.")
-            self.end_activity("MIDI preview audio ready")
+            if finish_activity:
+                self.append_log(f"MIDI preview audio ready: {len(previews)} tracks.")
+                self.end_activity("MIDI preview audio ready")
 
         def refresh_playback_mix(self) -> None:
             for stem_name, output in self.track_audio_outputs.items():

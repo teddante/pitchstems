@@ -130,15 +130,21 @@ def process_midi_from_stems(
     export_dir = project_dir / "export"
     staged_midi_dir = project_dir / "midi.tmp"
     staged_export_dir = project_dir / "export.tmp"
+    backup_midi_dir = project_dir / "midi.backup.tmp"
+    backup_export_dir = project_dir / "export.backup.tmp"
     input_stem = _safe_stem(input_stem)
+    selected_midi_stems = {stem.lower() for stem in midi_stems} if midi_stems is not None else None
+    if selected_midi_stems is not None and not selected_midi_stems:
+        raise ValueError("Choose at least one stem before rerunning MIDI.")
     midi_dir.mkdir(parents=True, exist_ok=True)
     export_dir.mkdir(parents=True, exist_ok=True)
 
     _reset_staging_dir(staged_midi_dir)
     _reset_staging_dir(staged_export_dir)
+    _remove_staging_dir(backup_midi_dir)
+    _remove_staging_dir(backup_export_dir)
 
     midi_files: list[MidiResult] = []
-    selected_midi_stems = {stem.lower() for stem in midi_stems} if midi_stems is not None else None
     skip_percussion = midi_policy != "all" and selected_midi_stems is None
     if log:
         log("Running Basic Pitch from existing separated stems.")
@@ -177,19 +183,22 @@ def process_midi_from_stems(
             f"{stem.name}.mid"
             for stem in stems
         }
-        _clear_midi_outputs(midi_dir, export_dir, generated_export_midi)
+        _replace_midi_outputs(
+            midi_dir,
+            staged_midi_dir,
+            export_dir,
+            staged_export_paths,
+            generated_export_midi,
+            backup_midi_dir,
+            backup_export_dir,
+        )
         _remove_export_stem_copies(export_dir, stems)
-        if midi_dir.exists():
-            shutil.rmtree(midi_dir)
-        shutil.move(str(staged_midi_dir), str(midi_dir))
-
-        for staged_path in staged_export_paths:
-            shutil.move(str(staged_path), str(export_dir / staged_path.name))
-        shutil.rmtree(staged_export_dir)
         midi_files = final_midi_files
     except Exception:
         _remove_staging_dir(staged_midi_dir)
         _remove_staging_dir(staged_export_dir)
+        _remove_staging_dir(backup_midi_dir)
+        _remove_staging_dir(backup_export_dir)
         raise
 
     zip_path = project_dir / f"{input_stem}_pitchstems.zip" if create_zip else None
@@ -242,7 +251,17 @@ def _safe_stem(stem: str, max_length: int = 80) -> str:
     safe = "".join(char if char.isalnum() or char in "-_" else "_" for char in stem).strip("._-")
     if not safe:
         safe = "audio"
-    return safe[:max_length].rstrip("._-") or "audio"
+    safe = safe[:max_length].rstrip("._-") or "audio"
+    if _is_windows_reserved_name(safe):
+        safe = f"audio_{safe}"
+    return safe
+
+
+def _is_windows_reserved_name(name: str) -> bool:
+    reserved = {"CON", "PRN", "AUX", "NUL", "CLOCK$"}
+    reserved.update(f"COM{index}" for index in range(1, 10))
+    reserved.update(f"LPT{index}" for index in range(1, 10))
+    return name.upper() in reserved
 
 
 def _zip_project_outputs(
@@ -267,20 +286,42 @@ def _zip_project_outputs(
     return zip_path
 
 
-def _clear_midi_outputs(
+def _replace_midi_outputs(
     midi_dir: Path,
+    staged_midi_dir: Path,
     export_dir: Path,
-    generated_export_midi: set[str] | None = None,
+    staged_export_paths: list[Path],
+    generated_export_midi: set[str],
+    backup_midi_dir: Path,
+    backup_export_dir: Path,
 ) -> None:
-    if midi_dir.exists():
-        shutil.rmtree(midi_dir)
-    midi_dir.mkdir(parents=True, exist_ok=True)
-    if generated_export_midi is None:
-        return
     generated_names = {name.lower() for name in generated_export_midi}
-    for path in export_dir.iterdir():
-        if path.is_file() and path.name.lower() in generated_names:
-            path.unlink()
+    try:
+        if midi_dir.exists():
+            shutil.move(str(midi_dir), str(backup_midi_dir))
+        backup_export_dir.mkdir(parents=True, exist_ok=True)
+        for path in list(export_dir.iterdir()):
+            if path.is_file() and path.name.lower() in generated_names:
+                shutil.move(str(path), str(backup_export_dir / path.name))
+
+        shutil.move(str(staged_midi_dir), str(midi_dir))
+        for staged_path in staged_export_paths:
+            shutil.move(str(staged_path), str(export_dir / staged_path.name))
+        _remove_staging_dir(staged_midi_dir)
+        _remove_staging_dir(backup_midi_dir)
+        _remove_staging_dir(backup_export_dir)
+    except Exception:
+        if midi_dir.exists():
+            shutil.rmtree(midi_dir)
+        if backup_midi_dir.exists():
+            shutil.move(str(backup_midi_dir), str(midi_dir))
+        if backup_export_dir.exists():
+            for backup_path in backup_export_dir.iterdir():
+                destination = export_dir / backup_path.name
+                if destination.exists():
+                    destination.unlink()
+                shutil.move(str(backup_path), str(destination))
+        raise
 
 
 def _reset_staging_dir(path: Path) -> None:

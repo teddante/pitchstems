@@ -46,6 +46,7 @@ def setup_app_logging() -> Path:
 
     global _FAULT_STREAM
     if _FAULT_STREAM is not None:
+        faulthandler.disable()
         _FAULT_STREAM.close()
     _FAULT_STREAM = fault_path.open("a", encoding="utf-8")
     faulthandler.enable(file=_FAULT_STREAM, all_threads=True)
