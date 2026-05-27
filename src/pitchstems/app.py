@@ -19,6 +19,7 @@ from pitchstems.editor_project import (
     analyze_chord_at,
     analyze_chord_region,
     build_editor_project,
+    chord_tones_for_label,
     midi_velocity_energy,
     midi_note_name,
 )
@@ -193,14 +194,21 @@ def main() -> int:
         def __init__(self) -> None:
             super().__init__()
             self.chord_label = ""
+            self.source_label = "Selected chord"
             self.pitch_classes: set[int] = set()
             self.setMinimumHeight(94)
             self.setMaximumHeight(112)
             self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             self.setToolTip("Select a chord candidate to see its tones on one octave of piano keys.")
 
-        def set_chord(self, label: str | None, note_names: list[str]) -> None:
+        def set_chord(
+            self,
+            label: str | None,
+            note_names: list[str],
+            source_label: str = "Selected chord",
+        ) -> None:
             self.chord_label = label or ""
+            self.source_label = source_label
             self.pitch_classes = {
                 PITCH_NAMES.index(note_name)
                 for note_name in note_names
@@ -208,7 +216,7 @@ def main() -> int:
             }
             if self.chord_label and self.pitch_classes:
                 tones = " - ".join(note_names)
-                self.setToolTip(f"{self.chord_label}: {tones}")
+                self.setToolTip(f"{self.source_label}: {self.chord_label}\n{tones}")
             else:
                 self.setToolTip("Select a chord candidate to see its tones on one octave of piano keys.")
             self.update()
@@ -222,7 +230,12 @@ def main() -> int:
             painter.drawRect(bounds)
 
             title_height = 18
-            title = self.chord_label or "Selected chord"
+            title = f"{self.source_label}: {self.chord_label}" if self.chord_label else "Selected chord"
+            title = QFontMetrics(painter.font()).elidedText(
+                title,
+                Qt.ElideRight,
+                max(0, bounds.width() - 12),
+            )
             painter.setPen(QColor("#334155"))
             painter.drawText(
                 bounds.left() + 6,
@@ -3385,13 +3398,22 @@ def main() -> int:
             self.refresh_chord_keyboard()
 
         def refresh_chord_keyboard(self) -> None:
+            selected_track_chord = self.timeline.selected_chord
+            if selected_track_chord is not None:
+                note_names = chord_tones_for_label(selected_track_chord.label)
+                self.piano_chord_view.set_chord(
+                    selected_track_chord.label,
+                    note_names,
+                    "Chord track",
+                )
+                return
             item = self.chord_list.currentItem()
             if item is None:
                 self.piano_chord_view.set_chord(None, [])
                 return
             label = item.data(Qt.UserRole)
             note_names = item.data(Qt.UserRole + 2) or []
-            self.piano_chord_view.set_chord(label, note_names)
+            self.piano_chord_view.set_chord(label, note_names, "Inspector")
 
         def _candidate_notes_text(self, analysis, label: str) -> str:
             notes = analysis.candidate_notes.get(label, [])
@@ -3505,7 +3527,9 @@ def main() -> int:
 
         def show_timeline_chord_status(self, chord: ChordRegion | None) -> None:
             if chord is None:
+                self.refresh_chord_keyboard()
                 return
+            self.refresh_chord_keyboard()
             self.statusBar().showMessage(
                 f"Selected {chord.label}: drag middle to move, drag edges to resize, Delete removes it.",
                 6000,
