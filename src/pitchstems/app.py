@@ -171,6 +171,114 @@ def main() -> int:
         def wheelEvent(self, event) -> None:
             event.ignore()
 
+    class PianoChordWidget(QWidget):
+        white_keys = [
+            ("C", 0),
+            ("D", 2),
+            ("E", 4),
+            ("F", 5),
+            ("G", 7),
+            ("A", 9),
+            ("B", 11),
+            ("C", 0),
+        ]
+        black_keys = [
+            ("C#", 1, 0.72),
+            ("Eb", 3, 1.72),
+            ("F#", 6, 3.72),
+            ("Ab", 8, 4.72),
+            ("Bb", 10, 5.72),
+        ]
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.chord_label = ""
+            self.pitch_classes: set[int] = set()
+            self.setMinimumHeight(94)
+            self.setMaximumHeight(112)
+            self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            self.setToolTip("Select a chord candidate to see its tones on one octave of piano keys.")
+
+        def set_chord(self, label: str | None, note_names: list[str]) -> None:
+            self.chord_label = label or ""
+            self.pitch_classes = {
+                PITCH_NAMES.index(note_name)
+                for note_name in note_names
+                if note_name in PITCH_NAMES
+            }
+            if self.chord_label and self.pitch_classes:
+                tones = " - ".join(note_names)
+                self.setToolTip(f"{self.chord_label}: {tones}")
+            else:
+                self.setToolTip("Select a chord candidate to see its tones on one octave of piano keys.")
+            self.update()
+
+        def paintEvent(self, event) -> None:
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.Antialiasing)
+            bounds = self.rect().adjusted(4, 4, -4, -4)
+            painter.fillRect(bounds, QColor("#f8fafc"))
+            painter.setPen(QPen(QColor("#cbd5e1"), 1))
+            painter.drawRect(bounds)
+
+            title_height = 18
+            title = self.chord_label or "Selected chord"
+            painter.setPen(QColor("#334155"))
+            painter.drawText(
+                bounds.left() + 6,
+                bounds.top() + 1,
+                max(0, bounds.width() - 12),
+                title_height,
+                Qt.AlignLeft | Qt.AlignVCenter,
+                title,
+            )
+
+            keyboard_top = bounds.top() + title_height + 2
+            keyboard_height = max(34, bounds.height() - title_height - 4)
+            key_count = len(self.white_keys)
+            white_width = max(1, bounds.width() / key_count)
+
+            for index, (name, pitch_class) in enumerate(self.white_keys):
+                x = round(bounds.left() + index * white_width)
+                next_x = round(bounds.left() + (index + 1) * white_width)
+                width = max(1, next_x - x)
+                highlighted = pitch_class in self.pitch_classes
+                painter.setBrush(QBrush(QColor("#fde68a" if highlighted else "#ffffff")))
+                painter.setPen(QPen(QColor("#94a3b8"), 1))
+                painter.drawRect(x, keyboard_top, width, keyboard_height)
+                painter.setPen(QColor("#1f2937" if highlighted else "#64748b"))
+                painter.drawText(
+                    x,
+                    keyboard_top + keyboard_height - 18,
+                    width,
+                    16,
+                    Qt.AlignCenter,
+                    name,
+                )
+
+            black_width = max(8, round(white_width * 0.56))
+            black_height = round(keyboard_height * 0.62)
+            for name, pitch_class, center_position in self.black_keys:
+                center_x = bounds.left() + center_position * white_width
+                x = round(center_x - black_width / 2)
+                highlighted = pitch_class in self.pitch_classes
+                painter.setBrush(QBrush(QColor("#fbbf24" if highlighted else "#111827")))
+                painter.setPen(QPen(QColor("#475569" if highlighted else "#020617"), 1))
+                painter.drawRect(x, keyboard_top, black_width, black_height)
+                painter.setPen(QColor("#111827" if highlighted else "#f8fafc"))
+                painter.drawText(x, keyboard_top + black_height - 16, black_width, 14, Qt.AlignCenter, name)
+
+            if not self.pitch_classes:
+                painter.setPen(QColor("#64748b"))
+                painter.drawText(
+                    bounds.left(),
+                    keyboard_top,
+                    bounds.width(),
+                    keyboard_height,
+                    Qt.AlignCenter,
+                    "No chord selected",
+                )
+
     class TimelineView(QGraphicsView):
         def __init__(self) -> None:
             super().__init__()
@@ -1358,6 +1466,7 @@ def main() -> int:
             self.chord_list = QListWidget()
             self.chord_list.setMinimumHeight(160)
             self.chord_list.setAlternatingRowColors(True)
+            self.piano_chord_view = PianoChordWidget()
             self.preview_chord_button = QPushButton("Play Chord")
             self.use_chord_button = QPushButton("Use for Selection")
             self.inspect_chord_button = QPushButton("Inspect")
@@ -1564,6 +1673,7 @@ def main() -> int:
             chord_action_grid.addWidget(self.reset_note_filter_button, 1, 0)
             chord_action_grid.addWidget(self.inspect_chord_button, 1, 1)
             editor_side.addLayout(chord_action_grid)
+            editor_side.addWidget(self.piano_chord_view)
             editor_side.addWidget(self.chord_list, 1)
             editor_side_panel.setLayout(editor_side)
             track_mix_panel = QWidget()
@@ -1621,7 +1731,7 @@ def main() -> int:
             self.note_filter_list.itemChanged.connect(self.handle_chord_note_filter_changed)
             self.min_note_evidence_slider.valueChanged.connect(self.handle_min_note_evidence_changed)
             self.chord_list.itemDoubleClicked.connect(self.preview_chord_item)
-            self.chord_list.currentItemChanged.connect(lambda *_args: self.refresh_chord_actions())
+            self.chord_list.currentItemChanged.connect(self.handle_chord_selection_changed)
             self.timeline_slider.valueChanged.connect(self.set_editor_position)
             self.timeline.verticalScrollBar().valueChanged.connect(self.sync_track_control_scroll)
             self.playback_scroll.verticalScrollBar().valueChanged.connect(self.sync_timeline_scroll)
@@ -2180,6 +2290,7 @@ def main() -> int:
             self.editor_track_visibility = track_visibility
             self.track_note_counts = {}
             self.chord_list.clear()
+            self.refresh_chord_keyboard()
             if self.editor_project is None:
                 return
             for note in self.editor_project.notes:
@@ -2197,6 +2308,7 @@ def main() -> int:
             if len(self.editor_project.chords) > 200:
                 self.chord_list.addItem(f"... {len(self.editor_project.chords) - 200} more")
             self.refresh_chord_actions()
+            self.refresh_chord_keyboard()
 
         def set_editor_position(self, value: int) -> None:
             self.set_editor_position_seconds(value / 1000)
@@ -2786,6 +2898,7 @@ def main() -> int:
                 self.current_chord.setText("Chord: -")
                 self.set_chord_context_text("Notes: -")
                 self.chord_list.clear()
+                self.refresh_chord_keyboard()
                 self.note_filter_list.clear()
                 self.inspect_chord_button.setEnabled(False)
                 return
@@ -3256,7 +3369,29 @@ def main() -> int:
                     item = QListWidgetItem(hint)
                     item.setToolTip("Partial harmony hint. This is not a confirmed chord candidate.")
                     self.chord_list.addItem(item)
+            self.select_first_chord_candidate()
             self.refresh_chord_actions()
+
+        def select_first_chord_candidate(self) -> None:
+            for row in range(self.chord_list.count()):
+                item = self.chord_list.item(row)
+                if item.data(Qt.UserRole):
+                    self.chord_list.setCurrentItem(item)
+                    return
+            self.refresh_chord_keyboard()
+
+        def handle_chord_selection_changed(self, *_args) -> None:
+            self.refresh_chord_actions()
+            self.refresh_chord_keyboard()
+
+        def refresh_chord_keyboard(self) -> None:
+            item = self.chord_list.currentItem()
+            if item is None:
+                self.piano_chord_view.set_chord(None, [])
+                return
+            label = item.data(Qt.UserRole)
+            note_names = item.data(Qt.UserRole + 2) or []
+            self.piano_chord_view.set_chord(label, note_names)
 
         def _candidate_notes_text(self, analysis, label: str) -> str:
             notes = analysis.candidate_notes.get(label, [])
@@ -3506,6 +3641,7 @@ def main() -> int:
             self.editor_track_visibility = {}
             _clear_layout(self.playback_controls)
             self.chord_list.clear()
+            self.refresh_chord_keyboard()
             self.timeline.set_project(None)
 
         def set_processing_state(self, busy: bool) -> None:
