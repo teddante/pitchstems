@@ -1343,6 +1343,7 @@ def main() -> int:
             self.track_control_panels: dict[str, QWidget] = {}
             self.track_control_detail_rows: dict[str, tuple[QWidget, QWidget, QWidget]] = {}
             self.track_control_top_spacer: QWidget | None = None
+            self.hidden_track_status: QLabel | None = None
             self.track_note_counts: dict[str, int] = {}
             self.editor_track_visibility: dict[str, bool] = {}
             self.chord_list = QListWidget()
@@ -2201,6 +2202,7 @@ def main() -> int:
             self.track_control_panels.clear()
             self.track_control_detail_rows.clear()
             self.track_control_top_spacer = None
+            self.hidden_track_status = None
             if self.editor_project is None:
                 return
 
@@ -2216,14 +2218,24 @@ def main() -> int:
             top_layout = QVBoxLayout()
             top_layout.setContentsMargins(8, 6, 8, 6)
             top_layout.setSpacing(4)
+            top_title_row = QHBoxLayout()
+            top_title_row.setContentsMargins(0, 0, 0, 0)
+            top_title_row.setSpacing(6)
             top_title = QLabel("Tracks & Mix")
             top_title.setStyleSheet("font-weight: 700; color: #334155;")
+            hidden_status = QLabel("")
+            hidden_status.setStyleSheet("color: #64748b; font-size: 10px;")
+            hidden_status.setToolTip("Tracks hidden with View off are removed from the timeline lanes. Use Show All to restore them.")
             show_all_button = QPushButton("Show All")
             show_all_button.setToolTip("Restore every track to the timeline.")
             show_all_button.clicked.connect(self.show_all_timeline_tracks)
-            top_layout.addWidget(top_title)
+            top_title_row.addWidget(top_title)
+            top_title_row.addStretch(1)
+            top_title_row.addWidget(hidden_status)
+            top_layout.addLayout(top_title_row)
             top_layout.addWidget(show_all_button)
             self.track_control_top_spacer.setLayout(top_layout)
+            self.hidden_track_status = hidden_status
             self.playback_controls.addWidget(self.track_control_top_spacer)
 
             for track in self.editor_project.tracks:
@@ -2271,7 +2283,9 @@ def main() -> int:
 
                 show_check = QCheckBox("View")
                 show_check.setChecked(track_visibility.get(track.name, True))
-                show_check.setToolTip("Show this track's MIDI notes on the timeline. Does not affect chord detection or playback.")
+                show_check.setToolTip(
+                    "Show this track's lane on the timeline. Turning it off hides this row too; use Show All to restore hidden tracks."
+                )
                 show_check.toggled.connect(lambda *_args: self.refresh_visible_tracks())
                 self.track_visibility_checks[track.name] = show_check
                 toggle_row.addWidget(show_check)
@@ -2371,6 +2385,21 @@ def main() -> int:
                 self.track_control_top_spacer.setFixedHeight(int(self.timeline.chord_height))
             if self.editor_project is None:
                 return
+            hidden_tracks = [
+                track.name
+                for track in self.editor_project.tracks
+                if self.track_visibility_checks.get(track.name)
+                and not self.track_visibility_checks[track.name].isChecked()
+            ]
+            if self.hidden_track_status is not None:
+                if hidden_tracks:
+                    self.hidden_track_status.setText(f"Hidden: {len(hidden_tracks)}")
+                    self.hidden_track_status.setToolTip(
+                        "Hidden timeline tracks: " + ", ".join(hidden_tracks)
+                    )
+                else:
+                    self.hidden_track_status.setText("All tracks visible")
+                    self.hidden_track_status.setToolTip("No timeline tracks are hidden.")
             for track in self.editor_project.tracks:
                 panel = self.track_control_panels.get(track.name)
                 if panel is None:
@@ -2521,9 +2550,11 @@ def main() -> int:
                 if midi_slider:
                     midi_slider.setEnabled(True)
                     midi_slider.setToolTip("MIDI preview audio volume.")
-                if self.is_playing:
+                if self.is_playing and self.midi_track_enabled(stem_name):
                     midi_player.setPosition(int(self.timeline.position * 1000))
                     midi_player.play()
+                else:
+                    midi_player.pause()
             self.refresh_playback_mix()
             self.refresh_timeline_track_summaries()
             if finish_activity:
@@ -2538,11 +2569,29 @@ def main() -> int:
                 volume = slider.value() / 100 if slider else 0.8
                 output.setVolume(volume if is_enabled else 0.0)
             for stem_name, output in self.midi_audio_outputs.items():
-                enabled = self.track_midi_checks.get(stem_name)
                 slider = self.track_midi_sliders.get(stem_name)
-                is_enabled = enabled.isChecked() if enabled else False
                 volume = slider.value() / 100 if slider else 0.7
-                output.setVolume(volume if is_enabled else 0.0)
+                output.setVolume(volume if self.midi_track_enabled(stem_name) else 0.0)
+            self.apply_midi_transport_state()
+
+        def midi_track_enabled(self, stem_name: str) -> bool:
+            checkbox = self.track_midi_checks.get(stem_name)
+            return bool(checkbox and checkbox.isEnabled() and checkbox.isChecked())
+
+        def apply_midi_transport_state(self) -> None:
+            if not self.is_playing:
+                return
+            position_ms = int(self.timeline.position * 1000)
+            for stem_name, player in self.midi_players.items():
+                try:
+                    if self.midi_track_enabled(stem_name):
+                        if player.playbackState() != QMediaPlayer.PlayingState:
+                            player.setPosition(position_ms)
+                            player.play()
+                    else:
+                        player.pause()
+                except RuntimeError:
+                    self.logger.exception("MIDI transport state update failed")
 
         def toggle_playback(self) -> None:
             if self.is_playing:
@@ -2564,9 +2613,15 @@ def main() -> int:
             if start_position != self.timeline.position:
                 self.set_editor_position_seconds(start_position, save=False, seek_players=False)
             position_ms = int(start_position * 1000)
-            for player in self.transport_players():
+            for player in self.track_players.values():
                 player.setPosition(position_ms)
                 player.play()
+            for stem_name, player in self.midi_players.items():
+                player.setPosition(position_ms)
+                if self.midi_track_enabled(stem_name):
+                    player.play()
+                else:
+                    player.pause()
             self.is_playing = True
             self.play_button.setText("Pause")
             self.stop_button.setEnabled(True)
@@ -3362,6 +3417,7 @@ def main() -> int:
             self.track_control_panels.clear()
             self.track_control_detail_rows.clear()
             self.track_control_top_spacer = None
+            self.hidden_track_status = None
             self.latest_output_dir = None
             self.run_midi.setEnabled(False)
             self.separation_status.setText("Not run yet.")
