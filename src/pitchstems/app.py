@@ -61,7 +61,7 @@ def main() -> int:
     logger = app_logger()
     try:
         from PySide6.QtCore import QSettings, QTimer, Qt, QUrl
-        from PySide6.QtGui import QAction, QColor, QBrush, QImage, QKeySequence, QPainter, QPen, QPixmap, QShortcut
+        from PySide6.QtGui import QAction, QColor, QBrush, QFontMetrics, QImage, QKeySequence, QPainter, QPen, QPixmap, QShortcut
         from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
         from PySide6.QtWidgets import (
             QApplication,
@@ -553,10 +553,17 @@ def main() -> int:
                     f"Confidence: {chord.confidence:.0%}\n"
                     "Drag the middle to move, drag an edge to resize, Delete removes the selected chord."
                 )
-                text = self.scene.addText(chord.label)
+                label_width = max(8, int(width) - 8)
+                shown_label = QFontMetrics(QApplication.font()).elidedText(
+                    chord.label,
+                    Qt.ElideRight,
+                    label_width,
+                )
+                text = self.scene.addText(shown_label)
                 text.setDefaultTextColor(QColor("#4c1d95"))
                 text.setPos(x + 5, self.ruler_height + 5)
                 text.setData(0, chord)
+                text.setToolTip(rect.toolTip())
                 text.setZValue(8)
                 self._make_sticky_y(text, 34)
 
@@ -1616,6 +1623,7 @@ def main() -> int:
             self.chord_list.currentItemChanged.connect(lambda *_args: self.refresh_chord_actions())
             self.timeline_slider.valueChanged.connect(self.set_editor_position)
             self.timeline.verticalScrollBar().valueChanged.connect(self.sync_track_control_scroll)
+            self.playback_scroll.verticalScrollBar().valueChanged.connect(self.sync_timeline_scroll)
             self.bs_device.currentIndexChanged.connect(self.refresh_model_details)
             self.generate_midi.toggled.connect(self.refresh_midi_stem_checks)
             self.sonify_midi.toggled.connect(self.sonification_samplerate.setEnabled)
@@ -2427,7 +2435,14 @@ def main() -> int:
             self.playback_controls_widget.adjustSize()
 
         def sync_track_control_scroll(self, value: int) -> None:
-            self.playback_scroll.verticalScrollBar().setValue(value)
+            scrollbar = self.playback_scroll.verticalScrollBar()
+            if scrollbar.value() != value:
+                scrollbar.setValue(value)
+
+        def sync_timeline_scroll(self, value: int) -> None:
+            scrollbar = self.timeline.verticalScrollBar()
+            if scrollbar.value() != value:
+                scrollbar.setValue(value)
 
         def prepare_transport_players(self, result: PipelineResult) -> None:
             self.set_activity_message("Preparing audio players...")
