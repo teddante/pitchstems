@@ -178,7 +178,7 @@ def main() -> int:
             self.position = 0.0
             self.pixels_per_second = 92
             self.vertical_zoom = 1.0
-            self.label_width = 176
+            self.label_width = 260
             self.ruler_height = 28
             self.chord_lane_height = 36
             self.chord_height = self.ruler_height + self.chord_lane_height
@@ -204,6 +204,7 @@ def main() -> int:
             self.on_chord_selected = None
             self.on_redraw_started = None
             self.on_redraw_finished = None
+            self.on_track_controls_requested = None
             self.pending_pixels_per_second: float | None = None
             self.pending_vertical_zoom: float | None = None
             self.pending_zoom_center_seconds: float | None = None
@@ -599,14 +600,13 @@ def main() -> int:
                     self._make_sticky(range_text, 12)
                 else:
                     self.scene.removeItem(range_text)
-                summary = self.track_control_summaries.get(track.name.lower())
-                if summary and height >= 82:
-                    controls_text = self.scene.addText(summary)
-                    controls_text.setDefaultTextColor(QColor("#475569"))
-                    controls_text.setTextWidth(self.label_width - 18)
-                    controls_text.setPos(12, y + 52)
-                    controls_text.setToolTip("Track mix settings are mirrored here from the track controls.")
-                    self._make_sticky(controls_text, 12)
+                if self.on_track_controls_requested and height >= 106:
+                    controls = self.on_track_controls_requested(track.name)
+                    if controls is not None:
+                        proxy = self.scene.addWidget(controls)
+                        proxy.setPos(8, y + 50)
+                        proxy.setZValue(21)
+                        self.sticky_x_items.append((proxy, 8))
                 self.scene.addLine(
                     0,
                     y + height,
@@ -819,12 +819,12 @@ def main() -> int:
                 pitch_range = self.pitch_ranges.get(track.name.lower())
                 if pitch_range:
                     low_pitch, high_pitch = pitch_range
-                    base_height = max(96, (high_pitch - low_pitch + 1) * 8 + 28)
+                    base_height = max(132, (high_pitch - low_pitch + 1) * 8 + 34)
                     height = base_height * self.vertical_zoom
                 else:
                     low_pitch = 48
                     high_pitch = 72
-                    height = 78 * self.vertical_zoom
+                    height = 132 * self.vertical_zoom
                 geometries[track.name.lower()] = (y, height, low_pitch, high_pitch)
                 y += height
             return geometries
@@ -859,8 +859,9 @@ def main() -> int:
                 )
                 label = self.scene.addText(midi_note_name(pitch))
                 label.setDefaultTextColor(QColor("#64748b"))
-                label.setPos(84, pitch_y - 5)
-                self._make_sticky(label, 84)
+                label_x = max(92, self.label_width - 52)
+                label.setPos(label_x, pitch_y - 5)
+                self._make_sticky(label, label_x)
 
         def _visible_scene_rect(self):
             return self.mapToScene(self.viewport().rect()).boundingRect()
@@ -1348,6 +1349,7 @@ def main() -> int:
             self.timeline.on_chord_selected = self.show_timeline_chord_status
             self.timeline.on_redraw_started = self.begin_timeline_redraw
             self.timeline.on_redraw_finished = self.finish_timeline_redraw
+            self.timeline.on_track_controls_requested = self.create_timeline_track_controls
             self.timeline_slider = QSlider(Qt.Horizontal)
             self.timeline_slider.setRange(0, 0)
             self.timeline_slider.setEnabled(False)
@@ -2266,7 +2268,7 @@ def main() -> int:
                 audio_check.toggled.connect(lambda *_args: self.refresh_timeline_track_summaries())
                 audio_slider.valueChanged.connect(lambda *_args: self.refresh_playback_mix())
                 audio_slider.valueChanged.connect(lambda *_args: self.save_editor_state())
-                audio_slider.valueChanged.connect(lambda *_args: self.refresh_timeline_track_summaries())
+                audio_slider.sliderReleased.connect(lambda *_args: self.refresh_timeline_track_summaries())
                 self.track_audio_checks[track.name] = audio_check
                 self.track_audio_sliders[track.name] = audio_slider
                 toggle_row.addWidget(audio_check)
@@ -2287,7 +2289,7 @@ def main() -> int:
                 )
                 midi_slider.valueChanged.connect(lambda *_args: self.refresh_playback_mix())
                 midi_slider.valueChanged.connect(lambda *_args: self.save_editor_state())
-                midi_slider.valueChanged.connect(lambda *_args: self.refresh_timeline_track_summaries())
+                midi_slider.sliderReleased.connect(lambda *_args: self.refresh_timeline_track_summaries())
                 self.track_midi_checks[track.name] = midi_check
                 self.track_midi_sliders[track.name] = midi_slider
                 toggle_row.addWidget(midi_check)
@@ -2327,6 +2329,144 @@ def main() -> int:
             self.refresh_playback_mix()
             self.refresh_timeline_track_summaries()
             self.save_editor_state()
+
+        def create_timeline_track_controls(self, stem_name: str) -> QWidget | None:
+            if self.editor_project is None:
+                return None
+            note_count = self.track_note_counts.get(stem_name, 0)
+            panel = QWidget()
+            panel.setFixedWidth(max(210, self.timeline.label_width - 18))
+            panel.setStyleSheet(
+                """
+                QWidget { background: transparent; }
+                QCheckBox { color: #334155; font-size: 10px; spacing: 2px; }
+                QLabel { color: #64748b; font-size: 10px; }
+                QSlider { min-height: 14px; max-height: 14px; }
+                """
+            )
+            layout = QGridLayout()
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setHorizontalSpacing(5)
+            layout.setVerticalSpacing(1)
+
+            view_check = self._timeline_track_checkbox(
+                "View",
+                self.track_visibility_checks.get(stem_name),
+                "Show this track on the timeline.",
+            )
+            chord_check = self._timeline_track_checkbox(
+                "Chord",
+                self.track_analysis_checks.get(stem_name),
+                "Include this track in the Chord Inspector.",
+            )
+            audio_check = self._timeline_track_checkbox(
+                "Audio",
+                self.track_audio_checks.get(stem_name),
+                "Play separated stem audio.",
+            )
+            midi_check = self._timeline_track_checkbox(
+                "MIDI",
+                self.track_midi_checks.get(stem_name),
+                "Play generated MIDI preview audio.",
+            )
+            midi_check.setEnabled(note_count > 0)
+
+            view_check.toggled.connect(
+                lambda checked, name=stem_name: self.set_track_view_from_timeline(name, checked)
+            )
+            chord_check.toggled.connect(
+                lambda checked, name=stem_name: self.set_track_chord_from_timeline(name, checked)
+            )
+            audio_check.toggled.connect(
+                lambda checked, name=stem_name: self.set_track_audio_from_timeline(name, checked)
+            )
+            midi_check.toggled.connect(
+                lambda checked, name=stem_name: self.set_track_midi_from_timeline(name, checked)
+            )
+
+            layout.addWidget(view_check, 0, 0)
+            layout.addWidget(chord_check, 0, 1)
+            layout.addWidget(audio_check, 0, 2)
+            layout.addWidget(midi_check, 0, 3)
+
+            audio_slider = self._timeline_track_slider(self.track_audio_sliders.get(stem_name))
+            midi_slider = self._timeline_track_slider(self.track_midi_sliders.get(stem_name))
+            midi_slider.setEnabled(note_count > 0)
+            audio_slider.valueChanged.connect(
+                lambda value, name=stem_name: self.set_track_audio_volume_from_timeline(name, value)
+            )
+            midi_slider.valueChanged.connect(
+                lambda value, name=stem_name: self.set_track_midi_volume_from_timeline(name, value)
+            )
+
+            layout.addWidget(QLabel("Audio"), 1, 0)
+            layout.addWidget(audio_slider, 1, 1, 1, 3)
+            layout.addWidget(QLabel("MIDI"), 2, 0)
+            layout.addWidget(midi_slider, 2, 1, 1, 3)
+            panel.setLayout(layout)
+            return panel
+
+        def _timeline_track_checkbox(
+            self,
+            label: str,
+            source: QCheckBox | None,
+            tooltip: str,
+        ) -> QCheckBox:
+            checkbox = QCheckBox(label)
+            checkbox.setChecked(source.isChecked() if source else False)
+            checkbox.setToolTip(tooltip)
+            return checkbox
+
+        def _timeline_track_slider(self, source: QSlider | None) -> QSlider:
+            slider = QSlider(Qt.Horizontal)
+            slider.setRange(0, 100)
+            slider.setValue(source.value() if source else 0)
+            slider.setSingleStep(5)
+            return slider
+
+        def set_track_view_from_timeline(self, stem_name: str, checked: bool) -> None:
+            self._set_linked_checkbox(self.track_visibility_checks.get(stem_name), checked)
+            self.refresh_visible_tracks()
+
+        def set_track_chord_from_timeline(self, stem_name: str, checked: bool) -> None:
+            self._set_linked_checkbox(self.track_analysis_checks.get(stem_name), checked)
+            self.refresh_current_harmony(self.timeline.position)
+            self.refresh_timeline_track_summaries()
+            self.save_editor_state()
+
+        def set_track_audio_from_timeline(self, stem_name: str, checked: bool) -> None:
+            self._set_linked_checkbox(self.track_audio_checks.get(stem_name), checked)
+            self.refresh_playback_mix()
+            self.refresh_timeline_track_summaries()
+            self.save_editor_state()
+
+        def set_track_midi_from_timeline(self, stem_name: str, checked: bool) -> None:
+            self._set_linked_checkbox(self.track_midi_checks.get(stem_name), checked)
+            self.handle_midi_track_toggled(stem_name, checked)
+
+        def set_track_audio_volume_from_timeline(self, stem_name: str, value: int) -> None:
+            self._set_linked_slider(self.track_audio_sliders.get(stem_name), value)
+            self.refresh_playback_mix()
+            self.save_editor_state()
+
+        def set_track_midi_volume_from_timeline(self, stem_name: str, value: int) -> None:
+            self._set_linked_slider(self.track_midi_sliders.get(stem_name), value)
+            self.refresh_playback_mix()
+            self.save_editor_state()
+
+        def _set_linked_checkbox(self, checkbox: QCheckBox | None, checked: bool) -> None:
+            if checkbox is None or checkbox.isChecked() == checked:
+                return
+            checkbox.blockSignals(True)
+            checkbox.setChecked(checked)
+            checkbox.blockSignals(False)
+
+        def _set_linked_slider(self, slider: QSlider | None, value: int) -> None:
+            if slider is None or slider.value() == value:
+                return
+            slider.blockSignals(True)
+            slider.setValue(value)
+            slider.blockSignals(False)
 
         def refresh_timeline_track_summaries(self) -> None:
             if self.editor_project is None:
