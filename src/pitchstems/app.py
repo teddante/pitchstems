@@ -1560,8 +1560,7 @@ def main() -> int:
             track_mix_panel.setFixedWidth(292)
             track_mix_layout = QVBoxLayout()
             track_mix_layout.setContentsMargins(0, 0, 0, 0)
-            track_mix_layout.setSpacing(6)
-            track_mix_layout.addWidget(_section_label("Tracks & Mix"))
+            track_mix_layout.setSpacing(0)
             track_mix_layout.addWidget(self.playback_scroll, 1)
             track_mix_panel.setLayout(track_mix_layout)
             editor_body.addWidget(editor_side_panel)
@@ -2217,7 +2216,7 @@ def main() -> int:
             top_layout = QVBoxLayout()
             top_layout.setContentsMargins(8, 6, 8, 6)
             top_layout.setSpacing(4)
-            top_title = QLabel("Timeline tracks")
+            top_title = QLabel("Tracks & Mix")
             top_title.setStyleSheet("font-weight: 700; color: #334155;")
             show_all_button = QPushButton("Show All")
             show_all_button.setToolTip("Restore every track to the timeline.")
@@ -2572,6 +2571,7 @@ def main() -> int:
             self.play_button.setText("Pause")
             self.stop_button.setEnabled(True)
             self.transport_timer.start(80)
+            QTimer.singleShot(250, self.resync_transport_players)
 
         def pause_transport(self) -> None:
             if not self.is_playing:
@@ -2605,10 +2605,11 @@ def main() -> int:
                 player.setPosition(position_ms)
 
         def update_transport_position(self) -> None:
-            master = next(iter(self.track_players.values()), None)
+            master = self.transport_master_player()
             if master is None:
                 return
             seconds = master.position() / 1000
+            self.resync_transport_players(master)
             selection = self.timeline.selection_range()
             if selection is not None:
                 start, end = selection
@@ -2617,6 +2618,27 @@ def main() -> int:
                     self.set_editor_position_seconds(start, save=False, seek_players=False)
                     return
             self.set_editor_position_seconds(seconds, save=False, seek_players=False)
+
+        def transport_master_player(self) -> QMediaPlayer | None:
+            return next(iter(self.track_players.values()), None)
+
+        def resync_transport_players(self, master: QMediaPlayer | None = None) -> None:
+            if not self.is_playing:
+                return
+            master = master or self.transport_master_player()
+            if master is None:
+                return
+            master_position = master.position()
+            for player in self.transport_players():
+                if player is master:
+                    continue
+                try:
+                    if player.playbackState() != QMediaPlayer.PlayingState:
+                        continue
+                    if abs(player.position() - master_position) > 120:
+                        player.setPosition(master_position)
+                except RuntimeError:
+                    self.logger.exception("Transport resync failed")
 
         def loop_playback_start_seconds(self) -> float:
             selection = self.timeline.selection_range()
