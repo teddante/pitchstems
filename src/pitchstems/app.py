@@ -3102,10 +3102,11 @@ def main() -> int:
                 return
             notes = self.preview_notes_for_chord(label, note_names)
             preview_dir = self.current_result.project_dir / "editor" / "chord-preview"
+            self.chord_preview_player.pause()
+            self.chord_preview_player.setSource(QUrl())
             preview = render_note_preview("official-chord", notes, preview_dir)
             if not preview:
                 return
-            self.chord_preview_player.pause()
             self.chord_preview_player.setSource(QUrl.fromLocalFile(str(preview)))
             self.chord_preview_player.play()
             self.statusBar().showMessage(f"Playing official {label} chord.", 3000)

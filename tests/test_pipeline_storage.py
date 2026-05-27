@@ -305,6 +305,43 @@ def test_midi_rerun_clears_stale_midi_preview_cache(tmp_path: Path, monkeypatch)
     assert not preview.exists()
 
 
+def test_midi_rerun_does_not_fail_if_preview_cache_cleanup_is_locked(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    stems_dir = project_dir / "stems"
+    stem_path = stems_dir / "song_bass.wav"
+    stem_path.parent.mkdir(parents=True, exist_ok=True)
+    stem_path.write_bytes(b"old")
+
+    def fake_transcribe(stem_name, _audio_path, output_dir, **_kwargs):
+        midi_path = output_dir / f"{stem_name}.mid"
+        _write_midi(midi_path, 40)
+        return MidiResult(stem_name, midi_path)
+
+    real_remove_staging_dir = pipeline._remove_staging_dir
+
+    def locked_preview_cache(path):
+        if path == project_dir / "editor" / "midi-preview":
+            raise PermissionError("preview in use")
+        return real_remove_staging_dir(path)
+
+    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", fake_transcribe)
+    monkeypatch.setattr(pipeline, "_remove_staging_dir", locked_preview_cache)
+
+    result = process_midi_from_stems(
+        project_dir=project_dir,
+        input_stem="source",
+        normalized_audio=None,
+        stems=[StemResult("bass", stem_path)],
+        midi_stems={"bass"},
+        create_zip=False,
+    )
+
+    assert result.midi_files
+
+
 def test_midi_rerun_restores_previous_outputs_if_replacement_fails(
     tmp_path: Path,
     monkeypatch,

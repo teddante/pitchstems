@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import shutil
 import zipfile
 from dataclasses import dataclass
@@ -343,7 +344,8 @@ def _remove_export_stem_copies(export_dir: Path, stems: list[StemResult]) -> Non
 
 
 def _remove_midi_preview_cache(project_dir: Path) -> None:
-    _remove_staging_dir(project_dir / "editor" / "midi-preview")
+    with contextlib.suppress(OSError):
+        _remove_staging_dir(project_dir / "editor" / "midi-preview")
 
 
 def _looks_like_copied_file(source: Path, candidate: Path) -> bool:
