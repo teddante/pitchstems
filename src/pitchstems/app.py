@@ -276,10 +276,13 @@ def main() -> int:
             self.redraw()
 
         def set_track_control_summaries(self, summaries: dict[str, str]) -> None:
-            self.track_control_summaries = {
+            normalized = {
                 track.lower(): summary
                 for track, summary in summaries.items()
             }
+            if normalized == self.track_control_summaries:
+                return
+            self.track_control_summaries = normalized
             self.redraw()
 
         def zoom_horizontal(self, factor: float) -> None:
@@ -592,11 +595,15 @@ def main() -> int:
                 range_text = self.scene.addText(f"{midi_note_name(low_pitch)}-{midi_note_name(high_pitch)}")
                 range_text.setDefaultTextColor(QColor("#64748b"))
                 range_text.setPos(12, y + 30)
-                self._make_sticky(range_text, 12)
+                if height >= 58:
+                    self._make_sticky(range_text, 12)
+                else:
+                    self.scene.removeItem(range_text)
                 summary = self.track_control_summaries.get(track.name.lower())
-                if summary:
+                if summary and height >= 82:
                     controls_text = self.scene.addText(summary)
                     controls_text.setDefaultTextColor(QColor("#475569"))
+                    controls_text.setTextWidth(self.label_width - 18)
                     controls_text.setPos(12, y + 52)
                     controls_text.setToolTip("Track mix settings are mirrored here from the track controls.")
                     self._make_sticky(controls_text, 12)
@@ -1172,7 +1179,7 @@ def main() -> int:
             self.logger = logger
             self.messages: queue.Queue[object] = queue.Queue()
             self.worker: threading.Thread | None = None
-            self.midi_preview_workers: dict[Path, threading.Thread] = {}
+            self.midi_preview_workers: dict[tuple[Path, str], threading.Thread] = {}
             self.latest_output_dir: Path | None = None
             self.current_result: PipelineResult | None = None
             self.current_stems: list[StemResult] = []
@@ -1998,23 +2005,29 @@ def main() -> int:
                 if isinstance(message, tuple) and message[0] == "RESULT":
                     self.set_current_result(message[1])
                 elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEWS":
-                    _kind, project_dir, previews = message
-                    self.midi_preview_workers.pop(project_dir, None)
+                    _kind, project_dir, requested_stems, previews = message
+                    for stem_name in requested_stems:
+                        self.midi_preview_workers.pop((project_dir, stem_name.lower()), None)
                     if self.current_result is not None and self.current_result.project_dir == project_dir:
-                        self.rendering_midi_previews.difference_update(previews)
+                        self.rendering_midi_previews.difference_update(requested_stems)
                         self.attach_midi_preview_players(previews)
                     else:
+                        self.rendering_midi_previews.difference_update(requested_stems)
+                        self.refresh_timeline_track_summaries()
                         self.logger.info("Ignored stale MIDI preview render for %s", project_dir)
                         self.end_activity("Ready")
                 elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEW_FAILED":
-                    _kind, project_dir, error = message
-                    self.midi_preview_workers.pop(project_dir, None)
+                    _kind, project_dir, requested_stems, error = message
+                    for stem_name in requested_stems:
+                        self.midi_preview_workers.pop((project_dir, stem_name.lower()), None)
                     if self.current_result is not None and self.current_result.project_dir == project_dir:
-                        self.rendering_midi_previews.clear()
+                        self.rendering_midi_previews.difference_update(requested_stems)
                         self.refresh_timeline_track_summaries()
                         self.append_log(error)
                         self.end_activity("MIDI preview audio failed")
                     else:
+                        self.rendering_midi_previews.difference_update(requested_stems)
+                        self.refresh_timeline_track_summaries()
                         self.logger.info("Ignored stale MIDI preview failure for %s: %s", project_dir, error)
                         self.end_activity("Ready")
                 elif message == "__ENABLE_PROCESS__":
@@ -2042,6 +2055,7 @@ def main() -> int:
             self.current_stems = result.stems
             self.current_input_stem = (result.source_audio or result.normalized_audio).stem
             self.latest_output_dir = result.project_dir
+            self.rendering_midi_previews.clear()
             self.run_midi.setEnabled(True)
             self.separation_status.setText(f"Ready: {len(result.stems)} stems saved in {result.project_dir / 'stems'}")
             self.midi_status.setText(
@@ -2325,14 +2339,14 @@ def main() -> int:
                 midi_check = self.track_midi_checks.get(track.name)
                 midi_slider = self.track_midi_sliders.get(track.name)
                 analysis_check = self.track_analysis_checks.get(track.name)
-                chord_state = "Chord on" if analysis_check is None or analysis_check.isChecked() else "Chord off"
-                audio_state = "A on" if audio_check is None or audio_check.isChecked() else "A off"
-                midi_state = "M on" if midi_check is not None and midi_check.isChecked() else "M off"
+                chord_state = "C:on" if analysis_check is None or analysis_check.isChecked() else "C:off"
+                audio_state = "A:on" if audio_check is None or audio_check.isChecked() else "A:off"
+                midi_state = "M:on" if midi_check is not None and midi_check.isChecked() else "M:off"
                 if track.name in self.rendering_midi_previews:
-                    midi_state = "M rendering"
+                    midi_state = "M:render"
                 audio_volume = audio_slider.value() if audio_slider else 80
                 midi_volume = midi_slider.value() if midi_slider else 70
-                summaries[track.name] = f"{chord_state} | {audio_state} {audio_volume}% | {midi_state} {midi_volume}%"
+                summaries[track.name] = f"{chord_state}  {audio_state} {audio_volume}  {midi_state} {midi_volume}"
             self.timeline.set_track_control_summaries(summaries)
 
         def prepare_transport_players(self, result: PipelineResult) -> None:
@@ -2392,9 +2406,6 @@ def main() -> int:
         ) -> None:
             if self.editor_project is None or not self.editor_project.notes:
                 return
-            existing_worker = self.midi_preview_workers.get(result.project_dir)
-            if existing_worker and existing_worker.is_alive():
-                return
             requested_keys = {stem.lower() for stem in (requested_stems or set())}
             missing = [
                 track.name
@@ -2402,6 +2413,7 @@ def main() -> int:
                 if (not requested_keys or track.name.lower() in requested_keys)
                 if track.name not in self.midi_preview_paths
                 and any(note.stem.lower() == track.name.lower() for note in self.editor_project.notes)
+                and not self._midi_preview_worker_running(result.project_dir, track.name)
             ]
             if not missing:
                 return
@@ -2424,18 +2436,22 @@ def main() -> int:
                         )
                         if preview:
                             previews[stem_name] = preview
-                    self.messages.put(("MIDI_PREVIEWS", result.project_dir, previews))
+                    self.messages.put(("MIDI_PREVIEWS", result.project_dir, set(missing), previews))
                 except Exception as exc:
                     self.logger.exception("MIDI preview render failed")
-                    self.messages.put(("MIDI_PREVIEW_FAILED", result.project_dir, f"Could not render MIDI previews: {exc}"))
+                    self.messages.put(("MIDI_PREVIEW_FAILED", result.project_dir, set(missing), f"Could not render MIDI previews: {exc}"))
 
             worker_thread = threading.Thread(target=worker, daemon=True)
-            self.midi_preview_workers[result.project_dir] = worker_thread
+            for stem_name in missing:
+                self.midi_preview_workers[(result.project_dir, stem_name.lower())] = worker_thread
             worker_thread.start()
+
+        def _midi_preview_worker_running(self, project_dir: Path, stem_name: str) -> bool:
+            worker = self.midi_preview_workers.get((project_dir, stem_name.lower()))
+            return bool(worker and worker.is_alive())
 
         def attach_midi_preview_players(self, previews: dict[str, Path], finish_activity: bool = True) -> None:
             if not previews:
-                self.rendering_midi_previews.clear()
                 self.refresh_timeline_track_summaries()
                 if finish_activity:
                     self.end_activity("No MIDI preview audio rendered")

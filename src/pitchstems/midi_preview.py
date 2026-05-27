@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import math
+import os
 import wave
 from array import array
 from pathlib import Path
@@ -21,7 +23,7 @@ def render_midi_preview(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{stem}_midi_preview.wav"
-    if output_path.exists():
+    if _valid_wav(output_path):
         return output_path
     sample_count = max(1, int((duration + 0.25) * sample_rate))
     samples = array("f", [0.0]) * sample_count
@@ -35,11 +37,7 @@ def render_midi_preview(
     scale = min(0.92 / peak, 1.0)
     pcm = array("h", (int(max(-1.0, min(1.0, sample * scale)) * 32767) for sample in samples))
 
-    with wave.open(str(output_path), "wb") as wav:
-        wav.setnchannels(1)
-        wav.setsampwidth(2)
-        wav.setframerate(sample_rate)
-        wav.writeframes(pcm.tobytes())
+    _write_wav_atomic(output_path, pcm, sample_rate)
     return output_path
 
 
@@ -68,12 +66,32 @@ def render_note_preview(
     scale = min(0.92 / peak, 1.0)
     pcm = array("h", (int(max(-1.0, min(1.0, sample * scale)) * 32767) for sample in samples))
 
-    with wave.open(str(output_path), "wb") as wav:
-        wav.setnchannels(1)
-        wav.setsampwidth(2)
-        wav.setframerate(sample_rate)
-        wav.writeframes(pcm.tobytes())
+    _write_wav_atomic(output_path, pcm, sample_rate)
     return output_path
+
+
+def _write_wav_atomic(output_path: Path, pcm: array, sample_rate: int) -> None:
+    temporary = output_path.with_name(f".{output_path.name}.{os.getpid()}.tmp")
+    try:
+        with wave.open(str(temporary), "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(sample_rate)
+            wav.writeframes(pcm.tobytes())
+        temporary.replace(output_path)
+    finally:
+        with contextlib.suppress(OSError):
+            if temporary.exists():
+                temporary.unlink()
+
+
+def _valid_wav(path: Path) -> bool:
+    if not path.exists():
+        return False
+    with contextlib.suppress(OSError, wave.Error, EOFError):
+        with wave.open(str(path), "rb") as wav:
+            return wav.getnframes() > 0 and wav.getframerate() > 0
+    return False
 
 
 def _add_note(samples: array, note: NoteEvent, sample_rate: int) -> None:

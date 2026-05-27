@@ -28,13 +28,26 @@ def test_render_midi_preview_skips_stems_without_notes(tmp_path: Path) -> None:
 
 def test_render_midi_preview_reuses_existing_preview(tmp_path: Path) -> None:
     preview = tmp_path / "piano_midi_preview.wav"
-    preview.write_bytes(b"existing")
+    _write_silent_wav(preview, sample_rate=8000)
     notes = [NoteEvent(stem="piano", start=0.0, end=0.2, pitch=60, velocity=90)]
 
     output = render_midi_preview("piano", notes, tmp_path, duration=0.4, sample_rate=8000)
 
     assert output == preview
-    assert preview.read_bytes() == b"existing"
+    with wave.open(str(preview), "rb") as wav:
+        assert wav.getframerate() == 8000
+
+
+def test_render_midi_preview_replaces_invalid_existing_preview(tmp_path: Path) -> None:
+    preview = tmp_path / "piano_midi_preview.wav"
+    preview.write_bytes(b"not a wav")
+    notes = [NoteEvent(stem="piano", start=0.0, end=0.2, pitch=60, velocity=90)]
+
+    output = render_midi_preview("piano", notes, tmp_path, duration=0.4, sample_rate=8000)
+
+    assert output == preview
+    with wave.open(str(preview), "rb") as wav:
+        assert wav.getnframes() > 0
 
 
 def test_render_note_preview_writes_named_wav(tmp_path: Path) -> None:
@@ -51,3 +64,11 @@ def test_render_note_preview_writes_named_wav(tmp_path: Path) -> None:
         assert wav.getnchannels() == 1
         assert wav.getframerate() == 8000
         assert wav.getnframes() > 0
+
+
+def _write_silent_wav(path: Path, sample_rate: int = 8000) -> None:
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(sample_rate)
+        wav.writeframes(b"\x00\x00" * 16)
