@@ -162,6 +162,8 @@ def test_chord_tones_for_label_orders_extensions_from_root() -> None:
     assert chord_tones_for_label("Cmaj9") == ["C", "E", "G", "B", "D"]
     assert chord_tones_for_label("F#7sus4/C#") == ["F#", "B", "C#", "E"]
     assert chord_tones_for_label("Gmaj9(no3)") == ["G", "D", "F#", "A"]
+    assert chord_tones_for_label("Fm7(no5)") == ["F", "Ab", "Eb"]
+    assert chord_tones_for_label("Ab6(no3)") == ["Ab", "Eb", "F"]
 
 
 def test_analyze_chord_at_uses_notes_active_at_playhead() -> None:
@@ -388,6 +390,28 @@ def test_unsupported_three_note_cluster_reports_incomplete_chord_hints() -> None
     assert analysis.candidates == []
     assert any("Possible incomplete chord names:" in hint for hint in analysis.partial_hints)
     assert any("Gadd4 (add D)" in hint for hint in analysis.partial_hints)
+
+
+def test_weighted_selection_reports_partial_shell_candidates_from_top_notes() -> None:
+    notes = [
+        _note(0.0, 1.0, 44, velocity=127),  # Ab
+        _note(0.0, 0.66, 53, velocity=127),  # F
+        _note(0.0, 0.39, 51, velocity=127),  # Eb
+        _note(0.0, 0.02, 55, velocity=127),  # trace G
+        _note(0.0, 0.01, 57, velocity=127),  # trace A
+    ]
+
+    analysis = analyze_chord_region(notes, 0.0, 1.0)
+    labels = [label for label, _confidence in analysis.partial_candidates]
+
+    assert analysis.label is None
+    assert analysis.candidates == []
+    assert "Fm7(no5)/Ab" in labels
+    assert analysis.partial_candidate_notes["Fm7(no5)/Ab"] == ["F", "Ab", "Eb"]
+    assert any(
+        "partial shell" in line
+        for line in analysis.partial_candidate_explanations["Fm7(no5)/Ab"]
+    )
 
 
 def test_detect_chords_merges_adjacent_matching_regions() -> None:

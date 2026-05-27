@@ -86,6 +86,10 @@ class ChordAnalysis:
     candidate_explanations: dict[str, list[str]] = field(default_factory=dict)
     note_weights: list[tuple[str, float]] = field(default_factory=list)
     partial_hints: list[str] = field(default_factory=list)
+    partial_candidates: list[tuple[str, float]] = field(default_factory=list)
+    partial_candidate_notes: dict[str, list[str]] = field(default_factory=dict)
+    partial_candidate_aliases: dict[str, list[str]] = field(default_factory=dict)
+    partial_candidate_explanations: dict[str, list[str]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -96,6 +100,16 @@ class EditorProject:
     notes: list[NoteEvent]
     chords: list[ChordRegion]
     duration: float
+
+
+@dataclass(frozen=True)
+class PartialChordCandidate:
+    label: str
+    score: float
+    observed_tones: list[int]
+    omitted_tone: int
+    full_tones: list[int]
+    explanation: list[str]
 
 
 def build_editor_project(result: PipelineResult) -> EditorProject:
@@ -510,6 +524,12 @@ def _analyze_weighted_pitch_classes(
         ):
             scored_roots.append((label, score, explanation, root))
     if not scored_roots:
+        partial_candidates = _partial_shell_candidates_from_weights(
+            pitch_weights,
+            bass,
+            required_pitch_classes,
+            excluded_pitch_classes,
+        )
         return ChordAnalysis(
             None,
             0.0,
@@ -523,6 +543,19 @@ def _analyze_weighted_pitch_classes(
                 required_pitch_classes=required_pitch_classes,
                 excluded_pitch_classes=excluded_pitch_classes,
             ),
+            partial_candidates=[(candidate.label, candidate.score) for candidate in partial_candidates],
+            partial_candidate_notes={
+                candidate.label: [PITCH_NAMES[pitch_class] for pitch_class in candidate.observed_tones]
+                for candidate in partial_candidates
+            },
+            partial_candidate_aliases={
+                candidate.label: []
+                for candidate in partial_candidates
+            },
+            partial_candidate_explanations={
+                candidate.label: candidate.explanation
+                for candidate in partial_candidates
+            },
         )
     scored_roots.sort(
         key=lambda item: (
@@ -554,6 +587,12 @@ def _analyze_weighted_pitch_classes(
         if (label, score) in candidates
     }
     if best_score < WEIGHTED_CHORD_THRESHOLD:
+        partial_candidates = _partial_shell_candidates_from_weights(
+            pitch_weights,
+            bass,
+            required_pitch_classes,
+            excluded_pitch_classes,
+        )
         return ChordAnalysis(
             None,
             best_score,
@@ -572,6 +611,19 @@ def _analyze_weighted_pitch_classes(
                 required_pitch_classes=required_pitch_classes,
                 excluded_pitch_classes=excluded_pitch_classes,
             ),
+            [(candidate.label, candidate.score) for candidate in partial_candidates],
+            {
+                candidate.label: [PITCH_NAMES[pitch_class] for pitch_class in candidate.observed_tones]
+                for candidate in partial_candidates
+            },
+            {
+                candidate.label: []
+                for candidate in partial_candidates
+            },
+            {
+                candidate.label: candidate.explanation
+                for candidate in partial_candidates
+            },
         )
     return ChordAnalysis(
         best_label,
@@ -837,6 +889,108 @@ def _candidate_labels(
     return candidates[:8]
 
 
+def _partial_shell_candidates_from_weights(
+    pitch_weights: dict[int, float],
+    bass: int | None = None,
+    required_pitch_classes: set[int] | None = None,
+    excluded_pitch_classes: set[int] | None = None,
+) -> list[PartialChordCandidate]:
+    if len(pitch_weights) < 3:
+        return []
+    required_pitch_classes = required_pitch_classes or set()
+    excluded_pitch_classes = excluded_pitch_classes or set()
+    sorted_weights = sorted(pitch_weights.items(), key=lambda item: (-item[1], item[0]))
+    primary = dict(sorted_weights[:3])
+    observed = set(primary)
+    if required_pitch_classes and not required_pitch_classes <= observed:
+        observed |= required_pitch_classes
+    if excluded_pitch_classes and observed & excluded_pitch_classes:
+        return []
+    total_weight = max(sum(pitch_weights.values()), 0.0001)
+    observed_weight = sum(pitch_weights.get(pitch_class, 0.0) for pitch_class in observed)
+    suggestions: list[tuple[int, int, int, int, tuple[int, ...], PartialChordCandidate]] = []
+    seen_labels: set[str] = set()
+    for root in range(12):
+        for quality_index, (suffix, intervals) in enumerate(_chord_qualities()):
+            if "(no" in suffix or len(intervals) < 4:
+                continue
+            full_tones = [(root + interval) % 12 for interval in intervals]
+            full_set = set(full_tones)
+            if not observed <= full_set:
+                continue
+            missing = full_set - observed
+            if len(missing) != 1:
+                continue
+            omitted_tone = next(iter(missing))
+            omitted_interval = (omitted_tone - root) % 12
+            omitted = _omitted_tone_suffix(omitted_interval, intervals)
+            if omitted is None:
+                continue
+            candidate_tones = [pitch_class for pitch_class in full_tones if pitch_class != omitted_tone]
+            label = f"{PITCH_NAMES[root]}{suffix}{omitted}"
+            if bass is not None and bass in observed and bass != root:
+                label = f"{label}/{PITCH_NAMES[bass]}"
+            if label in seen_labels:
+                continue
+            if not _label_matches_constraints(label, required_pitch_classes, excluded_pitch_classes):
+                continue
+            score = (observed_weight / total_weight) * (len(observed) / len(full_set))
+            explanation = [
+                f"{label}: partial shell from the strongest detected notes.",
+                f"Observed shell tones: {' - '.join(PITCH_NAMES[pitch_class] for pitch_class in candidate_tones)}.",
+                f"Full chord shape would be: {' - '.join(PITCH_NAMES[pitch_class] for pitch_class in full_tones)}.",
+                f"Omitted tone: {PITCH_NAMES[omitted_tone]} ({omitted[1:-1]}).",
+                "This is a partial/shell candidate, not a full chord detection.",
+            ]
+            seen_labels.add(label)
+            root_priority = 0 if bass is not None and root == bass else 1
+            observed_root_priority = 0 if root in observed else 1
+            omitted_priority = 0 if omitted == "(no5)" else 1
+            suggestions.append(
+                (
+                    root_priority,
+                    omitted_priority,
+                    observed_root_priority,
+                    _partial_quality_priority(suffix, quality_index),
+                    tuple(candidate_tones),
+                    PartialChordCandidate(
+                        label=label,
+                        score=max(0.0, min(1.0, score)),
+                        observed_tones=candidate_tones,
+                        omitted_tone=omitted_tone,
+                        full_tones=full_tones,
+                        explanation=explanation,
+                    ),
+                )
+            )
+    suggestions.sort(key=lambda item: (item[1], item[0], item[2], item[3], item[4]))
+    candidates: list[PartialChordCandidate] = []
+    seen_root_tone_sets: set[tuple[int, frozenset[int]]] = set()
+    for *_sort, candidate in suggestions:
+        root_name = next(
+            name
+            for name in sorted(PITCH_NAMES, key=len, reverse=True)
+            if candidate.label.startswith(name)
+        )
+        root = PITCH_NAMES.index(root_name)
+        root_tone_key = (root, frozenset(candidate.observed_tones))
+        if root_tone_key in seen_root_tone_sets:
+            continue
+        candidates.append(candidate)
+        seen_root_tone_sets.add(root_tone_key)
+        if len(candidates) >= PARTIAL_HINT_LIMIT:
+            break
+    return candidates
+
+
+def _omitted_tone_suffix(omitted_interval: int, intervals: tuple[int, ...]) -> str | None:
+    if omitted_interval == 7:
+        return "(no5)"
+    if omitted_interval in {3, 4}:
+        return "(no3)"
+    return None
+
+
 def _partial_chord_completions(
     observed: set[int],
     bass: int | None = None,
@@ -985,6 +1139,9 @@ def chord_pitch_classes_for_label(label: str) -> list[int]:
     if root_name is None:
         return []
     suffix = base_label[len(root_name):]
+    omitted_intervals: set[int] = set()
+    if "(no" in suffix:
+        suffix, omitted_intervals = _split_omitted_suffix(suffix)
     quality = next(
         (
             intervals
@@ -998,10 +1155,29 @@ def chord_pitch_classes_for_label(label: str) -> list[int]:
     root = PITCH_NAMES.index(root_name)
     tones: list[int] = []
     for interval in quality:
+        if interval in omitted_intervals:
+            continue
         pitch_class = (root + interval) % 12
         if pitch_class not in tones:
             tones.append(pitch_class)
     return tones
+
+
+def _split_omitted_suffix(suffix: str) -> tuple[str, set[int]]:
+    omitted_intervals: set[int] = set()
+    base = suffix
+    while "(no" in base:
+        start = base.find("(no")
+        end = base.find(")", start)
+        if end < 0:
+            break
+        token = base[start + 3:end]
+        if token == "3":
+            omitted_intervals.update({3, 4})
+        elif token == "5":
+            omitted_intervals.add(7)
+        base = f"{base[:start]}{base[end + 1:]}"
+    return base, omitted_intervals
 
 
 def _plain_score_explanation(

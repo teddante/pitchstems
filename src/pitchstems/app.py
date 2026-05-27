@@ -3115,6 +3115,20 @@ def main() -> int:
                     lines.extend(analysis.candidate_explanations.get(label, ["No explanation available."]))
             else:
                 lines.append("No full chord candidates here.")
+            if analysis.partial_candidates:
+                lines.extend(["", "Partial Chord Candidates", "-" * 24])
+                for label, confidence in analysis.partial_candidates:
+                    notes = " - ".join(analysis.partial_candidate_notes.get(label, [])) or "-"
+                    aliases = ", ".join(analysis.partial_candidate_aliases.get(label, [])) or "-"
+                    lines.extend(
+                        [
+                            "",
+                            f"{label} ({confidence:.0%})",
+                            f"Observed tones: {notes}",
+                            f"Alternate names: {aliases}",
+                        ]
+                    )
+                    lines.extend(analysis.partial_candidate_explanations.get(label, ["No explanation available."]))
             if analysis.partial_hints:
                 lines.extend(["", "Partial Harmony Hints", "-" * 21])
                 lines.extend(analysis.partial_hints)
@@ -3193,6 +3207,24 @@ def main() -> int:
             else:
                 self.chord_list.clear()
                 self.chord_list.addItem("No full chord candidates here.")
+                for label, confidence in analysis.partial_candidates:
+                    note_names = analysis.partial_candidate_notes.get(label, [])
+                    notes = self._partial_candidate_notes_text(analysis, label)
+                    aliases = analysis.partial_candidate_aliases.get(label, [])
+                    alias_text = ""
+                    if aliases:
+                        alias_text = f"\naka: {', '.join(aliases[:4])}"
+                    item = QListWidgetItem(f"{label}  {confidence:.0%}\n{notes}{alias_text}")
+                    item.setData(Qt.UserRole, label)
+                    item.setData(Qt.UserRole + 1, confidence)
+                    item.setData(Qt.UserRole + 2, note_names)
+                    item.setToolTip(
+                        f"{label}\n"
+                        f"Observed shell tones: {notes}\n"
+                        "Partial/shell candidate, not a full chord detection.\n\n"
+                        + "\n".join(analysis.partial_candidate_explanations.get(label, []))
+                    )
+                    self.chord_list.addItem(item)
                 for hint in analysis.partial_hints:
                     item = QListWidgetItem(hint)
                     item.setToolTip("Partial harmony hint. This is not a confirmed chord candidate.")
@@ -3201,6 +3233,15 @@ def main() -> int:
 
         def _candidate_notes_text(self, analysis, label: str) -> str:
             notes = analysis.candidate_notes.get(label, [])
+            if not notes:
+                return "-"
+            text = " - ".join(notes)
+            if "/" in label:
+                text += f"  bass {label.split('/', 1)[1]}"
+            return text
+
+        def _partial_candidate_notes_text(self, analysis, label: str) -> str:
+            notes = analysis.partial_candidate_notes.get(label, [])
             if not notes:
                 return "-"
             text = " - ".join(notes)
