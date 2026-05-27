@@ -3398,11 +3398,11 @@ def main() -> int:
             self.refresh_chord_keyboard()
 
         def refresh_chord_keyboard(self) -> None:
-            selected_track_chord = self.timeline.selected_chord
-            if selected_track_chord is not None:
-                note_names = chord_tones_for_label(selected_track_chord.label)
+            track_chord = self.active_chord_track_region()
+            if track_chord is not None:
+                note_names = chord_tones_for_label(track_chord.label)
                 self.piano_chord_view.set_chord(
-                    selected_track_chord.label,
+                    track_chord.label,
                     note_names,
                     "Chord track",
                 )
@@ -3414,6 +3414,17 @@ def main() -> int:
             label = item.data(Qt.UserRole)
             note_names = item.data(Qt.UserRole + 2) or []
             self.piano_chord_view.set_chord(label, note_names, "Inspector")
+
+        def active_chord_track_region(self) -> ChordRegion | None:
+            if self.timeline.selected_chord is not None:
+                return self.timeline.selected_chord
+            if self.editor_project is None:
+                return None
+            position = self.timeline.position
+            for chord in reversed(self.editor_project.chords):
+                if chord.start <= position < chord.end:
+                    return chord
+            return None
 
         def _candidate_notes_text(self, analysis, label: str) -> str:
             notes = analysis.candidate_notes.get(label, [])
