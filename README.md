@@ -125,9 +125,9 @@ The app also exposes:
 - Basic Pitch MIDI on/off
 - per-stem MIDI analysis checkboxes, with drums off by default
 - Basic Pitch's official MIDI parameters: onset threshold, frame threshold, minimum note length, note frequency limits, pitch-bend behavior, melodia post-processing, MIDI tempo, note CSV output, raw NPZ output, and MIDI sonification
-- ZIP export on/off
+- ZIP export package on/off
 - open output folder when finished
-- open latest output folder button
+- File menu actions for opening projects, choosing the output folder, and opening the latest output folder
 
 After a successful GUI run, the Editor tab builds a first-pass timeline from the generated
 MIDI files. It shows stem lanes, note events, inferred chord regions, a scrubber/playhead,
@@ -135,10 +135,12 @@ and per-track checkboxes for hiding or showing MIDI notes while reviewing the tr
 The editor transport can play separated stem audio and lightweight generated MIDI preview
 audio in sync, with per-track mute and volume controls saved in the project.
 
-Each full GUI or CLI run creates a project folder ending in `.pitchstems`. The folder contains
-the copied source audio, normalized work audio, generated stems, MIDI, exports, and a
-`pitchstems.project.json` manifest. Use **Open Project** in the GUI to reopen that manifest
-without rerunning the expensive separation step.
+Each full GUI or CLI run creates a project folder ending in `.pitchstems`. The folder keeps
+one canonical copy of the project audio assets: the copied source audio, normalized work
+audio, generated stems, MIDI, and a `pitchstems.project.json` manifest. ZIP packages are
+optional, and stem WAVs are not duplicated into `export`.
+Use **Open Project** in the GUI to reopen that manifest without rerunning the expensive
+separation step.
 
 The curated model catalog lives in `src/pitchstems/model_catalog.py`; the native BS-RoFormer runtime bridge lives in `src/pitchstems/separation.py`.
 

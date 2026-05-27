@@ -24,10 +24,19 @@ def combine_midi_tracks(midi_results: list[MidiResult], output_path: Path) -> Pa
         for index, source_track in enumerate(source.tracks):
             track = MidiTrack()
             track.append(MetaMessage("track_name", name=f"{result.stem} {index + 1}", time=0))
-            track.extend(source_track)
+            track.extend(_rescaled_messages(source_track, source.ticks_per_beat, combined.ticks_per_beat))
             combined.tracks.append(track)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     combined.save(output_path)
     return output_path
 
+
+def _rescaled_messages(source_track: MidiTrack, source_ticks: int, target_ticks: int):
+    if source_ticks == target_ticks:
+        return [message.copy() for message in source_track]
+    scale = target_ticks / source_ticks
+    return [
+        message.copy(time=max(0, round(message.time * scale)))
+        for message in source_track
+    ]

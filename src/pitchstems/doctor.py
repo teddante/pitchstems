@@ -21,6 +21,7 @@ def run_checks(require_gpu: bool = False) -> list[Check]:
         _command_check("FFmpeg", "ffmpeg"),
         _module_check("PySide6 GUI", "PySide6"),
         _module_check("Basic Pitch", "basic_pitch"),
+        _onnxruntime_check(),
         _module_check("BS-RoFormer native backend", "bs_roformer"),
         _module_check("MIDI tools", "mido"),
     ]
@@ -72,6 +73,22 @@ def _onnxruntime_cuda_check() -> Check:
     return Check(
         name="ONNX Runtime CUDA",
         ok=status.has_cuda,
+        detail=f"providers: {providers}",
+    )
+
+
+def _onnxruntime_check() -> Check:
+    status = onnxruntime_status()
+    if not status.installed:
+        return Check(
+            name="ONNX Runtime",
+            ok=False,
+            detail="`onnxruntime` or `onnxruntime-gpu` missing",
+        )
+    providers = ", ".join(status.providers) or "no providers"
+    return Check(
+        name="ONNX Runtime",
+        ok=True,
         detail=f"providers: {providers}",
     )
 

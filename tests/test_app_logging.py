@@ -13,3 +13,14 @@ def test_setup_app_logging_writes_log_file(tmp_path, monkeypatch) -> None:
     assert log_path.exists()
     assert "test log entry" in log_path.read_text(encoding="utf-8")
     assert logging.getLogger("pitchstems").handlers
+
+
+def test_setup_app_logging_is_repeatable_without_duplicate_handlers(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+
+    setup_app_logging()
+    second_path = setup_app_logging()
+
+    logger = logging.getLogger("pitchstems")
+    assert second_path == logs_dir() / "pitchstems.log"
+    assert len(logger.handlers) == 1

@@ -113,7 +113,7 @@ def main() -> int:
         create_zip=not args.no_zip,
         log=print,
     )
-    print(result.zip_path or result.project_dir / "export")
+    print(result.zip_path or result.project_dir)
     return 0
 
 

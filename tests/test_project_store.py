@@ -1,7 +1,14 @@
+import json
 from pathlib import Path
 
 from pitchstems.pipeline import PipelineResult
-from pitchstems.project_store import PROJECT_FILENAME, load_pipeline_result, save_project_manifest
+from pitchstems.project_store import (
+    PROJECT_FILENAME,
+    load_pipeline_result,
+    load_project_manifest,
+    save_project_manifest,
+    _write_json_atomic,
+)
 from pitchstems.separation import SeparationOptions, StemResult
 from pitchstems.transcription import MidiOptions, MidiResult
 
@@ -36,13 +43,19 @@ def test_save_and_load_project_manifest_round_trip(tmp_path: Path) -> None:
         midi_policy="all",
         create_zip=True,
         track_visibility={"bass": True},
+        track_analysis_enabled={"bass": True},
         track_audio_enabled={"bass": True},
         track_audio_volume={"bass": 80},
         track_midi_enabled={"bass": False},
         track_midi_volume={"bass": 70},
         playhead_seconds=12.5,
+        chord_overrides=[
+            {"start": 10.0, "end": 12.0, "label": "Gmaj9", "confidence": 0.93}
+        ],
+        chord_removals=[{"start": 8.0, "end": 9.5}],
     )
     loaded = load_pipeline_result(manifest_path)
+    manifest = load_project_manifest(manifest_path)
 
     assert manifest_path == project_dir / PROJECT_FILENAME
     assert loaded.project_dir == project_dir
@@ -52,3 +65,56 @@ def test_save_and_load_project_manifest_round_trip(tmp_path: Path) -> None:
     assert loaded.combined_midi == combined
     assert loaded.zip_path == zip_path
     assert loaded.source_audio == tmp_path / "source.mp3"
+    assert manifest["editor"]["chord_overrides"] == [
+        {"start": 10.0, "end": 12.0, "label": "Gmaj9", "confidence": 0.93}
+    ]
+    assert manifest["editor"]["chord_removals"] == [{"start": 8.0, "end": 9.5}]
+    assert manifest["editor"]["track_analysis_enabled"] == {"bass": True}
+
+
+def test_write_json_atomic_replaces_existing_manifest_without_temp_file(tmp_path: Path) -> None:
+    manifest_path = tmp_path / PROJECT_FILENAME
+    manifest_path.write_text('{"old": true}', encoding="utf-8")
+
+    _write_json_atomic(manifest_path, {"new": True})
+
+    assert json.loads(manifest_path.read_text(encoding="utf-8")) == {"new": True}
+    assert not list(tmp_path.glob(f".{PROJECT_FILENAME}.*.tmp"))
+
+
+def test_load_project_manifest_rejects_incomplete_project(tmp_path: Path) -> None:
+    manifest_path = tmp_path / PROJECT_FILENAME
+    manifest_path.write_text(
+        json.dumps({"format": "pitchstems-project", "format_version": 1}),
+        encoding="utf-8",
+    )
+
+    try:
+        load_project_manifest(manifest_path)
+    except ValueError as exc:
+        assert "missing required project field" in str(exc)
+    else:
+        raise AssertionError("Expected incomplete project to be rejected")
+
+
+def test_load_project_manifest_rejects_bad_format_version(tmp_path: Path) -> None:
+    manifest_path = tmp_path / PROJECT_FILENAME
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "format": "pitchstems-project",
+                "format_version": "abc",
+                "normalized_audio": "work/source.wav",
+                "stems": [],
+                "midi_files": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        load_project_manifest(manifest_path)
+    except ValueError as exc:
+        assert "invalid PitchStems project format version" in str(exc)
+    else:
+        raise AssertionError("Expected bad project format version to be rejected")

@@ -82,7 +82,7 @@ def download_model(model_key: str, log: Callable[[str], None] | None = None) -> 
     choice = model_choice(model_key)
     model_dir = _model_cache_dir()
     model_dir.mkdir(parents=True, exist_ok=True)
-    native_model = MODEL_REGISTRY.get(choice.native_model_id)
+    native_model = _registry_model(MODEL_REGISTRY, choice)
     if log:
         log("Native backend: bs-roformer-infer")
         log(f"Model registry id: {choice.native_model_id}")
@@ -115,7 +115,7 @@ def separate_stems(
 
     choice = options.choice
     model_dir = download_model(choice.key, log=log)
-    native_model = MODEL_REGISTRY.get(choice.native_model_id)
+    native_model = _registry_model(MODEL_REGISTRY, choice)
     native_dir = model_dir / native_model.slug
     model_path = native_dir / native_model.checkpoint
     config_path = native_dir / native_model.config
@@ -173,6 +173,16 @@ def _model_cache_dir() -> Path:
     if root:
         return Path(root) / "PitchStems" / "bs-roformer-models"
     return Path.home() / ".cache" / "pitchstems" / "bs-roformer-models"
+
+
+def _registry_model(registry, choice: ModelChoice):
+    native_model = registry.get(choice.native_model_id)
+    if native_model is None:
+        raise RuntimeError(
+            f"Native BS-RoFormer registry id is unavailable: {choice.native_model_id}. "
+            "Update bs-roformer-infer or choose a different bundled model."
+        )
+    return native_model
 
 
 @contextlib.contextmanager
