@@ -2411,7 +2411,7 @@ def main() -> int:
                     continue
                 geometry = self.timeline.track_geometries.get(track.name.lower())
                 height = int(round(geometry[1])) if geometry else 132
-                panel.setFixedHeight(max(24, height))
+                panel.setFixedHeight(max(1, height))
                 detail_rows = self.track_control_detail_rows.get(track.name)
                 if detail_rows is None:
                     continue
