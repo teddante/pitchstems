@@ -182,6 +182,7 @@ def main() -> int:
             self.ruler_height = 28
             self.chord_lane_height = 36
             self.chord_height = self.ruler_height + self.chord_lane_height
+            self.minimum_track_height = 78
             self.visible_tracks: set[str] = set()
             self.track_geometries: dict[str, tuple[float, float, int, int]] = {}
             self.notes_by_track: dict[str, list] = {}
@@ -552,12 +553,12 @@ def main() -> int:
                     f"Confidence: {chord.confidence:.0%}\n"
                     "Drag the middle to move, drag an edge to resize, Delete removes the selected chord."
                 )
-                if width > 30:
-                    text = self.scene.addText(chord.label)
-                    text.setDefaultTextColor(QColor("#4c1d95"))
-                    text.setPos(x + 5, self.ruler_height + 5)
-                    text.setData(0, chord)
-                    self._make_sticky_y(text, 34)
+                text = self.scene.addText(chord.label)
+                text.setDefaultTextColor(QColor("#4c1d95"))
+                text.setPos(x + 5, self.ruler_height + 5)
+                text.setData(0, chord)
+                text.setZValue(8)
+                self._make_sticky_y(text, 34)
 
         def _draw_tracks(
             self,
@@ -790,11 +791,11 @@ def main() -> int:
                 if pitch_range:
                     low_pitch, high_pitch = pitch_range
                     base_height = max(132, (high_pitch - low_pitch + 1) * 8 + 34)
-                    height = base_height * self.vertical_zoom
+                    height = max(self.minimum_track_height, base_height * self.vertical_zoom)
                 else:
                     low_pitch = 48
                     high_pitch = 72
-                    height = 132 * self.vertical_zoom
+                    height = max(self.minimum_track_height, 132 * self.vertical_zoom)
                 geometries[track.name.lower()] = (y, height, low_pitch, high_pitch)
                 y += height
             return geometries
@@ -2255,14 +2256,18 @@ def main() -> int:
                     }
                     QCheckBox {
                         color: #334155;
-                        font-size: 10px;
-                        spacing: 3px;
+                        font-size: 9px;
+                        spacing: 2px;
+                    }
+                    QSlider {
+                        min-height: 12px;
+                        max-height: 12px;
                     }
                     """
                 )
                 track_layout = QVBoxLayout()
-                track_layout.setContentsMargins(8, 4, 8, 4)
-                track_layout.setSpacing(3)
+                track_layout.setContentsMargins(6, 2, 6, 2)
+                track_layout.setSpacing(1)
 
                 title_row = QHBoxLayout()
                 title_row.setContentsMargins(0, 0, 0, 0)
@@ -2344,7 +2349,7 @@ def main() -> int:
                 slider_row.setContentsMargins(0, 0, 0, 0)
                 slider_row.setSpacing(6)
                 audio_label = QLabel("Audio")
-                audio_label.setFixedWidth(58)
+                audio_label.setFixedWidth(42)
                 audio_label.setStyleSheet("color: #64748b;")
                 audio_label.setToolTip("Separated stem audio volume.")
                 slider_row.addWidget(audio_label)
@@ -2357,7 +2362,7 @@ def main() -> int:
                 midi_slider_row.setContentsMargins(0, 0, 0, 0)
                 midi_slider_row.setSpacing(6)
                 midi_label = QLabel("MIDI")
-                midi_label.setFixedWidth(58)
+                midi_label.setFixedWidth(42)
                 midi_label.setStyleSheet("color: #64748b;")
                 midi_label.setToolTip("Generated MIDI preview volume.")
                 midi_slider_row.addWidget(midi_label)
@@ -2416,9 +2421,9 @@ def main() -> int:
                 if detail_rows is None:
                     continue
                 toggle_widget, audio_widget, midi_widget = detail_rows
-                toggle_widget.setVisible(height >= 56)
-                audio_widget.setVisible(height >= 100)
-                midi_widget.setVisible(height >= 124)
+                toggle_widget.setVisible(height >= 38)
+                audio_widget.setVisible(height >= 58)
+                midi_widget.setVisible(height >= 70)
             self.playback_controls_widget.adjustSize()
 
         def sync_track_control_scroll(self, value: int) -> None:
