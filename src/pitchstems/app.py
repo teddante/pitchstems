@@ -1351,6 +1351,7 @@ def main() -> int:
             self.track_control_panels: dict[str, QWidget] = {}
             self.track_control_detail_rows: dict[str, tuple[QWidget, QWidget, QWidget]] = {}
             self.track_control_top_spacer: QWidget | None = None
+            self.track_control_bottom_spacer: QWidget | None = None
             self.hidden_track_status: QLabel | None = None
             self.track_note_counts: dict[str, int] = {}
             self.editor_track_visibility: dict[str, bool] = {}
@@ -2211,6 +2212,7 @@ def main() -> int:
             self.track_control_panels.clear()
             self.track_control_detail_rows.clear()
             self.track_control_top_spacer = None
+            self.track_control_bottom_spacer = None
             self.hidden_track_status = None
             if self.editor_project is None:
                 return
@@ -2381,6 +2383,9 @@ def main() -> int:
                 self.track_control_panels[track.name] = track_panel
                 self.track_control_detail_rows[track.name] = (toggle_widget, audio_widget, midi_widget)
                 self.playback_controls.addWidget(track_panel)
+            self.track_control_bottom_spacer = QWidget()
+            self.track_control_bottom_spacer.setFixedHeight(34)
+            self.playback_controls.addWidget(self.track_control_bottom_spacer)
             self.sync_track_control_panel()
 
         def handle_midi_track_toggled(self, stem_name: str, checked: bool) -> None:
@@ -2396,6 +2401,8 @@ def main() -> int:
         def sync_track_control_panel(self) -> None:
             if self.track_control_top_spacer is not None:
                 self.track_control_top_spacer.setFixedHeight(int(self.timeline.chord_height))
+            if self.track_control_bottom_spacer is not None:
+                self.track_control_bottom_spacer.setFixedHeight(34)
             if self.editor_project is None:
                 return
             hidden_tracks = [
@@ -3478,6 +3485,7 @@ def main() -> int:
             self.track_control_panels.clear()
             self.track_control_detail_rows.clear()
             self.track_control_top_spacer = None
+            self.track_control_bottom_spacer = None
             self.hidden_track_status = None
             self.latest_output_dir = None
             self.run_midi.setEnabled(False)
