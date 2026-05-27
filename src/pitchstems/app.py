@@ -1783,6 +1783,13 @@ def main() -> int:
             self.statusBar().showMessage(message, 4000)
             QApplication.processEvents()
 
+        def reset_activity(self, message: str = "Ready") -> None:
+            self.activity_depth = 0
+            self.activity_label.setText(message)
+            self.activity_bar.setRange(0, 1)
+            self.activity_bar.setValue(1)
+            self.statusBar().showMessage(message, 4000)
+
         def begin_timeline_redraw(self) -> None:
             if self.activity_depth:
                 return
@@ -2131,10 +2138,7 @@ def main() -> int:
                         self.rendering_midi_previews.difference_update(requested_stems)
                         self.attach_midi_preview_players(previews)
                     else:
-                        self.rendering_midi_previews.difference_update(requested_stems)
-                        self.refresh_timeline_track_summaries()
                         self.logger.info("Ignored stale MIDI preview render for %s", project_dir)
-                        self.end_activity("Ready")
                 elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEW_FAILED":
                     _kind, project_dir, requested_stems, error = message
                     for stem_name in requested_stems:
@@ -2145,10 +2149,7 @@ def main() -> int:
                         self.append_log(error)
                         self.end_activity("MIDI preview audio failed")
                     else:
-                        self.rendering_midi_previews.difference_update(requested_stems)
-                        self.refresh_timeline_track_summaries()
                         self.logger.info("Ignored stale MIDI preview failure for %s: %s", project_dir, error)
-                        self.end_activity("Ready")
                 elif message == "__ENABLE_PROCESS__":
                     self.set_processing_state(False)
                     self.end_activity("Processing complete")
@@ -3669,6 +3670,7 @@ def main() -> int:
             self.editor_position.setText(_format_time(0))
             self.current_chord.setText("Chord: -")
             self.set_chord_context_text("Notes: -")
+            self.reset_activity("Ready for new audio")
             self.track_list.clear()
             self.note_filter_list.clear()
             self.track_visibility_checks.clear()
