@@ -13,7 +13,7 @@ def render_midi_preview(
     notes: list[NoteEvent],
     output_dir: Path,
     duration: float,
-    sample_rate: int = 22_050,
+    sample_rate: int = 11_025,
 ) -> Path | None:
     stem_notes = [note for note in notes if note.stem.lower() == stem.lower()]
     if not stem_notes:
@@ -21,6 +21,8 @@ def render_midi_preview(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{stem}_midi_preview.wav"
+    if output_path.exists():
+        return output_path
     sample_count = max(1, int((duration + 0.25) * sample_rate))
     samples = array("f", [0.0]) * sample_count
 

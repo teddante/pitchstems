@@ -178,9 +178,12 @@ def main() -> int:
             self.position = 0.0
             self.pixels_per_second = 92
             self.vertical_zoom = 1.0
-            self.label_width = 128
-            self.chord_height = 38
+            self.label_width = 176
+            self.ruler_height = 28
+            self.chord_lane_height = 36
+            self.chord_height = self.ruler_height + self.chord_lane_height
             self.visible_tracks: set[str] = set()
+            self.track_control_summaries: dict[str, str] = {}
             self.track_geometries: dict[str, tuple[float, float, int, int]] = {}
             self.notes_by_track: dict[str, list] = {}
             self.note_starts_by_track: dict[str, list[float]] = {}
@@ -270,6 +273,13 @@ def main() -> int:
 
         def set_visible_tracks(self, tracks: set[str]) -> None:
             self.visible_tracks = {track.lower() for track in tracks}
+            self.redraw()
+
+        def set_track_control_summaries(self, summaries: dict[str, str]) -> None:
+            self.track_control_summaries = {
+                track.lower(): summary
+                for track, summary in summaries.items()
+            }
             self.redraw()
 
         def zoom_horizontal(self, factor: float) -> None:
@@ -454,7 +464,7 @@ def main() -> int:
                 0,
                 0,
                 width,
-                self.chord_height,
+                self.ruler_height,
                 QPen(Qt.NoPen),
                 QBrush(QColor("#eef2f7")),
             )
@@ -474,6 +484,8 @@ def main() -> int:
                     self._make_sticky_y(text, 32)
                 tick += minor_step
             self.scene.addLine(self.label_width, 0, self.label_width, height, QPen(QColor("#cbd5e1"), 1))
+            ruler_line = self.scene.addLine(0, self.ruler_height, width, self.ruler_height, QPen(QColor("#cbd5e1"), 1))
+            self._make_sticky_y(ruler_line, 33)
             header_line = self.scene.addLine(0, self.chord_height, width, self.chord_height, QPen(QColor("#cbd5e1"), 1))
             self._make_sticky_y(header_line, 33)
 
@@ -514,9 +526,18 @@ def main() -> int:
             return abs((tick / major_step) - round(tick / major_step)) < 0.0001
 
         def _draw_chords(self, visible_start: float, visible_end: float) -> None:
+            lane = self.scene.addRect(
+                0,
+                self.ruler_height,
+                self.scene.width(),
+                self.chord_lane_height,
+                QPen(Qt.NoPen),
+                QBrush(QColor("#f3e8ff")),
+            )
+            self._make_sticky_y(lane, 27)
             label = self.scene.addText("Chords")
             label.setDefaultTextColor(QColor("#334155"))
-            label.setPos(12, 9)
+            label.setPos(12, self.ruler_height + 9)
             self._make_sticky_xy(label, 34)
             for chord in self.project.chords:
                 if chord.end < visible_start or chord.start > visible_end:
@@ -526,7 +547,7 @@ def main() -> int:
                 is_selected = chord == self.selected_chord
                 rect = self.scene.addRect(
                     x,
-                    7,
+                    self.ruler_height + 6,
                     width,
                     24,
                     QPen(QColor("#1d4ed8" if is_selected else "#7c3aed"), 2 if is_selected else 1),
@@ -542,7 +563,7 @@ def main() -> int:
                 if width > 30:
                     text = self.scene.addText(chord.label)
                     text.setDefaultTextColor(QColor("#4c1d95"))
-                    text.setPos(x + 5, 6)
+                    text.setPos(x + 5, self.ruler_height + 5)
                     text.setData(0, chord)
                     self._make_sticky_y(text, 34)
 
@@ -572,6 +593,13 @@ def main() -> int:
                 range_text.setDefaultTextColor(QColor("#64748b"))
                 range_text.setPos(12, y + 30)
                 self._make_sticky(range_text, 12)
+                summary = self.track_control_summaries.get(track.name.lower())
+                if summary:
+                    controls_text = self.scene.addText(summary)
+                    controls_text.setDefaultTextColor(QColor("#475569"))
+                    controls_text.setPos(12, y + 52)
+                    controls_text.setToolTip("Track mix settings are mirrored here from the track controls.")
+                    self._make_sticky(controls_text, 12)
                 self.scene.addLine(
                     0,
                     y + height,
@@ -1010,7 +1038,7 @@ def main() -> int:
                 return False
             chord = self._chord_at_event(event)
             if chord is None:
-                if event.pos().y() <= self.chord_height:
+                if self._event_in_chord_lane(event):
                     self.selected_chord = None
                     if self.on_chord_selected:
                         self.on_chord_selected(None)
@@ -1080,8 +1108,7 @@ def main() -> int:
             point = self.mapToScene(event.pos())
             if point.x() < self.label_width:
                 return None
-            in_chord_lane = point.y() <= self.chord_height or event.pos().y() <= self.chord_height
-            if not in_chord_lane:
+            if not self._event_in_chord_lane(event):
                 return None
             seconds = self._seconds_from_event(event)
             for chord in reversed(self.project.chords):
@@ -1100,8 +1127,7 @@ def main() -> int:
             point = self.mapToScene(event.pos())
             if point.x() < self.label_width:
                 return False
-            in_chord_lane = point.y() <= self.chord_height or event.pos().y() <= self.chord_height
-            if not in_chord_lane and not (event.modifiers() & Qt.ShiftModifier):
+            if not self._event_in_chord_lane(event) and not (event.modifiers() & Qt.ShiftModifier):
                 return False
             seconds = (point.x() - self.label_width) / self.pixels_per_second
             self._selection_anchor = max(0.0, min(seconds, max(self.project.duration, 0.0)))
@@ -1127,6 +1153,14 @@ def main() -> int:
         def _center_on_seconds(self, seconds: float) -> None:
             center = self.mapToScene(self.viewport().rect().center())
             self.centerOn(self._x(seconds), center.y())
+
+        def _event_in_chord_lane(self, event) -> bool:
+            point_y = self.mapToScene(event.pos()).y()
+            viewport_y = event.pos().y()
+            return (
+                self.ruler_height <= point_y <= self.chord_height
+                or self.ruler_height <= viewport_y <= self.chord_height
+            )
 
     class MainWindow(QMainWindow):
         def __init__(self) -> None:
@@ -1158,6 +1192,7 @@ def main() -> int:
             self.track_audio_sliders: dict[str, QSlider] = {}
             self.track_midi_checks: dict[str, QCheckBox] = {}
             self.track_midi_sliders: dict[str, QSlider] = {}
+            self.rendering_midi_previews: set[str] = set()
             self.activity_depth = 0
             self.manual_chords: list[ChordRegion] = []
             self.removed_chord_ranges: list[tuple[float, float]] = []
@@ -1966,6 +2001,7 @@ def main() -> int:
                     _kind, project_dir, previews = message
                     self.midi_preview_workers.pop(project_dir, None)
                     if self.current_result is not None and self.current_result.project_dir == project_dir:
+                        self.rendering_midi_previews.difference_update(previews)
                         self.attach_midi_preview_players(previews)
                     else:
                         self.logger.info("Ignored stale MIDI preview render for %s", project_dir)
@@ -1974,6 +2010,8 @@ def main() -> int:
                     _kind, project_dir, error = message
                     self.midi_preview_workers.pop(project_dir, None)
                     if self.current_result is not None and self.current_result.project_dir == project_dir:
+                        self.rendering_midi_previews.clear()
+                        self.refresh_timeline_track_summaries()
                         self.append_log(error)
                         self.end_activity("MIDI preview audio failed")
                     else:
@@ -2188,6 +2226,7 @@ def main() -> int:
                 show_check.setToolTip("Show this track's MIDI notes on the timeline. Does not affect chord detection or playback.")
                 show_check.toggled.connect(lambda *_args: self.refresh_visible_tracks())
                 show_check.toggled.connect(lambda *_args: self.save_editor_state())
+                show_check.toggled.connect(lambda *_args: self.refresh_timeline_track_summaries())
                 self.track_visibility_checks[track.name] = show_check
                 toggle_row.addWidget(show_check)
 
@@ -2196,6 +2235,7 @@ def main() -> int:
                 analysis_check.setToolTip("Include this track's generated MIDI notes in the Chord Inspector sample.")
                 analysis_check.toggled.connect(lambda *_args: self.refresh_current_harmony(self.timeline.position))
                 analysis_check.toggled.connect(lambda *_args: self.save_editor_state())
+                analysis_check.toggled.connect(lambda *_args: self.refresh_timeline_track_summaries())
                 self.track_analysis_checks[track.name] = analysis_check
                 toggle_row.addWidget(analysis_check)
 
@@ -2209,26 +2249,31 @@ def main() -> int:
                 audio_slider.setToolTip("Separated stem audio volume.")
                 audio_check.toggled.connect(lambda *_args: self.refresh_playback_mix())
                 audio_check.toggled.connect(lambda *_args: self.save_editor_state())
+                audio_check.toggled.connect(lambda *_args: self.refresh_timeline_track_summaries())
                 audio_slider.valueChanged.connect(lambda *_args: self.refresh_playback_mix())
                 audio_slider.valueChanged.connect(lambda *_args: self.save_editor_state())
+                audio_slider.valueChanged.connect(lambda *_args: self.refresh_timeline_track_summaries())
                 self.track_audio_checks[track.name] = audio_check
                 self.track_audio_sliders[track.name] = audio_slider
                 toggle_row.addWidget(audio_check)
 
                 midi_check = QCheckBox("MIDI")
                 midi_check.setChecked(midi_enabled.get(track.name, False))
-                midi_check.setEnabled(False)
-                midi_check.setToolTip("Play this stem's generated MIDI preview audio. Does not affect chord detection.")
+                has_midi_notes = note_count > 0
+                midi_check.setEnabled(has_midi_notes)
+                midi_check.setToolTip("Play this stem's generated MIDI preview audio. Missing previews render only when this MIDI track is turned on.")
                 midi_slider = QSlider(Qt.Horizontal)
                 midi_slider.setRange(0, 100)
                 midi_slider.setValue(int(midi_volume.get(track.name, 70)))
                 midi_slider.setMinimumWidth(130)
-                midi_slider.setEnabled(False)
+                midi_slider.setEnabled(has_midi_notes)
                 midi_slider.setToolTip("MIDI preview volume.")
-                midi_check.toggled.connect(lambda *_args: self.refresh_playback_mix())
-                midi_check.toggled.connect(lambda *_args: self.save_editor_state())
+                midi_check.toggled.connect(
+                    lambda checked, stem_name=track.name: self.handle_midi_track_toggled(stem_name, checked)
+                )
                 midi_slider.valueChanged.connect(lambda *_args: self.refresh_playback_mix())
                 midi_slider.valueChanged.connect(lambda *_args: self.save_editor_state())
+                midi_slider.valueChanged.connect(lambda *_args: self.refresh_timeline_track_summaries())
                 self.track_midi_checks[track.name] = midi_check
                 self.track_midi_sliders[track.name] = midi_slider
                 toggle_row.addWidget(midi_check)
@@ -2260,6 +2305,35 @@ def main() -> int:
                 track_panel.setLayout(track_layout)
                 self.playback_controls.addWidget(track_panel)
             self.playback_controls.addStretch(1)
+            self.refresh_timeline_track_summaries()
+
+        def handle_midi_track_toggled(self, stem_name: str, checked: bool) -> None:
+            if checked and self.current_result is not None and stem_name not in self.midi_preview_paths:
+                self.start_midi_preview_render(self.current_result, {stem_name})
+            self.refresh_playback_mix()
+            self.refresh_timeline_track_summaries()
+            self.save_editor_state()
+
+        def refresh_timeline_track_summaries(self) -> None:
+            if self.editor_project is None:
+                self.timeline.set_track_control_summaries({})
+                return
+            summaries = {}
+            for track in self.editor_project.tracks:
+                audio_check = self.track_audio_checks.get(track.name)
+                audio_slider = self.track_audio_sliders.get(track.name)
+                midi_check = self.track_midi_checks.get(track.name)
+                midi_slider = self.track_midi_sliders.get(track.name)
+                analysis_check = self.track_analysis_checks.get(track.name)
+                chord_state = "Chord on" if analysis_check is None or analysis_check.isChecked() else "Chord off"
+                audio_state = "A on" if audio_check is None or audio_check.isChecked() else "A off"
+                midi_state = "M on" if midi_check is not None and midi_check.isChecked() else "M off"
+                if track.name in self.rendering_midi_previews:
+                    midi_state = "M rendering"
+                audio_volume = audio_slider.value() if audio_slider else 80
+                midi_volume = midi_slider.value() if midi_slider else 70
+                summaries[track.name] = f"{chord_state} | {audio_state} {audio_volume}% | {midi_state} {midi_volume}%"
+            self.timeline.set_track_control_summaries(summaries)
 
         def prepare_transport_players(self, result: PipelineResult) -> None:
             self.set_activity_message("Preparing audio players...")
@@ -2274,7 +2348,13 @@ def main() -> int:
                 self.track_players[stem.name] = player
                 self.track_audio_outputs[stem.name] = output
             self.attach_midi_preview_players(self.midi_preview_paths, finish_activity=False)
-            self.start_midi_preview_render(result)
+            requested_midi = {
+                stem_name
+                for stem_name, checkbox in self.track_midi_checks.items()
+                if checkbox.isChecked() and stem_name not in self.midi_preview_paths
+            }
+            if requested_midi:
+                self.start_midi_preview_render(result, requested_midi)
             self.refresh_playback_mix()
 
         def clear_transport_players(self) -> None:
@@ -2305,15 +2385,21 @@ def main() -> int:
                     previews[stem.name] = preview
             return previews
 
-        def start_midi_preview_render(self, result: PipelineResult) -> None:
+        def start_midi_preview_render(
+            self,
+            result: PipelineResult,
+            requested_stems: set[str] | None = None,
+        ) -> None:
             if self.editor_project is None or not self.editor_project.notes:
                 return
             existing_worker = self.midi_preview_workers.get(result.project_dir)
             if existing_worker and existing_worker.is_alive():
                 return
+            requested_keys = {stem.lower() for stem in (requested_stems or set())}
             missing = [
                 track.name
                 for track in self.editor_project.tracks
+                if (not requested_keys or track.name.lower() in requested_keys)
                 if track.name not in self.midi_preview_paths
                 and any(note.stem.lower() == track.name.lower() for note in self.editor_project.notes)
             ]
@@ -2321,7 +2407,9 @@ def main() -> int:
                 return
             project = self.editor_project
             preview_dir = result.project_dir / "editor" / "midi-preview"
-            self.append_log(f"Rendering MIDI preview audio for {len(missing)} tracks in the background...")
+            self.rendering_midi_previews.update(missing)
+            self.refresh_timeline_track_summaries()
+            self.append_log(f"Rendering MIDI preview audio for {', '.join(missing)} in the background...")
             self.begin_activity("Rendering MIDI preview audio...")
 
             def worker() -> None:
@@ -2347,11 +2435,14 @@ def main() -> int:
 
         def attach_midi_preview_players(self, previews: dict[str, Path], finish_activity: bool = True) -> None:
             if not previews:
+                self.rendering_midi_previews.clear()
+                self.refresh_timeline_track_summaries()
                 if finish_activity:
                     self.end_activity("No MIDI preview audio rendered")
                 return
             self.midi_preview_paths.update(previews)
             for stem_name, midi_preview in previews.items():
+                self.rendering_midi_previews.discard(stem_name)
                 if stem_name in self.midi_players:
                     continue
                 midi_player = QMediaPlayer(self)
@@ -2368,7 +2459,11 @@ def main() -> int:
                 if midi_slider:
                     midi_slider.setEnabled(True)
                     midi_slider.setToolTip("MIDI preview audio volume.")
+                if self.is_playing:
+                    midi_player.setPosition(int(self.timeline.position * 1000))
+                    midi_player.play()
             self.refresh_playback_mix()
+            self.refresh_timeline_track_summaries()
             if finish_activity:
                 self.append_log(f"MIDI preview audio ready: {len(previews)} tracks.")
                 self.end_activity("MIDI preview audio ready")
@@ -3164,6 +3259,7 @@ def main() -> int:
             self.chord_note_overrides = {}
             self.chord_note_filter_context = None
             self.current_chord_base_weights = {}
+            self.rendering_midi_previews.clear()
             self.clear_transport_players()
             self.track_audio_checks.clear()
             self.track_audio_sliders.clear()

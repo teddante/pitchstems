@@ -192,6 +192,7 @@ def process_midi_from_stems(
             backup_midi_dir,
             backup_export_dir,
         )
+        _remove_midi_preview_cache(project_dir)
         _remove_export_stem_copies(export_dir, stems)
         midi_files = final_midi_files
     except Exception:
@@ -339,6 +340,10 @@ def _remove_export_stem_copies(export_dir: Path, stems: list[StemResult]) -> Non
         duplicate = export_dir / stem.path.name
         if _looks_like_copied_file(stem.path, duplicate):
             duplicate.unlink()
+
+
+def _remove_midi_preview_cache(project_dir: Path) -> None:
+    _remove_staging_dir(project_dir / "editor" / "midi-preview")
 
 
 def _looks_like_copied_file(source: Path, candidate: Path) -> bool:
