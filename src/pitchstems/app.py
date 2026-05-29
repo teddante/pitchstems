@@ -168,6 +168,8 @@ def main() -> int:
             self.logger = logger
             self.messages: queue.Queue[object] = queue.Queue()
             self.worker: threading.Thread | None = None
+            self.worker_token = 0
+            self.active_worker_token: int | None = None
             self.editor_load_worker: threading.Thread | None = None
             self.editor_load_token = 0
             self.editor_load_activity_tokens: set[int] = set()
@@ -982,7 +984,8 @@ def main() -> int:
             self.set_processing_state(True)
             self.begin_activity("Running separation + MIDI...")
             self.append_log("Starting separation + MIDI pipeline...")
-            self.worker = threading.Thread(target=self.run_full_pipeline, args=(request,), daemon=True)
+            token = self.start_worker_token()
+            self.worker = threading.Thread(target=self.run_full_pipeline, args=(token, request), daemon=True)
             self.worker.start()
 
         def start_midi_processing(self) -> None:
@@ -1003,10 +1006,20 @@ def main() -> int:
             self.set_processing_state(True)
             self.begin_activity("Rerunning MIDI...")
             self.append_log("Rerunning MIDI from existing stems...")
-            self.worker = threading.Thread(target=self.run_midi_stage, args=(request,), daemon=True)
+            token = self.start_worker_token()
+            self.worker = threading.Thread(target=self.run_midi_stage, args=(token, request), daemon=True)
             self.worker.start()
 
-        def run_full_pipeline(self, request: FullRunRequest) -> None:
+        def start_worker_token(self) -> int:
+            self.worker_token += 1
+            self.active_worker_token = self.worker_token
+            return self.worker_token
+
+        def invalidate_worker_token(self) -> None:
+            self.worker_token += 1
+            self.active_worker_token = None
+
+        def run_full_pipeline(self, token: int, request: FullRunRequest) -> None:
             try:
                 self.logger.info("Starting full pipeline for %s", request.input_path)
                 result = process_audio_file(
@@ -1018,17 +1031,17 @@ def main() -> int:
                     midi_options=request.midi_options,
                     midi_stems=request.midi_stems,
                     create_zip=request.create_zip,
-                    log=self.messages.put,
+                    log=lambda message: self.messages.put(("WORKER_LOG", token, message)),
                 )
-                self.messages.put(("RESULT", result))
-                self.messages.put(f"Project ready: {result.project_dir}")
+                self.messages.put(("RESULT", token, result))
+                self.messages.put(("WORKER_LOG", token, f"Project ready: {result.project_dir}"))
             except Exception as exc:
                 self.logger.exception("Full pipeline failed")
-                self.messages.put(f"Error: {exc}")
+                self.messages.put(("WORKER_LOG", token, f"Error: {exc}"))
             finally:
-                self.messages.put("__ENABLE_PROCESS__")
+                self.messages.put(("ENABLE_PROCESS", token))
 
-        def run_midi_stage(self, request: MidiRunRequest) -> None:
+        def run_midi_stage(self, token: int, request: MidiRunRequest) -> None:
             try:
                 self.logger.info("Starting MIDI rerun for %s", request.result.project_dir)
                 result = process_midi_from_stems(
@@ -1040,15 +1053,15 @@ def main() -> int:
                     midi_options=request.midi_options,
                     midi_stems=request.midi_stems,
                     create_zip=request.create_zip,
-                    log=self.messages.put,
+                    log=lambda message: self.messages.put(("WORKER_LOG", token, message)),
                 )
-                self.messages.put(("RESULT", result))
-                self.messages.put(f"Updated project MIDI: {result.project_dir}")
+                self.messages.put(("RESULT", token, result))
+                self.messages.put(("WORKER_LOG", token, f"Updated project MIDI: {result.project_dir}"))
             except Exception as exc:
                 self.logger.exception("MIDI rerun failed")
-                self.messages.put(f"Error: {exc}")
+                self.messages.put(("WORKER_LOG", token, f"Error: {exc}"))
             finally:
-                self.messages.put("__ENABLE_PROCESS__")
+                self.messages.put(("ENABLE_PROCESS", token))
 
         def flush_messages(self) -> None:
             while True:
@@ -1057,7 +1070,19 @@ def main() -> int:
                 except queue.Empty:
                     return
                 if isinstance(message, tuple) and message[0] == "RESULT":
-                    self.set_current_result(message[1])
+                    _kind, token, result = message
+                    if self.is_active_worker_token(int(token)):
+                        self.set_current_result(result)
+                    else:
+                        self.logger.info("Ignored stale worker result for %s", result.project_dir)
+                elif isinstance(message, tuple) and message[0] == "WORKER_LOG":
+                    _kind, token, text = message
+                    if self.is_active_worker_token(int(token)):
+                        self.append_log(str(text))
+                        if text and not str(text).startswith("Tracks:"):
+                            self.set_activity_message(str(text)[:120])
+                    else:
+                        self.logger.info("Ignored stale worker log: %s", text)
                 elif isinstance(message, tuple) and message[0] == "EDITOR_LOADED":
                     _kind, token, loaded = message
                     self.finish_editor_project_load(int(token), loaded)
@@ -1084,9 +1109,17 @@ def main() -> int:
                         self.end_activity("MIDI preview audio failed")
                     else:
                         self.logger.info("Ignored stale MIDI preview failure for %s: %s", project_dir, error)
-                elif message == "__ENABLE_PROCESS__":
-                    self.set_processing_state(False)
-                    self.end_activity("Processing complete")
+                elif isinstance(message, tuple) and message[0] == "ENABLE_PROCESS":
+                    _kind, token = message
+                    if self.is_active_worker_token(int(token)):
+                        self.active_worker_token = None
+                        self.set_processing_state(False)
+                        self.end_activity("Processing complete")
+                    elif self.active_worker_token is None:
+                        self.set_processing_state(False)
+                        self.reset_activity("Ready")
+                    else:
+                        self.logger.info("Ignored stale worker completion for token %s", token)
                 elif isinstance(message, str) and message.startswith("__OUTPUT_DIR__"):
                     self.latest_output_dir = Path(message.removeprefix("__OUTPUT_DIR__"))
                     if self.open_when_done.isChecked():
@@ -1097,6 +1130,9 @@ def main() -> int:
                         self.set_activity_message(message[:120])
                 else:
                     self.logger.warning("Ignored unknown worker message: %r", message)
+
+        def is_active_worker_token(self, token: int) -> bool:
+            return self.active_worker_token == token
 
         def append_log(self, message: str) -> None:
             self.logger.info(message)
@@ -2639,6 +2675,7 @@ def main() -> int:
 
         def reset_stage_state(self, _path: Path | None = None) -> None:
             self.stop_transport()
+            self.invalidate_worker_token()
             self.editor_load_token += 1
             self.editor_load_activity_tokens.clear()
             if _path is None:

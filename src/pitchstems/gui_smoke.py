@@ -89,6 +89,25 @@ def run_project_smoke(window) -> None:
     _assert("bass" not in window.track_analysis_checks, "old project track controls cleared")
     _assert(set(window.timeline.visible_tracks) == {"piano"}, "timeline visible tracks switched")
     _assert(window.timeline.selection_range() is None, "timeline selection reset on project switch")
+    active_project_dir = window.current_result.project_dir
+    window.active_worker_token = 10
+    window.messages.put(
+        (
+            "RESULT",
+            9,
+            PipelineResult(
+                project_dir=manifest_path.parent,
+                normalized_audio=manifest_path.parent / "work" / "song.wav",
+                stems=[],
+                midi_files=[],
+                combined_midi=None,
+                zip_path=None,
+            ),
+        )
+    )
+    window.flush_messages()
+    window.active_worker_token = None
+    _assert(window.current_result.project_dir == active_project_dir, "stale worker result ignored")
     stale_loaded = EditorLoadResult(
         pipeline_result=window.current_result,
         base_project=window.base_editor_project,
