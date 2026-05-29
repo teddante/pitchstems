@@ -58,7 +58,7 @@ def save_project_manifest(
     project_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = project_manifest_path(project_dir)
     with _MANIFEST_LOCK:
-        existing = _migrate_manifest(_read_json(manifest_path)) if manifest_path.exists() else {}
+        existing = _read_existing_manifest(manifest_path)
         created_at = existing.get("created_at") or _now()
         source_audio = result.source_audio or _path_from_manifest(project_dir, existing.get("source_audio"))
 
@@ -295,6 +295,16 @@ def _jsonable(value):
 
 def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _read_existing_manifest(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    with contextlib.suppress(OSError, json.JSONDecodeError):
+        existing = _migrate_manifest(_read_json(path))
+        if isinstance(existing, dict):
+            return existing
+    return {}
 
 
 def _write_json_atomic(path: Path, data: dict[str, Any]) -> None:

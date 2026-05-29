@@ -84,6 +84,31 @@ def test_write_json_atomic_replaces_existing_manifest_without_temp_file(tmp_path
     assert not list(tmp_path.glob(f".{PROJECT_FILENAME}.*.tmp"))
 
 
+def test_save_project_manifest_recovers_from_malformed_existing_manifest(tmp_path: Path) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    project_dir.mkdir()
+    manifest_path = project_dir / PROJECT_FILENAME
+    manifest_path.write_text(json.dumps(["not", "a", "manifest"]), encoding="utf-8")
+    normalized = project_dir / "work" / "song.wav"
+
+    saved_path = save_project_manifest(
+        PipelineResult(
+            project_dir=project_dir,
+            normalized_audio=normalized,
+            stems=[],
+            midi_files=[],
+            combined_midi=None,
+            zip_path=None,
+            source_audio=None,
+        )
+    )
+
+    assert saved_path == manifest_path
+    manifest = load_project_manifest(manifest_path)
+    assert manifest["format"] == "pitchstems-project"
+    assert manifest["normalized_audio"] == "work/song.wav"
+
+
 def test_load_project_manifest_rejects_incomplete_project(tmp_path: Path) -> None:
     manifest_path = tmp_path / PROJECT_FILENAME
     manifest_path.write_text(
