@@ -31,11 +31,21 @@ from pitchstems.editor_state import (
 )
 from pitchstems.midi_preview import render_midi_preview, render_note_preview
 from pitchstems.model_catalog import model_choice
-from pitchstems.notation import pitch_class_for_name, pitch_class_name, spelling_preference_from_label
+from pitchstems.notation import pitch_class_for_name, pitch_class_name
 from pitchstems.pipeline import PipelineResult, process_audio_file, process_midi_from_stems
 from pitchstems.project_store import (
     PROJECT_FILENAME,
     load_pipeline_result,
+)
+from pitchstems.harmony_inspector import (
+    chord_analysis_track_names as inspector_chord_analysis_track_names,
+    chord_base_pitch_weights as inspector_chord_base_pitch_weights,
+    chord_note_constraints as inspector_chord_note_constraints,
+    chord_sample_text as inspector_chord_sample_text,
+    filtered_chord_analysis_notes as inspector_filtered_chord_analysis_notes,
+    harmony_context_key as inspector_harmony_context_key,
+    resolve_notation_preference,
+    selected_chord_analysis_notes,
 )
 from pitchstems.recent_projects import (
     normalize_recent_project_paths,
@@ -1849,17 +1859,11 @@ def main() -> int:
             return self.notation_spelling.currentData() or "auto"
 
         def resolved_notation_preference(self, chord_label: str | None = None) -> str:
-            preference = self.selected_notation_preference()
-            if preference != "auto":
-                return preference
-            if self.current_theory_analysis and self.current_theory_analysis.label:
-                theory_preference = spelling_preference_from_label(self.current_theory_analysis.label)
-                if theory_preference != "auto":
-                    return theory_preference
-            chord_preference = spelling_preference_from_label(chord_label)
-            if chord_preference != "auto":
-                return chord_preference
-            return "auto"
+            return resolve_notation_preference(
+                self.selected_notation_preference(),
+                self.current_theory_analysis.label if self.current_theory_analysis else None,
+                chord_label,
+            )
 
         def display_chord(self, label: str | None) -> str:
             if not label:
@@ -1992,107 +1996,43 @@ def main() -> int:
             )
 
         def chord_context_key(self, seconds: float):
-            selection = self.timeline.selection_range()
-            if selection is not None:
-                start, end = selection
-                return ("selection", round(start, 3), round(end, 3))
-            return ("point", round(seconds, 2))
+            return inspector_harmony_context_key(seconds, self.timeline.selection_range())
 
         def chord_analysis_notes(self) -> list[NoteEvent]:
-            if self.editor_project is None:
-                return []
-            if not self.track_analysis_checks:
-                return self.editor_project.notes
-            analysis_tracks = {
-                stem_name.lower()
-                for stem_name, checkbox in self.track_analysis_checks.items()
-                if checkbox.isChecked()
-            }
-            return [
-                note
-                for note in self.editor_project.notes
-                if note.stem.lower() in analysis_tracks
-            ]
+            return selected_chord_analysis_notes(
+                self.editor_project,
+                self.selected_chord_analysis_tracks(),
+            )
 
         def chord_sample_text(self, notes: list[NoteEvent]) -> str:
             if self.editor_project is None:
                 return "Sample: -"
-            names = self.chord_analysis_track_names()
-            if not names:
-                return "Sample: no tracks selected. Tick Chord to include a track."
-            shown = ", ".join(names[:5])
-            if len(names) > 5:
-                shown += f", +{len(names) - 5} more"
-            return f"Sample: {shown} ({len(notes)} MIDI notes). View, Audio, and MIDI ticks do not affect detection."
+            return inspector_chord_sample_text(self.chord_analysis_track_names(), len(notes))
 
         def chord_analysis_track_names(self) -> list[str]:
-            if self.editor_project is None:
-                return []
+            return inspector_chord_analysis_track_names(
+                self.editor_project,
+                self.selected_chord_analysis_tracks(),
+            )
+
+        def selected_chord_analysis_tracks(self) -> set[str] | None:
             if not self.track_analysis_checks:
-                return [
-                    track.name
-                    for track in self.editor_project.tracks
-                    if any(note.stem.lower() == track.name.lower() for note in self.editor_project.notes)
-                ]
-            return [
-                track.name
-                for track in self.editor_project.tracks
-                if self.track_analysis_checks.get(track.name)
-                and self.track_analysis_checks[track.name].isChecked()
-            ]
+                return None
+            return {
+                stem_name
+                for stem_name, checkbox in self.track_analysis_checks.items()
+                if checkbox.isChecked()
+            }
 
         def chord_base_pitch_weights(self, notes: list[NoteEvent], context) -> dict[int, float]:
-            if not notes:
-                return {}
-            weights: dict[int, float] = {}
-            if context[0] == "selection":
-                _kind, start, end = context
-                for note in notes:
-                    overlap = max(0.0, min(note.end, end) - max(note.start, start))
-                    if overlap <= 0:
-                        continue
-                    weights[note.pitch % 12] = (
-                        weights.get(note.pitch % 12, 0.0)
-                        + overlap * midi_velocity_energy(note.velocity)
-                    )
-            else:
-                _kind, seconds = context
-                for note in notes:
-                    if note.start <= seconds < note.end:
-                        weights[note.pitch % 12] = max(
-                            weights.get(note.pitch % 12, 0.0),
-                            midi_velocity_energy(note.velocity),
-                        )
-            if not weights:
-                return {}
-            maximum = max(weights.values())
-            return {pitch_class: weight / maximum for pitch_class, weight in weights.items()}
+            return inspector_chord_base_pitch_weights(notes, context)
 
         def filtered_chord_analysis_notes(self, notes: list[NoteEvent], context) -> list[NoteEvent]:
-            excluded_pitch_classes = {
-                pitch_class
-                for pitch_class, state in self.chord_note_overrides.items()
-                if state == "exclude"
-            }
-            filtered = [
-                note
-                for note in notes
-                if note.pitch % 12 not in excluded_pitch_classes
-            ]
-            return filtered
+            _required, excluded_pitch_classes = self.chord_note_constraints()
+            return inspector_filtered_chord_analysis_notes(notes, excluded_pitch_classes)
 
         def chord_note_constraints(self) -> tuple[set[int], set[int]]:
-            required = {
-                pitch_class
-                for pitch_class, state in self.chord_note_overrides.items()
-                if state == "force"
-            }
-            excluded = {
-                pitch_class
-                for pitch_class, state in self.chord_note_overrides.items()
-                if state == "exclude"
-            }
-            return required, excluded
+            return inspector_chord_note_constraints(self.chord_note_overrides)
 
         def populate_note_filter_list(self, weights: dict[int, float]) -> None:
             self.updating_chord_note_filter = True
