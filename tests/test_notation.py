@@ -1,0 +1,23 @@
+from pitchstems.editor_project import chord_pitch_classes_for_label, chord_tones_for_label, display_chord_label
+from pitchstems.notation import scale_label, spell_scale
+
+
+def test_chord_tones_use_the_chord_root_spelling() -> None:
+    assert chord_tones_for_label("F#") == ["F#", "A#", "C#"]
+    assert chord_tones_for_label("Gb") == ["Gb", "Bb", "Db"]
+    assert chord_tones_for_label("Bb7") == ["Bb", "D", "F", "Ab"]
+
+
+def test_chord_labels_can_be_respelt_for_display_without_changing_pitch_classes() -> None:
+    assert chord_pitch_classes_for_label("F#") == chord_pitch_classes_for_label("Gb")
+    assert display_chord_label("F#/C#", "flat") == "Gb/Db"
+    assert display_chord_label("Bb/D", "sharp") == "A#/D"
+
+
+def test_heptatonic_scale_spelling_uses_one_letter_per_degree() -> None:
+    major = (0, 2, 4, 5, 7, 9, 11)
+
+    assert scale_label(1, major, "Ionian") == "Db major"
+    assert spell_scale(1, major) == ["Db", "Eb", "F", "Gb", "Ab", "Bb", "C"]
+    assert spell_scale(6, major, "sharp") == ["F#", "G#", "A#", "B", "C#", "D#", "E#"]
+    assert spell_scale(6, major, "flat") == ["Gb", "Ab", "Bb", "Cb", "Db", "Eb", "F"]

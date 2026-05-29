@@ -10,21 +10,23 @@ from pathlib import Path
 from pitchstems.acceleration import onnxruntime_status, torch_status
 from pitchstems.app_logging import app_logger, logs_dir, setup_app_logging
 from pitchstems.editor_project import (
+    ChordAnalysis,
     ChordRegion,
     ChordScoringOptions,
     EditorProject,
     NoteEvent,
-    PITCH_NAMES,
     active_notes_at,
     analyze_chord_at,
     analyze_chord_region,
     build_editor_project,
     chord_tones_for_label,
+    display_chord_label,
     midi_velocity_energy,
     midi_note_name,
 )
 from pitchstems.midi_preview import render_midi_preview, render_note_preview
 from pitchstems.model_catalog import model_choice
+from pitchstems.notation import pitch_class_for_name, pitch_class_name, spelling_preference_from_label
 from pitchstems.pipeline import PipelineResult, process_audio_file, process_midi_from_stems
 from pitchstems.project_store import (
     PROJECT_FILENAME,
@@ -64,6 +66,17 @@ class MidiRunRequest:
     midi_options: MidiOptions
     midi_stems: set[str]
     create_zip: bool
+
+
+@dataclass(frozen=True)
+class HarmonyContext:
+    mode: str
+    sampled_tracks: tuple[str, ...]
+    source_note_count: int
+    analyzed_note_count: int
+    chord_analysis: ChordAnalysis | None
+    theory_analysis: TheoryAnalysis | None
+    gap_analysis: ChordGapAnalysis | None
 
 
 def main() -> int:
@@ -219,9 +232,10 @@ def main() -> int:
             self.chord_label = label or ""
             self.source_label = source_label
             self.pitch_classes = {
-                PITCH_NAMES.index(note_name)
+                pitch_class
                 for note_name in note_names
-                if note_name in PITCH_NAMES
+                for pitch_class in [pitch_class_for_name(note_name)]
+                if pitch_class is not None
             }
             if self.chord_label and self.pitch_classes:
                 tones = " - ".join(note_names)
@@ -1366,6 +1380,7 @@ def main() -> int:
             self.chord_note_overrides: dict[int, str] = {}
             self.chord_note_filter_context = None
             self.current_chord_base_weights: dict[int, float] = {}
+            self.current_harmony_context: HarmonyContext | None = None
             self.current_theory_analysis: TheoryAnalysis | None = None
             self.current_chord_gap_analysis: ChordGapAnalysis | None = None
             self.updating_chord_note_filter = False
@@ -1469,10 +1484,10 @@ def main() -> int:
             self.editor_summary.setStyleSheet("color: #4b5563;")
             self.editor_position = QLabel("00:00.000")
             self.editor_position.setMinimumWidth(86)
-            self.current_chord = QLabel("Chord: -")
+            self.current_chord = QLabel("Harmony: -")
             self.current_chord.setFixedWidth(320)
             self.current_chord.setStyleSheet("font-weight: 700; color: #4c1d95;")
-            self.chord_context = QLabel("Notes: -")
+            self.chord_context = QLabel("Sample: -")
             self.chord_context.setWordWrap(True)
             self.chord_context.setFixedHeight(74)
             self.chord_context.setAlignment(Qt.AlignLeft | Qt.AlignTop)
@@ -1490,7 +1505,7 @@ def main() -> int:
             self.reset_note_filter_button = QPushButton("Reset Evidence")
             self.reset_note_filter_button.setToolTip("Clear manual include/exclude note choices for the current chord analysis.")
             self.chord_detector_help = QLabel(
-                "Chord detection uses MIDI energy: overlap time times squared velocity, summed by note name across selected Chord tracks."
+                "Harmony comes from the selected Chord tracks: MIDI note energy feeds chord detection, then the chord track feeds key, scale, mode, and gap suggestions."
             )
             self.chord_detector_help.setWordWrap(True)
             self.chord_detector_help.setStyleSheet("color: #64748b;")
@@ -1501,6 +1516,13 @@ def main() -> int:
             self.min_note_evidence_slider.setValue(0)
             self.min_note_evidence_slider.setToolTip(
                 "Ignore note names below this normalized evidence level when naming chords. Raw evidence still appears in Inspect."
+            )
+            self.notation_spelling = NoWheelComboBox()
+            self.notation_spelling.addItem("Notation: Auto", "auto")
+            self.notation_spelling.addItem("Notation: Sharps", "sharp")
+            self.notation_spelling.addItem("Notation: Flats", "flat")
+            self.notation_spelling.setToolTip(
+                "Controls enharmonic spelling for displayed notes and chords. Auto follows the current key/chord context where possible."
             )
             self.timeline = TimelineView()
             self.timeline.on_position_changed = self.set_editor_position_seconds
@@ -1568,7 +1590,7 @@ def main() -> int:
             self.preview_chord_button.setEnabled(False)
             self.use_chord_button.setEnabled(False)
             self.inspect_chord_button.setEnabled(False)
-            self.inspect_chord_button.setToolTip("Open a detailed report of the current Chord Inspector inputs, weights, constraints, and candidate scoring.")
+            self.inspect_chord_button.setToolTip("Open a detailed report of the current harmony inputs, note weights, constraints, and chord candidate scoring.")
             self.chord_preview_player = QMediaPlayer(self)
             self.chord_preview_output = QAudioOutput(self)
             self.chord_preview_output.setVolume(0.85)
@@ -1749,7 +1771,8 @@ def main() -> int:
             editor_side = QVBoxLayout()
             editor_side.setContentsMargins(0, 0, 0, 0)
             editor_side.setSpacing(8)
-            editor_side.addWidget(_section_label("Chord Inspector"))
+            editor_side.addWidget(_section_label("Harmony Inspector"))
+            editor_side.addWidget(self.notation_spelling)
             editor_side.addWidget(self.chord_context)
             editor_side.addWidget(self.chord_detector_help)
             evidence_floor_row = QHBoxLayout()
@@ -1842,6 +1865,9 @@ def main() -> int:
             self.inspect_gap_suggestion_button.clicked.connect(self.inspect_current_gap_suggestions)
             self.gap_suggestion_list.currentItemChanged.connect(
                 lambda *_args: self.refresh_gap_suggestion_actions()
+            )
+            self.notation_spelling.currentIndexChanged.connect(
+                lambda *_args: self.refresh_current_harmony(self.timeline.position)
             )
             self.note_filter_list.itemChanged.connect(self.handle_chord_note_filter_changed)
             self.min_note_evidence_slider.valueChanged.connect(self.handle_min_note_evidence_changed)
@@ -2419,7 +2445,7 @@ def main() -> int:
                 return
             for chord in self.editor_project.chords[:200]:
                 self.chord_list.addItem(
-                    f"{_format_time(chord.start)}  {chord.label}  ({chord.confidence:.0%})"
+                    f"{_format_time(chord.start)}  {self.display_chord(chord.label)}  ({chord.confidence:.0%})"
                 )
             if len(self.editor_project.chords) > 200:
                 self.chord_list.addItem(f"... {len(self.editor_project.chords) - 200} more")
@@ -2535,7 +2561,7 @@ def main() -> int:
 
                 analysis_check = QCheckBox("Chord")
                 analysis_check.setChecked(analysis_enabled.get(track.name, track_visibility.get(track.name, True)))
-                analysis_check.setToolTip("Include this track's generated MIDI notes in the Chord Inspector sample.")
+                analysis_check.setToolTip("Include this track's generated MIDI notes in the Harmony Inspector sample.")
                 analysis_check.toggled.connect(lambda *_args: self.refresh_current_harmony(self.timeline.position))
                 analysis_check.toggled.connect(lambda *_args: self.save_editor_state())
                 analysis_check.toggled.connect(lambda *_args: self.refresh_timeline_track_summaries())
@@ -3021,7 +3047,7 @@ def main() -> int:
                 self.theory_context.setToolTip("No scale, key, or mode evidence yet.")
                 return
             note_text = ", ".join(
-                f"{name} ({weight:.0%})"
+                f"{self.display_weighted_note_name(name)} ({weight:.0%})"
                 for name, weight in analysis.note_weights[:8]
             )
             self.theory_context.setText(
@@ -3112,7 +3138,7 @@ def main() -> int:
             )
             for index, suggestion in enumerate(analysis.suggestions[:8]):
                 item = QListWidgetItem(
-                    f"{suggestion.label}  {suggestion.score:.0%}\n"
+                    f"{self.display_chord(suggestion.label)}  {suggestion.score:.0%}\n"
                     f"{suggestion.action.replace('_', ' ')} | local {suggestion.local_evidence:.0%}, "
                     f"theory {suggestion.theory_fit:.0%}, voice {suggestion.voice_leading:.0%}"
                 )
@@ -3137,18 +3163,55 @@ def main() -> int:
         def chord_scoring_options(self) -> ChordScoringOptions:
             return ChordScoringOptions(weak_note_floor=self.chord_min_note_floor())
 
+        def selected_notation_preference(self) -> str:
+            return self.notation_spelling.currentData() or "auto"
+
+        def resolved_notation_preference(self, chord_label: str | None = None) -> str:
+            preference = self.selected_notation_preference()
+            if preference != "auto":
+                return preference
+            if self.current_theory_analysis and self.current_theory_analysis.label:
+                theory_preference = spelling_preference_from_label(self.current_theory_analysis.label)
+                if theory_preference != "auto":
+                    return theory_preference
+            chord_preference = spelling_preference_from_label(chord_label)
+            if chord_preference != "auto":
+                return chord_preference
+            return "auto"
+
+        def display_chord(self, label: str | None) -> str:
+            if not label:
+                return "No clear chord"
+            return display_chord_label(label, self.resolved_notation_preference(label))
+
+        def display_chord_tones(self, label: str) -> list[str]:
+            return chord_tones_for_label(label, self.resolved_notation_preference(label))
+
+        def display_note_name(self, pitch: int) -> str:
+            return midi_note_name(pitch, self.resolved_notation_preference())
+
+        def display_pitch_class_name(self, pitch_class: int) -> str:
+            return pitch_class_name(pitch_class, self.resolved_notation_preference())
+
+        def display_weighted_note_name(self, note_name: str) -> str:
+            pitch_class = pitch_class_for_name(note_name)
+            if pitch_class is None:
+                return note_name
+            return self.display_pitch_class_name(pitch_class)
+
         def handle_min_note_evidence_changed(self, value: int) -> None:
             self.min_note_evidence_label.setText(f"Min note evidence: {value}%")
             self.refresh_current_harmony(self.timeline.position)
 
         def refresh_current_harmony(self, seconds: float) -> None:
             if self.editor_project is None:
-                self.current_chord.setText("Chord: -")
-                self.set_chord_context_text("Notes: -")
+                self.current_chord.setText("Harmony: -")
+                self.set_chord_context_text("Sample: -")
                 self.chord_list.clear()
                 self.refresh_chord_keyboard()
                 self.set_theory_analysis(None)
                 self.set_gap_analysis(None)
+                self.current_harmony_context = None
                 self.note_filter_list.clear()
                 self.inspect_chord_button.setEnabled(False)
                 return
@@ -3174,18 +3237,19 @@ def main() -> int:
                     excluded_pitch_classes=excluded,
                     scoring_options=scoring_options,
                 )
-                chord = analysis.label or "No clear chord"
+                self.refresh_current_theory(source_notes, seconds)
+                chord = self.display_chord(analysis.label)
                 self.current_chord.setText(
                     f"Selection: {chord}  ({analysis.confidence:.0%})  "
                     f"{_format_time(start)} - {_format_time(end)}"
                 )
                 self._set_chord_candidates(analysis)
-                self.refresh_current_theory(source_notes, seconds)
                 self.refresh_current_gap_suggestions(source_notes)
+                self.update_harmony_context("selection", source_notes, analysis_notes, analysis)
                 self.populate_note_filter_list(self.current_chord_base_weights)
                 if analysis.note_weights:
                     note_text = ", ".join(
-                        f"{name} ({weight:.0%})"
+                        f"{self.display_weighted_note_name(name)} ({weight:.0%})"
                         for name, weight in analysis.note_weights[:12]
                     )
                     self.set_chord_context_text(f"{sample_text}\nWeighted notes: {note_text}")
@@ -3207,21 +3271,39 @@ def main() -> int:
                 scoring_options=scoring_options,
             )
             active_notes = active_notes_at(analysis_notes, seconds)
-            chord = analysis.label or "No clear chord"
-            self.current_chord.setText(f"Chord: {chord}  ({analysis.confidence:.0%})")
-            self._set_chord_candidates(analysis)
             self.refresh_current_theory(source_notes, seconds)
+            chord = self.display_chord(analysis.label)
+            self.current_chord.setText(f"Harmony: {chord}  ({analysis.confidence:.0%})")
+            self._set_chord_candidates(analysis)
             self.refresh_current_gap_suggestions(source_notes)
+            self.update_harmony_context("playhead", source_notes, analysis_notes, analysis)
             self.populate_note_filter_list(self.current_chord_base_weights)
             if active_notes:
                 unique_pitches = sorted({note.pitch for note in active_notes})
                 shown_pitches = unique_pitches[:32]
-                note_text = ", ".join(midi_note_name(pitch) for pitch in shown_pitches)
+                note_text = ", ".join(self.display_note_name(pitch) for pitch in shown_pitches)
                 if len(unique_pitches) > len(shown_pitches):
                     note_text += f", +{len(unique_pitches) - len(shown_pitches)} more"
                 self.set_chord_context_text(f"{sample_text}\nNotes: {note_text}")
             else:
                 self.set_chord_context_text(f"{sample_text}\nNotes: -")
+
+        def update_harmony_context(
+            self,
+            mode: str,
+            source_notes: list[NoteEvent],
+            analysis_notes: list[NoteEvent],
+            chord_analysis: ChordAnalysis,
+        ) -> None:
+            self.current_harmony_context = HarmonyContext(
+                mode=mode,
+                sampled_tracks=tuple(self.chord_analysis_track_names()),
+                source_note_count=len(source_notes),
+                analyzed_note_count=len(analysis_notes),
+                chord_analysis=chord_analysis,
+                theory_analysis=self.current_theory_analysis,
+                gap_analysis=self.current_chord_gap_analysis,
+            )
 
         def chord_context_key(self, seconds: float):
             selection = self.timeline.selection_range()
@@ -3251,11 +3333,11 @@ def main() -> int:
                 return "Sample: -"
             names = self.chord_analysis_track_names()
             if not names:
-                return "Chord sample: no tracks selected. Tick Chord to include a track."
+                return "Sample: no tracks selected. Tick Chord to include a track."
             shown = ", ".join(names[:5])
             if len(names) > 5:
                 shown += f", +{len(names) - 5} more"
-            return f"Chord sample: {shown} ({len(notes)} MIDI notes). View, Audio, and MIDI ticks do not affect detection."
+            return f"Sample: {shown} ({len(notes)} MIDI notes). View, Audio, and MIDI ticks do not affect detection."
 
         def chord_analysis_track_names(self) -> list[str]:
             if self.editor_project is None:
@@ -3343,7 +3425,7 @@ def main() -> int:
                     elif state == "force":
                         detail = "forced in"
                     label = {"exclude": "Exclude", "auto": "Auto", "force": "Force"}[state]
-                    item = QListWidgetItem(f"{label} {PITCH_NAMES[pitch_class]}  -  {detail}")
+                    item = QListWidgetItem(f"{label} {self.display_pitch_class_name(pitch_class)}  -  {detail}")
                     item.setData(Qt.UserRole, pitch_class)
                     tristate_flag = getattr(Qt, "ItemIsUserTristate", Qt.ItemIsUserCheckable)
                     item.setFlags(item.flags() | Qt.ItemIsUserCheckable | tristate_flag)
@@ -3389,7 +3471,7 @@ def main() -> int:
                 return
             report = self.current_chord_analysis_report()
             dialog = QDialog(self)
-            dialog.setWindowTitle("Chord Inspector Calculation")
+            dialog.setWindowTitle("Harmony Inspector Calculation")
             layout = QVBoxLayout()
             text = QTextEdit()
             text.setReadOnly(True)
@@ -3461,7 +3543,7 @@ def main() -> int:
             self.insert_manual_chord(chord)
             self.refresh_editor_project_from_chord_edits(chord)
             self.statusBar().showMessage(
-                f"Filled gap with {suggestion.label}: "
+                f"Filled gap with {self.display_chord(suggestion.label)}: "
                 f"{_format_time(suggestion.start)} - {_format_time(suggestion.end)}.",
                 5000,
             )
@@ -3499,10 +3581,10 @@ def main() -> int:
                 evidence_rows, totals = self.chord_point_evidence_rows(analysis_notes, seconds)
 
             lines = [
-                "Chord Inspector Calculation",
+                "Harmony Inspector Calculation",
                 "=" * 29,
                 f"Context: {mode}",
-                f"Detected chord: {analysis.label or 'No clear chord'} ({analysis.confidence:.0%})",
+                f"Detected chord: {self.display_chord(analysis.label)} ({analysis.confidence:.0%})",
                 f"Sampled tracks: {', '.join(self.chord_analysis_track_names()) or '-'}",
                 f"Source MIDI notes in sampled tracks: {len(source_notes):,}",
                 f"Filtered/analyzed note events: {len(analysis_notes):,}",
@@ -3538,13 +3620,15 @@ def main() -> int:
             if totals:
                 max_total = max(totals.values())
                 for pitch_class, total in sorted(totals.items(), key=lambda item: (-item[1], item[0])):
-                    lines.append(f"{PITCH_NAMES[pitch_class]:>2}: raw {total:.4f}, normalized {total / max_total:.0%}")
+                    lines.append(f"{self.display_pitch_class_name(pitch_class):>2}: raw {total:.4f}, normalized {total / max_total:.0%}")
             else:
                 lines.append("-")
             if analysis.note_weights:
                 lines.extend(["", "Pitch Classes Used By Detector", "-" * 30])
                 for name, weight in analysis.note_weights:
-                    lines.append(f"{name:>2}: {weight:.0%}")
+                    pitch_class = pitch_class_for_name(name)
+                    shown_name = self.display_pitch_class_name(pitch_class) if pitch_class is not None else name
+                    lines.append(f"{shown_name:>2}: {weight:.0%}")
 
             lines.extend(["", "Input Note Events", "-" * 17])
             if evidence_rows:
@@ -3557,12 +3641,12 @@ def main() -> int:
             lines.extend(["", "Chord Candidates And Formula Breakdown", "-" * 39])
             if analysis.candidates:
                 for label, confidence in analysis.candidates:
-                    notes = " - ".join(analysis.candidate_notes.get(label, [])) or "-"
-                    aliases = ", ".join(analysis.candidate_aliases.get(label, [])) or "-"
+                    notes = " - ".join(self.display_chord_tones(label)) or "-"
+                    aliases = ", ".join(self.display_chord(alias) for alias in analysis.candidate_aliases.get(label, [])) or "-"
                     lines.extend(
                         [
                             "",
-                            f"{label} ({confidence:.0%})",
+                            f"{self.display_chord(label)} ({confidence:.0%})",
                             f"Official tones: {notes}",
                             f"Alternate names: {aliases}",
                         ]
@@ -3573,12 +3657,12 @@ def main() -> int:
             if analysis.partial_candidates:
                 lines.extend(["", "Partial Chord Candidates", "-" * 24])
                 for label, confidence in analysis.partial_candidates:
-                    notes = " - ".join(analysis.partial_candidate_notes.get(label, [])) or "-"
-                    aliases = ", ".join(analysis.partial_candidate_aliases.get(label, [])) or "-"
+                    notes = " - ".join(self.display_chord_tones(label)) or "-"
+                    aliases = ", ".join(self.display_chord(alias) for alias in analysis.partial_candidate_aliases.get(label, [])) or "-"
                     lines.extend(
                         [
                             "",
-                            f"{label} ({confidence:.0%})",
+                            f"{self.display_chord(label)} ({confidence:.0%})",
                             f"Observed tones: {notes}",
                             f"Alternate names: {aliases}",
                         ]
@@ -3605,7 +3689,7 @@ def main() -> int:
                 weight = overlap * velocity_energy
                 totals[note.pitch % 12] = totals.get(note.pitch % 12, 0.0) + weight
                 rows.append(
-                    f"{note.stem:12} {note.name:4} pitch {note.pitch:3} "
+                    f"{note.stem:12} {self.display_note_name(note.pitch):4} pitch {note.pitch:3} "
                     f"start {_format_time(note.start)} end {_format_time(note.end)} "
                     f"overlap {overlap:.3f}s velocity {note.velocity:3} "
                     f"velocity energy {velocity_energy:.4f} note energy {weight:.4f}"
@@ -3623,7 +3707,7 @@ def main() -> int:
                 weight = midi_velocity_energy(note.velocity)
                 totals[note.pitch % 12] = max(totals.get(note.pitch % 12, 0.0), weight)
                 rows.append(
-                    f"{note.stem:12} {note.name:4} pitch {note.pitch:3} "
+                    f"{note.stem:12} {self.display_note_name(note.pitch):4} pitch {note.pitch:3} "
                     f"start {_format_time(note.start)} end {_format_time(note.end)} "
                     f"active at playhead velocity {note.velocity:3} velocity energy {weight:.4f}"
                 )
@@ -3632,29 +3716,30 @@ def main() -> int:
         def pitch_class_list(self, pitch_classes: set[int]) -> str:
             if not pitch_classes:
                 return "-"
-            return ", ".join(PITCH_NAMES[pitch_class] for pitch_class in sorted(pitch_classes))
+            return ", ".join(self.display_pitch_class_name(pitch_class) for pitch_class in sorted(pitch_classes))
 
         def _set_chord_candidates(self, analysis) -> None:
             if analysis.candidates:
                 self.chord_list.clear()
                 for label, confidence in analysis.candidates:
-                    note_names = analysis.candidate_notes.get(label, [])
+                    display_label = self.display_chord(label)
+                    note_names = self.display_chord_tones(label)
                     notes = self._candidate_notes_text(analysis, label)
                     aliases = analysis.candidate_aliases.get(label, [])
                     alias_text = ""
                     if aliases:
-                        shown_aliases = ", ".join(aliases[:4])
+                        shown_aliases = ", ".join(self.display_chord(alias) for alias in aliases[:4])
                         if len(aliases) > 4:
                             shown_aliases += f", +{len(aliases) - 4} more"
                         alias_text = f"\naka: {shown_aliases}"
-                    item = QListWidgetItem(f"{label}  {confidence:.0%}\n{notes}{alias_text}")
+                    item = QListWidgetItem(f"{display_label}  {confidence:.0%}\n{notes}{alias_text}")
                     item.setData(Qt.UserRole, label)
                     item.setData(Qt.UserRole + 1, confidence)
                     item.setData(Qt.UserRole + 2, note_names)
                     item.setToolTip(
-                        f"{label}\n"
+                        f"{display_label}\n"
                         f"Official chord tones: {notes}\n"
-                        f"Alternate names: {', '.join(aliases) if aliases else '-'}\n"
+                        f"Alternate names: {', '.join(self.display_chord(alias) for alias in aliases) if aliases else '-'}\n"
                         f"Detector confidence: {confidence:.0%}\n\n"
                         + "\n".join(analysis.candidate_explanations.get(label, []))
                     )
@@ -3663,18 +3748,19 @@ def main() -> int:
                 self.chord_list.clear()
                 self.chord_list.addItem("No full chord candidates here.")
                 for label, confidence in analysis.partial_candidates:
-                    note_names = analysis.partial_candidate_notes.get(label, [])
+                    display_label = self.display_chord(label)
+                    note_names = self.display_chord_tones(label)
                     notes = self._partial_candidate_notes_text(analysis, label)
                     aliases = analysis.partial_candidate_aliases.get(label, [])
                     alias_text = ""
                     if aliases:
-                        alias_text = f"\naka: {', '.join(aliases[:4])}"
-                    item = QListWidgetItem(f"{label}  {confidence:.0%}\n{notes}{alias_text}")
+                        alias_text = f"\naka: {', '.join(self.display_chord(alias) for alias in aliases[:4])}"
+                    item = QListWidgetItem(f"{display_label}  {confidence:.0%}\n{notes}{alias_text}")
                     item.setData(Qt.UserRole, label)
                     item.setData(Qt.UserRole + 1, confidence)
                     item.setData(Qt.UserRole + 2, note_names)
                     item.setToolTip(
-                        f"{label}\n"
+                        f"{display_label}\n"
                         f"Observed shell tones: {notes}\n"
                         "Partial/shell candidate, not a full chord detection.\n\n"
                         + "\n".join(analysis.partial_candidate_explanations.get(label, []))
@@ -3702,9 +3788,9 @@ def main() -> int:
         def refresh_chord_keyboard(self) -> None:
             track_chord = self.active_chord_track_region()
             if track_chord is not None:
-                note_names = chord_tones_for_label(track_chord.label)
+                note_names = self.display_chord_tones(track_chord.label)
                 self.piano_chord_view.set_chord(
-                    track_chord.label,
+                    self.display_chord(track_chord.label),
                     note_names,
                     "Chord track",
                 )
@@ -3729,21 +3815,21 @@ def main() -> int:
             return None
 
         def _candidate_notes_text(self, analysis, label: str) -> str:
-            notes = analysis.candidate_notes.get(label, [])
+            notes = self.display_chord_tones(label) if label else analysis.candidate_notes.get(label, [])
             if not notes:
                 return "-"
             text = " - ".join(notes)
             if "/" in label:
-                text += f"  bass {label.split('/', 1)[1]}"
+                text += f"  bass {self.display_chord(label).split('/', 1)[1]}"
             return text
 
         def _partial_candidate_notes_text(self, analysis, label: str) -> str:
-            notes = analysis.partial_candidate_notes.get(label, [])
+            notes = self.display_chord_tones(label) if label else analysis.partial_candidate_notes.get(label, [])
             if not notes:
                 return "-"
             text = " - ".join(notes)
             if "/" in label:
-                text += f"  bass {label.split('/', 1)[1]}"
+                text += f"  bass {self.display_chord(label).split('/', 1)[1]}"
             return text
 
         def refresh_chord_actions(self) -> None:
@@ -3771,7 +3857,7 @@ def main() -> int:
                 return
             self.chord_preview_player.setSource(QUrl.fromLocalFile(str(preview)))
             self.chord_preview_player.play()
-            self.statusBar().showMessage(f"Playing official {label} chord.", 3000)
+            self.statusBar().showMessage(f"Playing official {self.display_chord(label)} chord.", 3000)
 
         def preview_notes_for_chord(self, label: str, note_names: list[str]) -> list[NoteEvent]:
             pitches = _chord_preview_pitches(label, note_names)
@@ -3802,7 +3888,7 @@ def main() -> int:
             self.insert_manual_chord(manual)
             self.refresh_editor_project_from_chord_edits(manual)
             self.statusBar().showMessage(
-                f"Assigned {label} to {_format_time(start)} - {_format_time(end)}.",
+                f"Assigned {self.display_chord(label)} to {_format_time(start)} - {_format_time(end)}.",
                 5000,
             )
 
@@ -3826,7 +3912,7 @@ def main() -> int:
             self.insert_manual_chord(edited)
             self.refresh_editor_project_from_chord_edits(edited)
             self.statusBar().showMessage(
-                f"Moved {edited.label} to {_format_time(edited.start)} - {_format_time(edited.end)}.",
+                f"Moved {self.display_chord(edited.label)} to {_format_time(edited.start)} - {_format_time(edited.end)}.",
                 5000,
             )
 
@@ -3836,7 +3922,7 @@ def main() -> int:
             )
             self.manual_chords = [manual for manual in self.manual_chords if manual != chord]
             self.refresh_editor_project_from_chord_edits(None)
-            self.statusBar().showMessage(f"Deleted {chord.label}.", 4000)
+            self.statusBar().showMessage(f"Deleted {self.display_chord(chord.label)}.", 4000)
 
         def show_timeline_chord_status(self, chord: ChordRegion | None) -> None:
             if chord is None:
@@ -3844,7 +3930,7 @@ def main() -> int:
                 return
             self.refresh_chord_keyboard()
             self.statusBar().showMessage(
-                f"Selected {chord.label}: drag middle to move, drag edges to resize, Delete removes it.",
+                f"Selected {self.display_chord(chord.label)}: drag middle to move, drag edges to resize, Delete removes it.",
                 6000,
             )
 
@@ -3947,6 +4033,7 @@ def main() -> int:
             self.chord_note_overrides = {}
             self.chord_note_filter_context = None
             self.current_chord_base_weights = {}
+            self.current_harmony_context = None
             self.current_theory_analysis = None
             self.current_chord_gap_analysis = None
             self.rendering_midi_previews.clear()
@@ -3974,8 +4061,8 @@ def main() -> int:
             self.use_gap_suggestion_button.setEnabled(False)
             self.inspect_gap_suggestion_button.setEnabled(False)
             self.editor_position.setText(_format_time(0))
-            self.current_chord.setText("Chord: -")
-            self.set_chord_context_text("Notes: -")
+            self.current_chord.setText("Harmony: -")
+            self.set_chord_context_text("Sample: -")
             self.set_theory_analysis(None)
             self.set_gap_analysis(None)
             self.reset_activity("Ready for new audio")

@@ -8,11 +8,18 @@ from pathlib import Path
 
 from mido import MidiFile, tick2second
 
+from pitchstems.notation import (
+    DEFAULT_PITCH_NAMES,
+    midi_note_name as spell_midi_note_name,
+    pitch_class_for_name,
+    respell_chord_label,
+    spell_chord_tones,
+)
 from pitchstems.pipeline import PipelineResult
 
 
 DEFAULT_TEMPO = 500000
-PITCH_NAMES = ("C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B")
+PITCH_NAMES = DEFAULT_PITCH_NAMES
 PLAIN_CHORD_THRESHOLD = 0.70
 WEIGHTED_CHORD_THRESHOLD = 0.30
 PLAIN_CANDIDATE_MARGIN = 0.18
@@ -622,13 +629,42 @@ def identify_chord(pitches: list[int]) -> tuple[str | None, float]:
     return analysis.label, analysis.confidence
 
 
-def midi_note_name(pitch: int) -> str:
-    octave = (pitch // 12) - 1
-    return f"{PITCH_NAMES[pitch % 12]}{octave}"
+def midi_note_name(pitch: int, spelling_preference: str | None = "auto") -> str:
+    return spell_midi_note_name(pitch, spelling_preference)
 
 
-def chord_tones_for_label(label: str) -> list[str]:
-    return [PITCH_NAMES[pitch_class] for pitch_class in chord_pitch_classes_for_label(label)]
+def display_chord_label(label: str, spelling_preference: str | None = "auto") -> str:
+    return respell_chord_label(label, spelling_preference)
+
+
+def chord_tones_for_label(label: str, spelling_preference: str | None = "auto") -> list[str]:
+    base_label = label.split("/", 1)[0]
+    root_name = next(
+        (
+            name
+            for name in sorted(_accepted_note_names(), key=len, reverse=True)
+            if base_label.startswith(name)
+        ),
+        None,
+    )
+    if root_name is None:
+        return [PITCH_NAMES[pitch_class] for pitch_class in chord_pitch_classes_for_label(label)]
+    suffix = base_label[len(root_name):]
+    omitted_intervals: set[int] = set()
+    if "(no" in suffix:
+        suffix, omitted_intervals = _split_omitted_suffix(suffix)
+    quality = next(
+        (
+            intervals
+            for quality_suffix, intervals in _chord_qualities()
+            if quality_suffix == suffix
+        ),
+        None,
+    )
+    if quality is None:
+        return [PITCH_NAMES[pitch_class] for pitch_class in chord_pitch_classes_for_label(label)]
+    intervals = [interval for interval in quality if interval not in omitted_intervals]
+    return spell_chord_tones(label, intervals, spelling_preference)
 
 
 def partial_harmony_hints(
@@ -970,10 +1006,12 @@ def _partial_shell_candidates_from_weights(
     for *_sort, candidate in suggestions:
         root_name = next(
             name
-            for name in sorted(PITCH_NAMES, key=len, reverse=True)
+            for name in sorted(_accepted_note_names(), key=len, reverse=True)
             if candidate.label.startswith(name)
         )
-        root = PITCH_NAMES.index(root_name)
+        root = pitch_class_for_name(root_name)
+        if root is None:
+            continue
         root_tone_key = (root, frozenset(candidate.observed_tones))
         if root_tone_key in seen_root_tone_sets:
             continue
@@ -1132,7 +1170,7 @@ def chord_pitch_classes_for_label(label: str) -> list[int]:
     root_name = next(
         (
             name
-            for name in sorted(PITCH_NAMES, key=len, reverse=True)
+            for name in sorted(_accepted_note_names(), key=len, reverse=True)
             if base_label.startswith(name)
         ),
         None,
@@ -1153,7 +1191,9 @@ def chord_pitch_classes_for_label(label: str) -> list[int]:
     )
     if quality is None:
         return []
-    root = PITCH_NAMES.index(root_name)
+    root = pitch_class_for_name(root_name)
+    if root is None:
+        return []
     tones: list[int] = []
     for interval in quality:
         if interval in omitted_intervals:
@@ -1162,6 +1202,32 @@ def chord_pitch_classes_for_label(label: str) -> list[int]:
         if pitch_class not in tones:
             tones.append(pitch_class)
     return tones
+
+
+def _accepted_note_names() -> tuple[str, ...]:
+    return (
+        "C#",
+        "Db",
+        "D#",
+        "Eb",
+        "E#",
+        "Fb",
+        "F#",
+        "Gb",
+        "G#",
+        "Ab",
+        "A#",
+        "Bb",
+        "B#",
+        "Cb",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "A",
+        "B",
+    )
 
 
 def _split_omitted_suffix(suffix: str) -> tuple[str, set[int]]:

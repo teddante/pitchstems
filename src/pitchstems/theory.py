@@ -13,6 +13,12 @@ from pitchstems.editor_project import (
     exact_chord_names_for_pitch_classes,
     midi_velocity_energy,
 )
+from pitchstems.notation import (
+    pitch_class_for_name,
+    pitch_class_name,
+    scale_label,
+    spell_scale,
+)
 
 
 @dataclass(frozen=True)
@@ -649,7 +655,7 @@ def _scale_candidates(
             chord_support = _chord_support(pitch_classes, chords)
             if pitch_fit < 0.72 and scale.name != "Chromatic":
                 continue
-            notes = [PITCH_NAMES[(root + interval) % 12] for interval in scale.intervals]
+            notes = spell_scale(root, scale.intervals)
             label = _scale_label(root, scale)
             candidates.append(
                 ScaleCandidate(
@@ -700,12 +706,7 @@ def _scale_candidate_sort_key(
 
 
 def _scale_label(root: int, scale: ScaleDefinition) -> str:
-    root_name = PITCH_NAMES[root]
-    if scale.name == "Ionian":
-        return f"{root_name} major"
-    if scale.name == "Aeolian":
-        return f"{root_name} natural minor"
-    return f"{root_name} {scale.name}"
+    return scale_label(root, scale.intervals, scale.name)
 
 
 def _center_strength(
@@ -774,7 +775,7 @@ def _roman_for_chord(label: str, key_root: int, scale: ScaleDefinition) -> str:
     try:
         degree_index = scale.intervals.index(relative)
     except ValueError:
-        return f"{PITCH_NAMES[root]}"
+        return f"{pitch_class_name(root)}"
     numeral = ROMAN_NUMERALS[degree_index]
     suffix = _chord_suffix(label)
     if _minor_or_diminished_suffix(suffix):
@@ -801,14 +802,19 @@ def _suggested_note_groups(
         chord = sorted(chords, key=lambda item: item.duration, reverse=True)[0]
         core_pitch_classes = chord_pitch_classes_for_label(chord.label)
     scale_pitch_classes = [(candidate.root + interval) % 12 for interval in candidate.scale.intervals]
-    core_notes = [PITCH_NAMES[pitch_class] for pitch_class in core_pitch_classes]
+    scale_spellings = spell_scale(candidate.root, candidate.scale.intervals)
+    core_note_set = set(core_pitch_classes)
+    core_notes = [
+        pitch_class_name(pitch_class, spelling_preference_from_scale_label(candidate.label))
+        for pitch_class in core_pitch_classes
+    ]
     scale_notes = [
-        PITCH_NAMES[pitch_class]
-        for pitch_class in scale_pitch_classes
-        if pitch_class not in set(core_pitch_classes)
+        note_name
+        for pitch_class, note_name in zip(scale_pitch_classes, scale_spellings)
+        if pitch_class not in core_note_set
     ]
     outside_notes = [
-        PITCH_NAMES[pitch_class]
+        pitch_class_name(pitch_class, spelling_preference_from_scale_label(candidate.label))
         for pitch_class in range(12)
         if pitch_class not in set(scale_pitch_classes)
     ]
@@ -839,14 +845,14 @@ def _chord_root(label: str) -> int | None:
     root_name = next(
         (
             name
-            for name in sorted(PITCH_NAMES, key=len, reverse=True)
+            for name in sorted(_accepted_note_names(), key=len, reverse=True)
             if base_label.startswith(name)
         ),
         None,
     )
     if root_name is None:
         return None
-    return PITCH_NAMES.index(root_name)
+    return pitch_class_for_name(root_name)
 
 
 def _chord_suffix(label: str) -> str:
@@ -854,7 +860,7 @@ def _chord_suffix(label: str) -> str:
     root_name = next(
         (
             name
-            for name in sorted(PITCH_NAMES, key=len, reverse=True)
+            for name in sorted(_accepted_note_names(), key=len, reverse=True)
             if base_label.startswith(name)
         ),
         "",
@@ -864,6 +870,48 @@ def _chord_suffix(label: str) -> str:
 
 def _minor_or_diminished_suffix(suffix: str) -> bool:
     return suffix.startswith("m") and not suffix.startswith("maj") or "dim" in suffix
+
+
+def spelling_preference_from_scale_label(label: str) -> str:
+    root = next(
+        (
+            name
+            for name in sorted(_accepted_note_names(), key=len, reverse=True)
+            if label.startswith(name)
+        ),
+        "",
+    )
+    if "b" in root:
+        return "flat"
+    if "#" in root:
+        return "sharp"
+    return "auto"
+
+
+def _accepted_note_names() -> tuple[str, ...]:
+    return (
+        "C#",
+        "Db",
+        "D#",
+        "Eb",
+        "E#",
+        "Fb",
+        "F#",
+        "Gb",
+        "G#",
+        "Ab",
+        "A#",
+        "Bb",
+        "B#",
+        "Cb",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "A",
+        "B",
+    )
 
 
 def _add_pitch_weight(totals: dict[int, float], pitch_class: int, weight: float) -> None:
