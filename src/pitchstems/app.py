@@ -1151,6 +1151,7 @@ def main() -> int:
 
         def set_current_result(self, result: PipelineResult, open_output: bool = True) -> None:
             self.logger.info("Setting current result: %s", result.project_dir)
+            self.stop_transport()
             self.set_activity_message("Loading result...")
             self.editor_load_token += 1
             self.current_result = result

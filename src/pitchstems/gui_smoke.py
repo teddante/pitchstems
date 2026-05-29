@@ -78,6 +78,10 @@ def run_project_smoke(window) -> None:
     _assert(window.save_editor_state(), "editor state save")
 
     second_manifest_path = _create_smoke_project(stem_name="piano", pitches=[60, 64, 67])
+    window.transport.is_playing = True
+    window.play_button.setText("Pause")
+    window.stop_button.setEnabled(True)
+    window.transport_timer.start(80)
     window.active_worker_token = 7
     window.open_project_manifest(second_manifest_path)
     _wait_for(
@@ -87,6 +91,10 @@ def run_project_smoke(window) -> None:
         "second editor project load",
     )
     _assert(window.active_worker_token is None, "project open invalidates active worker")
+    _assert(not window.transport.is_playing, "project open stops old transport")
+    _assert(not window.transport_timer.isActive(), "project open stops old transport timer")
+    _assert(window.play_button.text() == "Play", "project open resets play button")
+    _assert(not window.stop_button.isEnabled(), "project open disables stop button")
     _assert("piano" in window.track_analysis_checks, "second project track controls")
     _assert("bass" not in window.track_analysis_checks, "old project track controls cleared")
     _assert(set(window.timeline.visible_tracks) == {"piano"}, "timeline visible tracks switched")
