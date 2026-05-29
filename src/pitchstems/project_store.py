@@ -302,7 +302,7 @@ def _read_existing_manifest(path: Path) -> dict[str, Any]:
         return {}
     with contextlib.suppress(OSError, json.JSONDecodeError):
         existing = _migrate_manifest(_read_json(path))
-        if isinstance(existing, dict):
+        if isinstance(existing, dict) and existing.get("format") == "pitchstems-project":
             return existing
     return {}
 

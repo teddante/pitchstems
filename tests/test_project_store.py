@@ -109,6 +109,41 @@ def test_save_project_manifest_recovers_from_malformed_existing_manifest(tmp_pat
     assert manifest["normalized_audio"] == "work/song.wav"
 
 
+def test_save_project_manifest_ignores_non_pitchstems_existing_json_object(tmp_path: Path) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    project_dir.mkdir()
+    manifest_path = project_dir / PROJECT_FILENAME
+    manifest_path.write_text(
+        json.dumps({"created_at": "not ours", "settings": [], "editor": []}),
+        encoding="utf-8",
+    )
+    normalized = project_dir / "work" / "song.wav"
+
+    save_project_manifest(
+        PipelineResult(
+            project_dir=project_dir,
+            normalized_audio=normalized,
+            stems=[],
+            midi_files=[],
+            combined_midi=None,
+            zip_path=None,
+            source_audio=None,
+        )
+    )
+
+    manifest = load_project_manifest(manifest_path)
+    assert manifest["format"] == "pitchstems-project"
+    assert manifest["created_at"] != "not ours"
+    assert manifest["settings"] == {
+        "create_zip": None,
+        "generate_midi": None,
+        "midi": {},
+        "midi_policy": None,
+        "midi_stems": [],
+        "separation": {},
+    }
+
+
 def test_load_project_manifest_rejects_incomplete_project(tmp_path: Path) -> None:
     manifest_path = tmp_path / PROJECT_FILENAME
     manifest_path.write_text(
