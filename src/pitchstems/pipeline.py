@@ -10,7 +10,7 @@ from typing import Callable
 
 from pitchstems.audio import normalize_to_wav
 from pitchstems.midi import combine_midi_tracks
-from pitchstems.project_store import save_project_manifest
+from pitchstems.project_store import PROJECT_FILENAME, load_project_manifest, save_project_manifest
 from pitchstems.separation import SeparationOptions, StemResult, separate_stems
 from pitchstems.transcription import MidiOptions, MidiResult, transcribe_stem_to_midi
 
@@ -127,6 +127,7 @@ def process_midi_from_stems(
 ) -> PipelineResult:
     """Run or rerun Basic Pitch from already separated stems."""
     project_dir = project_dir.expanduser().resolve()
+    source_audio = source_audio or _existing_source_audio(project_dir)
     midi_dir = project_dir / "midi"
     export_dir = project_dir / "export"
     staged_midi_dir = project_dir / "midi.tmp"
@@ -247,6 +248,15 @@ def _copy_source_audio(input_path: Path, audio_dir: Path) -> Path:
     target = audio_dir / f"{_safe_stem(input_path.stem)}{input_path.suffix.lower()}"
     shutil.copy2(input_path, target)
     return target
+
+
+def _existing_source_audio(project_dir: Path) -> Path | None:
+    with contextlib.suppress(Exception):
+        value = load_project_manifest(project_dir / PROJECT_FILENAME).get("source_audio")
+        if isinstance(value, str) and value:
+            path = Path(value)
+            return path if path.is_absolute() else project_dir / path
+    return None
 
 
 def _safe_stem(stem: str, max_length: int = 80) -> str:
