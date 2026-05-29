@@ -1272,7 +1272,7 @@ def _plain_score_explanation(
         f"Evidence terms: coverage {coverage:.0%}, purity {purity:.0%}.",
         "Ranking rule: prefer higher unweighted evidence, then fewer missing tones, fewer extra tones, exact note-set matches, and bass/root agreement.",
         "Display score: coverage * purity. No naming bonuses, penalties, or user-tuned weights are applied.",
-        f"Raw score {score:.2f}; displayed confidence is a ranking score, not a statistical probability.",
+        f"Raw score {score:.2f}; displayed percentage is a ranking score, not a statistical probability.",
     ]
 
 
@@ -1308,7 +1308,7 @@ def _weighted_score_explanation(
         f"Evidence terms: coverage {coverage:.0%}, purity {required_weight:.0%}.",
         "Ranking rule: prefer higher unweighted evidence, then fewer missing tones, less extra energy, and bass/root agreement.",
         "Display score: coverage * purity. No naming bonuses, penalties, or user-tuned weights are applied.",
-        f"Raw score {score:.2f}; displayed confidence is a ranking score, not a statistical probability.",
+        f"Raw score {score:.2f}; displayed percentage is a ranking score, not a statistical probability.",
     ]
 
 

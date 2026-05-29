@@ -272,7 +272,7 @@ def theory_analysis_report(analysis: TheoryAnalysis) -> str:
     lines = [
         "Theory Inspector Calculation",
         "============================",
-        f"Detected interpretation: {analysis.label or 'No clear key/mode'} ({analysis.confidence:.0%})",
+        f"Detected interpretation: {analysis.label or 'No clear key/mode'} (ranking score {analysis.confidence:.0%})",
         "",
         "Pitch Evidence",
         "--------------",

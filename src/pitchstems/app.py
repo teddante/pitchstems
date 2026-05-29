@@ -514,7 +514,7 @@ def main() -> int:
                 rect.setData(0, chord)
                 rect.setToolTip(
                     f"{chord.label}  {_format_time(chord.start)} - {_format_time(chord.end)}\n"
-                    f"Confidence: {chord.confidence:.0%}\n"
+                    f"Ranking score: {chord.confidence:.0%}\n"
                     "Drag the middle to move, drag an edge to resize, Delete removes the selected chord."
                 )
                 label_width = max(8, int(width) - 8)
@@ -2899,7 +2899,7 @@ def main() -> int:
                 for name, weight in analysis.note_weights[:8]
             )
             self.theory_context.setText(
-                f"Likely: {analysis.label} ({analysis.confidence:.0%})\n"
+                f"Likely: {analysis.label} (score {analysis.confidence:.0%})\n"
                 f"Weighted notes: {note_text or '-'}"
             )
             self.theory_context.setToolTip(self.theory_context.text())
@@ -3092,7 +3092,7 @@ def main() -> int:
                 self.refresh_current_theory(source_notes, seconds)
                 chord = self.display_chord(analysis.label)
                 self.current_chord.setText(
-                    f"Selection: {chord}  ({analysis.confidence:.0%})  "
+                    f"Selection: {chord}  (score {analysis.confidence:.0%})  "
                     f"{_format_time(start)} - {_format_time(end)}"
                 )
                 self._set_chord_candidates(analysis)
@@ -3125,7 +3125,7 @@ def main() -> int:
             active_notes = active_notes_at(analysis_notes, seconds)
             self.refresh_current_theory(source_notes, seconds)
             chord = self.display_chord(analysis.label)
-            self.current_chord.setText(f"Harmony: {chord}  ({analysis.confidence:.0%})")
+            self.current_chord.setText(f"Harmony: {chord}  (score {analysis.confidence:.0%})")
             self._set_chord_candidates(analysis)
             self.refresh_current_gap_suggestions(source_notes)
             self.update_harmony_context("playhead", source_notes, analysis_notes, analysis)
@@ -3436,7 +3436,7 @@ def main() -> int:
                 "Harmony Inspector Calculation",
                 "=" * 29,
                 f"Context: {mode}",
-                f"Detected chord: {self.display_chord(analysis.label)} ({analysis.confidence:.0%})",
+                f"Detected chord: {self.display_chord(analysis.label)} (ranking score {analysis.confidence:.0%})",
                 f"Sampled tracks: {', '.join(self.chord_analysis_track_names()) or '-'}",
                 f"Source MIDI notes in sampled tracks: {len(source_notes):,}",
                 f"Filtered/analyzed note events: {len(analysis_notes):,}",
@@ -3592,7 +3592,7 @@ def main() -> int:
                         f"{display_label}\n"
                         f"Official chord tones: {notes}\n"
                         f"Alternate names: {', '.join(self.display_chord(alias) for alias in aliases) if aliases else '-'}\n"
-                        f"Detector confidence: {confidence:.0%}\n\n"
+                        f"Detector ranking score: {confidence:.0%}\n\n"
                         + "\n".join(analysis.candidate_explanations.get(label, []))
                     )
                     self.chord_list.addItem(item)
