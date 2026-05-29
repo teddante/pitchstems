@@ -99,12 +99,10 @@ class TransportController:
             midi_check = self.track_midi_checks.get(stem_name)
             midi_slider = self.track_midi_sliders.get(stem_name)
             if midi_check:
-                midi_check.setEnabled(True)
                 midi_check.setToolTip(
                     "Play the generated MIDI preview audio for this stem. This does not affect chord detection."
                 )
             if midi_slider:
-                midi_slider.setEnabled(True)
                 midi_slider.setToolTip("MIDI preview audio volume.")
             if self.is_playing and self.midi_track_enabled(stem_name):
                 safe_qt_multimedia_call(

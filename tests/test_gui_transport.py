@@ -8,6 +8,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import QUrl  # noqa: E402
 
 from pitchstems.gui_transport import (  # noqa: E402
+    TransportController,
     find_existing_midi_previews,
     loop_playback_start,
     reset_player_source,
@@ -103,6 +104,24 @@ def test_start_player_source_sets_source_and_plays() -> None:
     assert player.actions == ["setSource:file:///preview.wav", "play"]
 
 
+def test_attach_midi_preview_players_preserves_disabled_controls(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("pitchstems.gui_transport.QMediaPlayer", _FakePlayer)
+    monkeypatch.setattr("pitchstems.gui_transport.QAudioOutput", _FakeAudioOutput)
+    midi_check = _FakeCheck(checked=True, enabled=False)
+    midi_slider = _FakeSlider(value=70, enabled=False)
+    controller = TransportController(None, _Logger(), {}, {}, {"piano": midi_check}, {"piano": midi_slider})
+    preview = tmp_path / "piano_midi_preview.wav"
+    _write_wav(preview)
+
+    assert controller.attach_midi_preview_players({"piano": preview}, 12.0) == 1
+
+    assert not midi_check.enabled
+    assert not midi_slider.enabled
+    assert "generated MIDI preview audio" in midi_check.tooltip
+    assert midi_slider.tooltip == "MIDI preview audio volume."
+    assert not controller.midi_track_enabled("piano")
+
+
 def _write_wav(path: Path) -> None:
     with wave.open(str(path), "wb") as wav:
         wav.setnchannels(1)
@@ -120,14 +139,65 @@ class _Logger:
 
 
 class _FakePlayer:
-    def __init__(self) -> None:
+    def __init__(self, *_args) -> None:
         self.actions: list[str] = []
+        self.audio_output = None
 
     def pause(self) -> None:
         self.actions.append("pause")
+
+    def setAudioOutput(self, output) -> None:
+        self.audio_output = output
+        self.actions.append("setAudioOutput")
 
     def setSource(self, source: QUrl) -> None:
         self.actions.append(f"setSource:{source.toString()}")
 
     def play(self) -> None:
         self.actions.append("play")
+
+
+class _FakeAudioOutput:
+    def __init__(self, *_args) -> None:
+        self.volume = 0.0
+
+    def setVolume(self, volume: float) -> None:
+        self.volume = volume
+
+    def deleteLater(self) -> None:
+        pass
+
+
+class _FakeCheck:
+    def __init__(self, checked: bool, enabled: bool) -> None:
+        self.checked = checked
+        self.enabled = enabled
+        self.tooltip = ""
+
+    def isChecked(self) -> bool:
+        return self.checked
+
+    def isEnabled(self) -> bool:
+        return self.enabled
+
+    def setEnabled(self, enabled: bool) -> None:
+        self.enabled = enabled
+
+    def setToolTip(self, tooltip: str) -> None:
+        self.tooltip = tooltip
+
+
+class _FakeSlider:
+    def __init__(self, value: int, enabled: bool) -> None:
+        self._value = value
+        self.enabled = enabled
+        self.tooltip = ""
+
+    def value(self) -> int:
+        return self._value
+
+    def setEnabled(self, enabled: bool) -> None:
+        self.enabled = enabled
+
+    def setToolTip(self, tooltip: str) -> None:
+        self.tooltip = tooltip
