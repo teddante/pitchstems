@@ -29,6 +29,7 @@ from pitchstems.editor_state import (
     build_editor_state_snapshot,
     save_editor_state_snapshot,
 )
+from pitchstems.file_opening import open_folder
 from pitchstems.midi_preview import render_midi_preview, render_note_preview
 from pitchstems.model_catalog import model_choice
 from pitchstems.notation import pitch_class_for_name, pitch_class_name
@@ -2856,13 +2857,20 @@ def main() -> int:
 
         def open_latest_output(self) -> None:
             target = self.latest_output_dir or Path(self.output_dir.text())
-            target.mkdir(parents=True, exist_ok=True)
-            os.startfile(target)
+            self.open_folder_path(target, "output folder")
 
         def open_logs_folder(self) -> None:
-            target = logs_dir()
-            target.mkdir(parents=True, exist_ok=True)
-            os.startfile(target)
+            self.open_folder_path(logs_dir(), "logs folder")
+
+        def open_folder_path(self, target: Path, label: str) -> None:
+            try:
+                opened = open_folder(target)
+            except Exception as exc:
+                self.logger.exception("Could not open %s: %s", label, target)
+                self.append_log(f"Could not open {label}: {exc}")
+                self.statusBar().showMessage(f"Could not open {label}. See logs for details.", 6000)
+                return
+            self.statusBar().showMessage(f"Opened {label}: {opened}", 3000)
 
     def _section_label(text: str) -> QLabel:
         label = QLabel(text)
