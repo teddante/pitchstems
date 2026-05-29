@@ -8,6 +8,7 @@ from pathlib import Path
 
 from pitchstems.acceleration import onnxruntime_status, torch_status
 from pitchstems.app_logging import app_logger, logs_dir, setup_app_logging
+from pitchstems.chord_preview import chord_preview_pitches
 from pitchstems.editor_project import (
     ChordAnalysis,
     ChordRegion,
@@ -47,6 +48,7 @@ from pitchstems.harmony_inspector import (
     resolve_notation_preference,
     selected_chord_analysis_notes,
 )
+from pitchstems.gui_options import default_midi_checked, device_label, optional_frequency
 from pitchstems.recent_projects import (
     normalize_recent_project_paths,
     recent_project_label,
@@ -2486,7 +2488,7 @@ def main() -> int:
             self.statusBar().showMessage(f"Playing official {self.display_chord(label)} chord.", 3000)
 
         def preview_notes_for_chord(self, label: str, note_names: list[str]) -> list[NoteEvent]:
-            pitches = _chord_preview_pitches(label, note_names)
+            pitches = chord_preview_pitches(label, note_names)
             return [
                 NoteEvent(
                     stem="official-chord",
@@ -2740,8 +2742,8 @@ def main() -> int:
                 onset_threshold=self.onset_threshold.value(),
                 frame_threshold=self.frame_threshold.value(),
                 minimum_note_length=self.minimum_note_length.value(),
-                minimum_frequency=_optional_frequency(self.minimum_frequency.value()),
-                maximum_frequency=_optional_frequency(self.maximum_frequency.value()),
+                minimum_frequency=optional_frequency(self.minimum_frequency.value()),
+                maximum_frequency=optional_frequency(self.maximum_frequency.value()),
                 multiple_pitch_bends=self.multiple_pitch_bends.isChecked(),
                 melodia_trick=self.melodia_trick.isChecked(),
                 midi_tempo=self.midi_tempo.value(),
@@ -2769,7 +2771,7 @@ def main() -> int:
 
             for index, stem_name in enumerate(choice.stems):
                 checkbox = QCheckBox(stem_name)
-                checkbox.setChecked(previous.get(stem_name, _default_midi_checked(stem_name)))
+                checkbox.setChecked(previous.get(stem_name, default_midi_checked(stem_name)))
                 can_run = self.generate_midi.isChecked() and (saved_stem is None or stem_name == saved_stem)
                 checkbox.setEnabled(can_run)
                 if saved_stem is not None and stem_name != saved_stem:
@@ -2803,7 +2805,7 @@ def main() -> int:
                 f"Evidence: {choice.score_summary}"
             )
             self.model_runtime.setText(
-                f"Separation: {choice.source} on {_device_label(self.bs_device.currentData(), torch.cuda_available)}. "
+                f"Separation: {choice.source} on {device_label(self.bs_device.currentData(), torch.cuda_available)}. "
                 f"MIDI: Spotify Basic Pitch ONNX on {'ONNX CUDA' if ort.has_cuda else 'ONNX CPU'}."
             )
             self.model_backend_detail.setText(
@@ -2841,9 +2843,6 @@ def main() -> int:
         spin.setSpecialValueText(special)
         return spin
 
-    def _optional_frequency(value: float) -> float | None:
-        return value if value > 0 else None
-
     def _grid_control(layout: QGridLayout, row: int, column: int, label: str, default: str, widget: QWidget) -> None:
         stack = QVBoxLayout()
         stack.setSpacing(2)
@@ -2863,59 +2862,11 @@ def main() -> int:
             if widget is not None:
                 widget.deleteLater()
 
-    def _default_midi_checked(stem_name: str) -> bool:
-        return stem_name.lower() not in {"drums", "drum", "wet"}
-
-    def _device_label(device: str | None, cuda_available: bool) -> str:
-        if device == "cpu":
-            return "PyTorch CPU (forced)"
-        if device:
-            return f"PyTorch CUDA ({device})"
-        return "PyTorch CUDA (auto)" if cuda_available else "PyTorch CPU (auto fallback)"
-
     def _format_time(seconds: float) -> str:
         seconds = max(0.0, seconds)
         minutes = int(seconds // 60)
         remainder = seconds - (minutes * 60)
         return f"{minutes:02d}:{remainder:06.3f}"
-
-    def _chord_preview_pitches(label: str, note_names: list[str]) -> list[int]:
-        pitches = []
-        previous = None
-        for note_name in note_names:
-            pitch_class = _pitch_class(note_name)
-            pitch = 48 + pitch_class
-            while previous is not None and pitch <= previous:
-                pitch += 12
-            pitches.append(pitch)
-            previous = pitch
-        if "/" in label:
-            bass_name = label.split("/", 1)[1]
-            bass_pitch = 36 + _pitch_class(bass_name)
-            pitches.insert(0, bass_pitch)
-        return pitches
-
-    def _pitch_class(note_name: str) -> int:
-        pitch_classes = {
-            "C": 0,
-            "C#": 1,
-            "Db": 1,
-            "D": 2,
-            "D#": 3,
-            "Eb": 3,
-            "E": 4,
-            "F": 5,
-            "F#": 6,
-            "Gb": 6,
-            "G": 7,
-            "G#": 8,
-            "Ab": 8,
-            "A": 9,
-            "A#": 10,
-            "Bb": 10,
-            "B": 11,
-        }
-        return pitch_classes.get(note_name, 0)
 
     app = QApplication([])
     window = MainWindow()
