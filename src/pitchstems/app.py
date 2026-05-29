@@ -37,6 +37,12 @@ from pitchstems.project_store import (
     PROJECT_FILENAME,
     load_pipeline_result,
 )
+from pitchstems.recent_projects import (
+    normalize_recent_project_paths,
+    recent_project_label,
+    remember_recent_project,
+    remove_recent_project,
+)
 from pitchstems.separation import SeparationOptions, StemResult
 from pitchstems.theory import (
     ChordGapAnalysis,
@@ -811,44 +817,18 @@ def main() -> int:
             self._add_action(self.recent_projects_menu, "Clear Recent Projects", None, self.clear_recent_projects)
 
         def recent_project_paths(self) -> list[Path]:
-            value = self.settings.value("recent_projects", [])
-            if isinstance(value, str):
-                raw_paths = [value]
-            else:
-                raw_paths = list(value or [])
-            paths: list[Path] = []
-            seen: set[str] = set()
-            for raw_path in raw_paths:
-                path = Path(str(raw_path)).expanduser()
-                key = str(path).lower()
-                if key in seen:
-                    continue
-                seen.add(key)
-                paths.append(path)
-            return paths
+            return normalize_recent_project_paths(self.settings.value("recent_projects", []))
 
         def recent_project_label(self, manifest_path: Path) -> str:
-            project_dir = manifest_path.parent
-            if manifest_path.name == PROJECT_FILENAME:
-                return f"{project_dir.name}  ({self._short_path(project_dir.parent)})"
-            return f"{manifest_path.name}  ({self._short_path(manifest_path.parent)})"
-
-        def _short_path(self, path: Path, max_length: int = 46) -> str:
-            text = str(path)
-            if len(text) <= max_length:
-                return text
-            return f"...{text[-(max_length - 3):]}"
+            return recent_project_label(manifest_path)
 
         def remember_recent_project(self, project_dir: Path) -> None:
-            manifest = (project_dir / PROJECT_FILENAME).expanduser().resolve()
-            recent = [path for path in self.recent_project_paths() if path.resolve() != manifest]
-            recent.insert(0, manifest)
-            self.settings.setValue("recent_projects", [str(path) for path in recent[:10]])
+            recent = remember_recent_project(self.recent_project_paths(), project_dir)
+            self.settings.setValue("recent_projects", [str(path) for path in recent])
             self.refresh_recent_projects_menu()
 
         def remove_recent_project(self, manifest_path: Path) -> None:
-            target = manifest_path.expanduser().resolve()
-            recent = [path for path in self.recent_project_paths() if path.expanduser().resolve() != target]
+            recent = remove_recent_project(self.recent_project_paths(), manifest_path)
             self.settings.setValue("recent_projects", [str(path) for path in recent])
             self.refresh_recent_projects_menu()
 
