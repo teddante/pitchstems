@@ -92,6 +92,34 @@ def _clamp_confidence(confidence: float) -> float:
     return max(0.0, min(1.0, confidence))
 
 
+def editor_bool(value, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    return default
+
+
+def editor_int(value, default: int, low: int, high: int) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(low, min(high, number))
+
+
+def editor_float(value, default: float, low: float | None = None, high: float | None = None) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not isfinite(number):
+        return default
+    if low is not None:
+        number = max(low, number)
+    if high is not None:
+        number = min(high, number)
+    return number
+
+
 def build_editor_state_snapshot(
     *,
     track_visibility_checks: Mapping[str, Any],

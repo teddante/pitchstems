@@ -27,6 +27,9 @@ from pitchstems.editor_project import (
 from pitchstems.editor_loader import EditorLoadResult, apply_chord_edits, build_editor_load_result
 from pitchstems.editor_state import (
     build_editor_state_snapshot,
+    editor_bool,
+    editor_float,
+    editor_int,
     save_editor_state_snapshot,
 )
 from pitchstems.file_opening import open_folder
@@ -1227,7 +1230,7 @@ def main() -> int:
                 self.notation_spelling.blockSignals(True)
                 self.notation_spelling.setCurrentIndex(notation_index)
                 self.notation_spelling.blockSignals(False)
-            playhead_seconds = float(editor_state.get("playhead_seconds", 0.0) or 0.0)
+            playhead_seconds = editor_float(editor_state.get("playhead_seconds"), 0.0, low=0.0)
             self.editor_summary.setText(
                 f"Editor project: {len(project.tracks)} tracks, {len(project.notes)} notes, "
                 f"{len(project.chords)} chord regions."
@@ -1428,7 +1431,7 @@ def main() -> int:
                 toggle_row.setSpacing(6)
 
                 show_check = QCheckBox("View")
-                show_check.setChecked(track_visibility.get(track.name, True))
+                show_check.setChecked(editor_bool(track_visibility.get(track.name), True))
                 show_check.setToolTip(
                     "Show this track's lane on the timeline. Turning it off hides this row too; use Show All to restore hidden tracks."
                 )
@@ -1437,7 +1440,12 @@ def main() -> int:
                 toggle_row.addWidget(show_check)
 
                 analysis_check = QCheckBox("Chord")
-                analysis_check.setChecked(analysis_enabled.get(track.name, track_visibility.get(track.name, True)))
+                analysis_check.setChecked(
+                    editor_bool(
+                        analysis_enabled.get(track.name),
+                        editor_bool(track_visibility.get(track.name), True),
+                    )
+                )
                 analysis_check.setToolTip("Include this track's generated MIDI notes in the Harmony Inspector sample.")
                 analysis_check.toggled.connect(lambda *_args: self.refresh_current_harmony(self.timeline.position))
                 analysis_check.toggled.connect(lambda *_args: self.save_editor_state())
@@ -1446,11 +1454,11 @@ def main() -> int:
                 toggle_row.addWidget(analysis_check)
 
                 audio_check = QCheckBox("Audio")
-                audio_check.setChecked(audio_enabled.get(track.name, True))
+                audio_check.setChecked(editor_bool(audio_enabled.get(track.name), True))
                 audio_check.setToolTip("Play this separated stem audio in the editor transport. Does not affect chord detection.")
                 audio_slider = QSlider(Qt.Horizontal)
                 audio_slider.setRange(0, 100)
-                audio_slider.setValue(int(audio_volume.get(track.name, 80)))
+                audio_slider.setValue(editor_int(audio_volume.get(track.name), 80, 0, 100))
                 audio_slider.setToolTip("Separated stem audio volume.")
                 audio_check.toggled.connect(lambda *_args: self.refresh_playback_mix())
                 audio_check.toggled.connect(lambda *_args: self.save_editor_state())
@@ -1464,12 +1472,14 @@ def main() -> int:
 
                 has_midi_notes = note_count > 0
                 midi_check = QCheckBox("MIDI")
-                midi_check.setChecked(has_midi_notes and midi_enabled.get(track.name, False))
+                midi_check.setChecked(
+                    has_midi_notes and editor_bool(midi_enabled.get(track.name), False)
+                )
                 midi_check.setEnabled(has_midi_notes)
                 midi_check.setToolTip("Play this stem's generated MIDI preview audio. Missing previews render only when this MIDI track is turned on.")
                 midi_slider = QSlider(Qt.Horizontal)
                 midi_slider.setRange(0, 100)
-                midi_slider.setValue(int(midi_volume.get(track.name, 70)))
+                midi_slider.setValue(editor_int(midi_volume.get(track.name), 70, 0, 100))
                 midi_slider.setEnabled(has_midi_notes)
                 midi_slider.setToolTip("MIDI preview volume.")
                 midi_check.toggled.connect(

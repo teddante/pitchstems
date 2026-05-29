@@ -4,6 +4,9 @@ from pitchstems.editor_project import ChordRegion
 from pitchstems.editor_state import (
     EditorStateSnapshot,
     build_editor_state_snapshot,
+    editor_bool,
+    editor_float,
+    editor_int,
     load_editor_state,
     parse_chord_overrides,
     parse_chord_removals,
@@ -104,6 +107,17 @@ def test_build_editor_state_snapshot_saves_disabled_midi_as_off() -> None:
     )
 
     assert snapshot.track_midi_enabled == {"piano": False}
+
+
+def test_editor_state_restore_helpers_reject_bad_values() -> None:
+    assert editor_bool("true", default=False) is False
+    assert editor_bool(True, default=False) is True
+    assert editor_int("loud", default=70, low=0, high=100) == 70
+    assert editor_int(150, default=70, low=0, high=100) == 100
+    assert editor_int(-20, default=70, low=0, high=100) == 0
+    assert editor_float("later", default=0.0, low=0.0) == 0.0
+    assert editor_float(float("inf"), default=0.0, low=0.0) == 0.0
+    assert editor_float(-3.0, default=0.0, low=0.0) == 0.0
 
 
 def test_save_editor_state_snapshot_preserves_pipeline_fields(tmp_path: Path) -> None:
