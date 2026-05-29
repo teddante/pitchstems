@@ -88,3 +88,19 @@ def test_tiny_chord_labels_fall_back_to_root_name(tmp_path: Path) -> None:
     assert compact_chord_label("Gmaj9(no3)") == "G"
     assert compact_chord_label("Bb7/D") == "Bb"
     assert view._chord_label_for_width("F#m7b5", 10) == "F#"
+
+
+def test_chord_drag_preview_draws_lightweight_feedback(tmp_path: Path) -> None:
+    _app()
+    view = TimelineView()
+    view.resize(900, 420)
+    view.set_project(_project(tmp_path))
+
+    view._draw_chord_drag_preview(ChordRegion(0.25, 1.25, "Gmaj9(no3)", 0.8))
+
+    assert len(view.chord_drag_preview_items) == 2
+    assert all(item.scene() is view.scene for item in view.chord_drag_preview_items)
+
+    view._clear_chord_drag_preview()
+
+    assert view.chord_drag_preview_items == []

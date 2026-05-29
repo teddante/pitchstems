@@ -69,6 +69,7 @@ class TimelineView(QGraphicsView):
         self.pending_zoom_center_seconds: float | None = None
         self.pending_zoom_center_y: float | None = None
         self._chord_drag = None
+        self.chord_drag_preview_items = []
         self._selecting = False
         self._selection_anchor: float | None = None
         self._panning = False
@@ -273,6 +274,7 @@ class TimelineView(QGraphicsView):
             self.track_geometries = {}
             self.sticky_x_items = []
             self.sticky_y_items = []
+            self.chord_drag_preview_items = []
             if self.project is None:
                 self.scene.addText("Run separation + MIDI to create an editor timeline.").setPos(18, 18)
                 self.scene.setSceneRect(0, 0, 760, 320)
@@ -925,6 +927,7 @@ class TimelineView(QGraphicsView):
             return False
         preview = self._dragged_chord_from_event(event)
         self._chord_drag["preview"] = preview
+        self._draw_chord_drag_preview(preview)
         return True
 
     def _finish_chord_edit_from_event(self, event) -> None:
@@ -933,10 +936,41 @@ class TimelineView(QGraphicsView):
         original = self._chord_drag["chord"]
         edited = self._dragged_chord_from_event(event)
         self._chord_drag = None
+        self._clear_chord_drag_preview()
         self.unsetCursor()
         self.selected_chord = edited
         if self.on_chord_edited:
             self.on_chord_edited(original, edited)
+
+    def _draw_chord_drag_preview(self, chord: ChordRegion) -> None:
+        if self.project is None:
+            return
+        self._clear_chord_drag_preview()
+        x = self._x(chord.start)
+        width = max(18, chord.duration * self.pixels_per_second)
+        pen = QPen(QColor("#2563eb"), 2)
+        pen.setStyle(Qt.DashLine)
+        rect = self.scene.addRect(
+            x,
+            self.ruler_height + 4,
+            width,
+            28,
+            pen,
+            QBrush(QColor(219, 234, 254, 180)),
+        )
+        rect.setZValue(45)
+        shown_label = self._chord_label_for_width(chord.label, max(8, int(width) - 8))
+        text = self.scene.addText(shown_label)
+        text.setDefaultTextColor(QColor("#1d4ed8"))
+        text.setPos(x + 5, self.ruler_height + 4)
+        text.setZValue(46)
+        self.chord_drag_preview_items = [rect, text]
+
+    def _clear_chord_drag_preview(self) -> None:
+        for item in self.chord_drag_preview_items:
+            if item.scene() is self.scene:
+                self.scene.removeItem(item)
+        self.chord_drag_preview_items = []
 
     def _dragged_chord_from_event(self, event) -> ChordRegion:
         original = self._chord_drag["chord"]
