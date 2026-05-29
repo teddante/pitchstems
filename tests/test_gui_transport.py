@@ -1,0 +1,49 @@
+from pathlib import Path
+
+import pytest
+
+pytest.importorskip("PySide6")
+
+from pitchstems.gui_transport import find_existing_midi_previews, loop_playback_start  # noqa: E402
+from pitchstems.pipeline import PipelineResult  # noqa: E402
+from pitchstems.separation import StemResult  # noqa: E402
+
+
+def _pipeline_result(project_dir: Path, stems: list[StemResult]) -> PipelineResult:
+    return PipelineResult(
+        project_dir=project_dir,
+        normalized_audio=project_dir / "audio.wav",
+        stems=stems,
+        midi_files=[],
+        combined_midi=None,
+        zip_path=None,
+    )
+
+
+def test_loop_playback_start_returns_position_without_selection() -> None:
+    assert loop_playback_start(12.5, None) == 12.5
+
+
+def test_loop_playback_start_keeps_position_inside_selection() -> None:
+    assert loop_playback_start(12.5, (10.0, 15.0)) == 12.5
+
+
+def test_loop_playback_start_jumps_to_selection_start_outside_selection() -> None:
+    assert loop_playback_start(8.0, (10.0, 15.0)) == 10.0
+    assert loop_playback_start(15.0, (10.0, 15.0)) == 10.0
+
+
+def test_find_existing_midi_previews_returns_existing_stem_previews(tmp_path: Path) -> None:
+    preview_dir = tmp_path / "editor" / "midi-preview"
+    preview_dir.mkdir(parents=True)
+    bass_preview = preview_dir / "bass_midi_preview.wav"
+    bass_preview.write_bytes(b"RIFF")
+    result = _pipeline_result(
+        tmp_path,
+        [
+            StemResult("bass", tmp_path / "bass.wav"),
+            StemResult("piano", tmp_path / "piano.wav"),
+        ],
+    )
+
+    assert find_existing_midi_previews(result) == {"bass": bass_preview}

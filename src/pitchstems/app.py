@@ -129,6 +129,7 @@ def main() -> int:
         NoWheelSpinBox,
         PianoChordWidget,
     )
+    from pitchstems.gui_transport import TransportController, find_existing_midi_previews, loop_playback_start
 
     class TimelineView(QGraphicsView):
         def __init__(self) -> None:
@@ -1184,17 +1185,19 @@ def main() -> int:
             self.recent_projects_menu = None
             self.base_editor_project: EditorProject | None = None
             self.editor_project: EditorProject | None = None
-            self.is_playing = False
-            self.track_players: dict[str, QMediaPlayer] = {}
-            self.track_audio_outputs: dict[str, QAudioOutput] = {}
-            self.midi_players: dict[str, QMediaPlayer] = {}
-            self.midi_audio_outputs: dict[str, QAudioOutput] = {}
-            self.midi_preview_paths: dict[str, Path] = {}
             self.track_analysis_checks: dict[str, QCheckBox] = {}
             self.track_audio_checks: dict[str, QCheckBox] = {}
             self.track_audio_sliders: dict[str, QSlider] = {}
             self.track_midi_checks: dict[str, QCheckBox] = {}
             self.track_midi_sliders: dict[str, QSlider] = {}
+            self.transport = TransportController(
+                parent=self,
+                logger=self.logger,
+                track_audio_checks=self.track_audio_checks,
+                track_audio_sliders=self.track_audio_sliders,
+                track_midi_checks=self.track_midi_checks,
+                track_midi_sliders=self.track_midi_sliders,
+            )
             self.rendering_midi_previews: set[str] = set()
             self.activity_depth = 0
             self.manual_chords: list[ChordRegion] = []
@@ -2491,7 +2494,7 @@ def main() -> int:
             self.sync_track_control_panel()
 
         def handle_midi_track_toggled(self, stem_name: str, checked: bool) -> None:
-            if checked and self.current_result is not None and stem_name not in self.midi_preview_paths:
+            if checked and self.current_result is not None and stem_name not in self.transport.midi_preview_paths:
                 self.start_midi_preview_render(self.current_result, {stem_name})
             self.refresh_playback_mix()
             self.refresh_timeline_track_summaries()
@@ -2556,52 +2559,25 @@ def main() -> int:
         def prepare_transport_players(self, result: PipelineResult) -> None:
             self.set_activity_message("Preparing audio players...")
             self.pause_transport()
-            self.clear_transport_players()
-            self.midi_preview_paths = self.find_existing_midi_previews(result)
-            for stem in result.stems:
-                player = QMediaPlayer(self)
-                output = QAudioOutput(self)
-                player.setAudioOutput(output)
-                player.setSource(QUrl.fromLocalFile(str(stem.path)))
-                self.track_players[stem.name] = player
-                self.track_audio_outputs[stem.name] = output
-            self.attach_midi_preview_players(self.midi_preview_paths, finish_activity=False)
+            self.transport.prepare_players(result)
+            self.attach_midi_preview_players(dict(self.transport.midi_preview_paths), finish_activity=False)
             requested_midi = {
                 stem_name
                 for stem_name, checkbox in self.track_midi_checks.items()
-                if checkbox.isChecked() and stem_name not in self.midi_preview_paths
+                if checkbox.isChecked() and stem_name not in self.transport.midi_preview_paths
             }
             if requested_midi:
                 self.start_midi_preview_render(result, requested_midi)
             self.refresh_playback_mix()
 
         def clear_transport_players(self) -> None:
-            for player in self.transport_players():
-                try:
-                    player.pause()
-                    player.setSource(QUrl())
-                    player.deleteLater()
-                except RuntimeError:
-                    self.logger.exception("Transport player cleanup failed")
-            for output in [*self.track_audio_outputs.values(), *self.midi_audio_outputs.values()]:
-                output.deleteLater()
-            self.track_players.clear()
-            self.track_audio_outputs.clear()
-            self.midi_players.clear()
-            self.midi_audio_outputs.clear()
-            self.midi_preview_paths.clear()
+            self.transport.clear_players()
 
         def transport_players(self) -> list[QMediaPlayer]:
-            return list(self.track_players.values()) + list(self.midi_players.values())
+            return self.transport.players()
 
         def find_existing_midi_previews(self, result: PipelineResult) -> dict[str, Path]:
-            preview_dir = result.project_dir / "editor" / "midi-preview"
-            previews = {}
-            for stem in result.stems:
-                preview = preview_dir / f"{stem.name}_midi_preview.wav"
-                if preview.exists():
-                    previews[stem.name] = preview
-            return previews
+            return find_existing_midi_previews(result)
 
         def start_midi_preview_render(
             self,
@@ -2615,7 +2591,7 @@ def main() -> int:
                 track.name
                 for track in self.editor_project.tracks
                 if (not requested_keys or track.name.lower() in requested_keys)
-                if track.name not in self.midi_preview_paths
+                if track.name not in self.transport.midi_preview_paths
                 and any(note.stem.lower() == track.name.lower() for note in self.editor_project.notes)
                 and not self._midi_preview_worker_running(result.project_dir, track.name)
             ]
@@ -2660,30 +2636,9 @@ def main() -> int:
                 if finish_activity:
                     self.end_activity("No MIDI preview audio rendered")
                 return
-            self.midi_preview_paths.update(previews)
-            for stem_name, midi_preview in previews.items():
+            for stem_name in previews:
                 self.rendering_midi_previews.discard(stem_name)
-                if stem_name in self.midi_players:
-                    continue
-                midi_player = QMediaPlayer(self)
-                midi_output = QAudioOutput(self)
-                midi_player.setAudioOutput(midi_output)
-                midi_player.setSource(QUrl.fromLocalFile(str(midi_preview)))
-                self.midi_players[stem_name] = midi_player
-                self.midi_audio_outputs[stem_name] = midi_output
-                midi_check = self.track_midi_checks.get(stem_name)
-                midi_slider = self.track_midi_sliders.get(stem_name)
-                if midi_check:
-                    midi_check.setEnabled(True)
-                    midi_check.setToolTip("Play the generated MIDI preview audio for this stem. This does not affect chord detection.")
-                if midi_slider:
-                    midi_slider.setEnabled(True)
-                    midi_slider.setToolTip("MIDI preview audio volume.")
-                if self.is_playing and self.midi_track_enabled(stem_name):
-                    midi_player.setPosition(int(self.timeline.position * 1000))
-                    midi_player.play()
-                else:
-                    midi_player.pause()
+            self.transport.attach_midi_preview_players(previews, self.timeline.position)
             self.refresh_playback_mix()
             self.refresh_timeline_track_summaries()
             if finish_activity:
@@ -2691,39 +2646,17 @@ def main() -> int:
                 self.end_activity("MIDI preview audio ready")
 
         def refresh_playback_mix(self) -> None:
-            for stem_name, output in self.track_audio_outputs.items():
-                enabled = self.track_audio_checks.get(stem_name)
-                slider = self.track_audio_sliders.get(stem_name)
-                is_enabled = enabled.isChecked() if enabled else True
-                volume = slider.value() / 100 if slider else 0.8
-                output.setVolume(volume if is_enabled else 0.0)
-            for stem_name, output in self.midi_audio_outputs.items():
-                slider = self.track_midi_sliders.get(stem_name)
-                volume = slider.value() / 100 if slider else 0.7
-                output.setVolume(volume if self.midi_track_enabled(stem_name) else 0.0)
+            self.transport.refresh_mix()
             self.apply_midi_transport_state()
 
         def midi_track_enabled(self, stem_name: str) -> bool:
-            checkbox = self.track_midi_checks.get(stem_name)
-            return bool(checkbox and checkbox.isEnabled() and checkbox.isChecked())
+            return self.transport.midi_track_enabled(stem_name)
 
         def apply_midi_transport_state(self) -> None:
-            if not self.is_playing:
-                return
-            position_ms = int(self.timeline.position * 1000)
-            for stem_name, player in self.midi_players.items():
-                try:
-                    if self.midi_track_enabled(stem_name):
-                        if player.playbackState() != QMediaPlayer.PlayingState:
-                            player.setPosition(position_ms)
-                            player.play()
-                    else:
-                        player.pause()
-                except RuntimeError:
-                    self.logger.exception("MIDI transport state update failed")
+            self.transport.apply_midi_transport_state(self.timeline.position)
 
         def toggle_playback(self) -> None:
-            if self.is_playing:
+            if self.transport.is_playing:
                 self.pause_transport()
             else:
                 self.play_transport()
@@ -2732,7 +2665,7 @@ def main() -> int:
             if self.editor_project is None or self.current_result is None:
                 self.append_log("Open or run a project before playback.")
                 return
-            if not self.track_players:
+            if not self.transport.track_players:
                 self.append_log("Preparing playback...")
                 self.begin_activity("Preparing playback...")
                 self.prepare_transport_players(self.current_result)
@@ -2741,52 +2674,29 @@ def main() -> int:
             start_position = self.loop_playback_start_seconds()
             if start_position != self.timeline.position:
                 self.set_editor_position_seconds(start_position, save=False, seek_players=False)
-            position_ms = int(start_position * 1000)
-            for player in self.track_players.values():
-                player.setPosition(position_ms)
-                player.play()
-            for stem_name, player in self.midi_players.items():
-                player.setPosition(position_ms)
-                if self.midi_track_enabled(stem_name):
-                    player.play()
-                else:
-                    player.pause()
-            self.is_playing = True
+            self.transport.play(start_position)
             self.play_button.setText("Pause")
             self.stop_button.setEnabled(True)
             self.transport_timer.start(80)
             QTimer.singleShot(250, self.resync_transport_players)
 
         def pause_transport(self) -> None:
-            if not self.is_playing:
+            if not self.transport.pause():
                 return
-            for player in self.transport_players():
-                player.pause()
-            self.is_playing = False
             self.play_button.setText("Play")
             self.transport_timer.stop()
             self.save_editor_state()
 
         def stop_transport(self) -> None:
-            self.is_playing = False
+            self.transport.stop()
             self.play_button.setText("Play")
             self.stop_button.setEnabled(False)
             self.transport_timer.stop()
-            for player in self.transport_players():
-                try:
-                    player.pause()
-                    player.setPosition(0)
-                except RuntimeError:
-                    self.logger.exception("Transport stop failed")
             if self.editor_project is not None:
                 self.set_editor_position_seconds(0.0, seek_players=False)
 
         def seek_audio_players(self, seconds: float) -> None:
-            if not self.track_players:
-                return
-            position_ms = int(seconds * 1000)
-            for player in self.transport_players():
-                player.setPosition(position_ms)
+            self.transport.seek(seconds)
 
         def update_transport_position(self) -> None:
             master = self.transport_master_player()
@@ -2804,34 +2714,13 @@ def main() -> int:
             self.set_editor_position_seconds(seconds, save=False, seek_players=False)
 
         def transport_master_player(self) -> QMediaPlayer | None:
-            return next(iter(self.track_players.values()), None)
+            return self.transport.master_player()
 
         def resync_transport_players(self, master: QMediaPlayer | None = None) -> None:
-            if not self.is_playing:
-                return
-            master = master or self.transport_master_player()
-            if master is None:
-                return
-            master_position = master.position()
-            for player in self.transport_players():
-                if player is master:
-                    continue
-                try:
-                    if player.playbackState() != QMediaPlayer.PlayingState:
-                        continue
-                    if abs(player.position() - master_position) > 120:
-                        player.setPosition(master_position)
-                except RuntimeError:
-                    self.logger.exception("Transport resync failed")
+            self.transport.resync(master)
 
         def loop_playback_start_seconds(self) -> float:
-            selection = self.timeline.selection_range()
-            if selection is None:
-                return self.timeline.position
-            start, end = selection
-            if start <= self.timeline.position < end:
-                return self.timeline.position
-            return start
+            return loop_playback_start(self.timeline.position, self.timeline.selection_range())
 
         def set_editor_position_seconds(
             self,
