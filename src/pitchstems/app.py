@@ -939,6 +939,7 @@ def main() -> int:
             self.open_project_manifest(Path(filename))
 
         def open_project_manifest(self, manifest_path: Path) -> None:
+            self.invalidate_worker_token()
             self.begin_activity("Opening project...")
             try:
                 self.logger.info("Opening project manifest: %s", manifest_path)
