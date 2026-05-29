@@ -3,7 +3,7 @@ import json
 import wave
 
 from pitchstems.editor_project import NoteEvent
-from pitchstems.midi_preview import render_midi_preview, render_note_preview
+from pitchstems.midi_preview import render_midi_preview, render_note_preview, valid_preview_wav
 
 
 def test_render_midi_preview_writes_wav(tmp_path: Path) -> None:
@@ -80,6 +80,18 @@ def test_render_note_preview_writes_named_wav(tmp_path: Path) -> None:
         assert wav.getnchannels() == 1
         assert wav.getframerate() == 8000
         assert wav.getnframes() > 0
+
+
+def test_valid_preview_wav_rejects_missing_or_invalid_files(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.wav"
+    invalid = tmp_path / "invalid.wav"
+    valid = tmp_path / "valid.wav"
+    invalid.write_bytes(b"not a wav")
+    _write_silent_wav(valid)
+
+    assert not valid_preview_wav(missing)
+    assert not valid_preview_wav(invalid)
+    assert valid_preview_wav(valid)
 
 
 def _write_silent_wav(path: Path, sample_rate: int = 8000) -> None:

@@ -1,4 +1,5 @@
 from pathlib import Path
+import wave
 
 import pytest
 
@@ -37,7 +38,7 @@ def test_find_existing_midi_previews_returns_existing_stem_previews(tmp_path: Pa
     preview_dir = tmp_path / "editor" / "midi-preview"
     preview_dir.mkdir(parents=True)
     bass_preview = preview_dir / "bass_midi_preview.wav"
-    bass_preview.write_bytes(b"RIFF")
+    _write_wav(bass_preview)
     result = _pipeline_result(
         tmp_path,
         [
@@ -47,3 +48,21 @@ def test_find_existing_midi_previews_returns_existing_stem_previews(tmp_path: Pa
     )
 
     assert find_existing_midi_previews(result) == {"bass": bass_preview}
+
+
+def test_find_existing_midi_previews_ignores_unreadable_wavs(tmp_path: Path) -> None:
+    preview_dir = tmp_path / "editor" / "midi-preview"
+    preview_dir.mkdir(parents=True)
+    bass_preview = preview_dir / "bass_midi_preview.wav"
+    bass_preview.write_bytes(b"not a wav")
+    result = _pipeline_result(tmp_path, [StemResult("bass", tmp_path / "bass.wav")])
+
+    assert find_existing_midi_previews(result) == {}
+
+
+def _write_wav(path: Path) -> None:
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(8000)
+        wav.writeframes(b"\x00\x00" * 16)

@@ -26,7 +26,7 @@ def render_midi_preview(
     output_path = output_dir / f"{stem}_midi_preview.wav"
     metadata = _preview_metadata(stem, stem_notes, duration, sample_rate)
     metadata_path = _metadata_path(output_path)
-    if _valid_wav(output_path) and _valid_metadata(metadata_path, metadata):
+    if valid_preview_wav(output_path) and _valid_metadata(metadata_path, metadata):
         return output_path
     sample_count = max(1, int((duration + 0.25) * sample_rate))
     samples = array("f", [0.0]) * sample_count
@@ -100,7 +100,7 @@ def _write_metadata_atomic(path: Path, metadata: dict) -> None:
                 temporary.unlink()
 
 
-def _valid_wav(path: Path) -> bool:
+def valid_preview_wav(path: Path) -> bool:
     if not path.exists():
         return False
     with contextlib.suppress(OSError, wave.Error, EOFError):
