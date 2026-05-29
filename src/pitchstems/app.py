@@ -33,6 +33,12 @@ from pitchstems.project_store import (
     save_project_manifest,
 )
 from pitchstems.separation import SeparationOptions, StemResult
+from pitchstems.theory import (
+    TheoryAnalysis,
+    analyze_theory_at,
+    analyze_theory_region,
+    theory_analysis_report,
+)
 from pitchstems.transcription import MidiOptions
 
 
@@ -1306,6 +1312,7 @@ def main() -> int:
             self.chord_note_overrides: dict[int, str] = {}
             self.chord_note_filter_context = None
             self.current_chord_base_weights: dict[int, float] = {}
+            self.current_theory_analysis: TheoryAnalysis | None = None
             self.updating_chord_note_filter = False
 
             self.drop_zone = DropZone()
@@ -1477,8 +1484,21 @@ def main() -> int:
             self.track_note_counts: dict[str, int] = {}
             self.editor_track_visibility: dict[str, bool] = {}
             self.chord_list = QListWidget()
-            self.chord_list.setMinimumHeight(160)
+            self.chord_list.setMinimumHeight(130)
             self.chord_list.setAlternatingRowColors(True)
+            self.theory_context = QLabel("Theory: -")
+            self.theory_context.setWordWrap(True)
+            self.theory_context.setFixedHeight(54)
+            self.theory_context.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+            self.theory_context.setStyleSheet("color: #475569;")
+            self.theory_list = QListWidget()
+            self.theory_list.setMinimumHeight(120)
+            self.theory_list.setAlternatingRowColors(True)
+            self.inspect_theory_button = QPushButton("Inspect Theory")
+            self.inspect_theory_button.setEnabled(False)
+            self.inspect_theory_button.setToolTip(
+                "Open a detailed report of the current scale, key, mode, and progression evidence."
+            )
             self.piano_chord_view = PianoChordWidget()
             self.preview_chord_button = QPushButton("Play Chord")
             self.use_chord_button = QPushButton("Use for Selection")
@@ -1688,6 +1708,13 @@ def main() -> int:
             editor_side.addLayout(chord_action_grid)
             editor_side.addWidget(self.piano_chord_view)
             editor_side.addWidget(self.chord_list, 1)
+            theory_header = QHBoxLayout()
+            theory_header.setSpacing(6)
+            theory_header.addWidget(_section_label("Theory Inspector"))
+            theory_header.addWidget(self.inspect_theory_button)
+            editor_side.addLayout(theory_header)
+            editor_side.addWidget(self.theory_context)
+            editor_side.addWidget(self.theory_list, 1)
             editor_side_panel.setLayout(editor_side)
             track_mix_panel = QWidget()
             track_mix_panel.setFixedWidth(292)
@@ -1741,6 +1768,7 @@ def main() -> int:
             self.use_chord_button.clicked.connect(self.assign_selected_chord_to_selection)
             self.reset_note_filter_button.clicked.connect(self.reset_chord_note_filter)
             self.inspect_chord_button.clicked.connect(self.inspect_current_chord_analysis)
+            self.inspect_theory_button.clicked.connect(self.inspect_current_theory_analysis)
             self.note_filter_list.itemChanged.connect(self.handle_chord_note_filter_changed)
             self.min_note_evidence_slider.valueChanged.connect(self.handle_min_note_evidence_changed)
             self.chord_list.itemDoubleClicked.connect(self.preview_chord_item)
@@ -2897,6 +2925,59 @@ def main() -> int:
             self.chord_context.setText(text)
             self.chord_context.setToolTip(text)
 
+        def refresh_current_theory(self, source_notes: list[NoteEvent], seconds: float) -> None:
+            if self.editor_project is None:
+                self.set_theory_analysis(None)
+                return
+            selection = self.timeline.selection_range()
+            if selection is not None:
+                start, end = selection
+                analysis = analyze_theory_region(source_notes, self.editor_project.chords, start, end)
+            else:
+                analysis = analyze_theory_at(source_notes, self.editor_project.chords, seconds)
+            self.set_theory_analysis(analysis)
+
+        def set_theory_analysis(self, analysis: TheoryAnalysis | None) -> None:
+            self.current_theory_analysis = analysis
+            self.theory_list.clear()
+            has_candidates = bool(analysis and analysis.candidates)
+            self.inspect_theory_button.setEnabled(has_candidates)
+            if not has_candidates or analysis is None:
+                self.theory_context.setText("Theory: -")
+                self.theory_context.setToolTip("No scale, key, or mode evidence yet.")
+                return
+            note_text = ", ".join(
+                f"{name} ({weight:.0%})"
+                for name, weight in analysis.note_weights[:8]
+            )
+            self.theory_context.setText(
+                f"Likely: {analysis.label} ({analysis.confidence:.0%})\n"
+                f"Weighted notes: {note_text or '-'}"
+            )
+            self.theory_context.setToolTip(self.theory_context.text())
+            for candidate in analysis.candidates[:8]:
+                notes = " - ".join(candidate.notes)
+                item = QListWidgetItem(
+                    f"{candidate.label}  {candidate.score:.0%}\n"
+                    f"{notes}\n"
+                    f"fit {candidate.pitch_fit:.0%}, centre {candidate.center_strength:.0%}, "
+                    f"chords {candidate.chord_support:.0%}"
+                )
+                item.setToolTip("\n".join(candidate.explanation))
+                self.theory_list.addItem(item)
+            if analysis.progression is not None:
+                self.theory_list.addItem(
+                    "Progression\n"
+                    f"{' - '.join(analysis.progression.chord_labels) or '-'}\n"
+                    f"{' - '.join(analysis.progression.roman_numerals) or '-'}"
+                )
+            if analysis.core_notes or analysis.scale_notes:
+                self.theory_list.addItem(
+                    "Playable notes\n"
+                    f"Core: {' - '.join(analysis.core_notes) or '-'}\n"
+                    f"Scale: {' - '.join(analysis.scale_notes) or '-'}"
+                )
+
         def chord_min_note_floor(self) -> float:
             return self.min_note_evidence_slider.value() / 100
 
@@ -2913,6 +2994,7 @@ def main() -> int:
                 self.set_chord_context_text("Notes: -")
                 self.chord_list.clear()
                 self.refresh_chord_keyboard()
+                self.set_theory_analysis(None)
                 self.note_filter_list.clear()
                 self.inspect_chord_button.setEnabled(False)
                 return
@@ -2944,6 +3026,7 @@ def main() -> int:
                     f"{_format_time(start)} - {_format_time(end)}"
                 )
                 self._set_chord_candidates(analysis)
+                self.refresh_current_theory(source_notes, seconds)
                 self.populate_note_filter_list(self.current_chord_base_weights)
                 if analysis.note_weights:
                     note_text = ", ".join(
@@ -2972,6 +3055,7 @@ def main() -> int:
             chord = analysis.label or "No clear chord"
             self.current_chord.setText(f"Chord: {chord}  ({analysis.confidence:.0%})")
             self._set_chord_candidates(analysis)
+            self.refresh_current_theory(source_notes, seconds)
             self.populate_note_filter_list(self.current_chord_base_weights)
             if active_notes:
                 unique_pitches = sorted({note.pitch for note in active_notes})
@@ -3154,6 +3238,26 @@ def main() -> int:
             text = QTextEdit()
             text.setReadOnly(True)
             text.setPlainText(report)
+            layout.addWidget(text)
+            close_button = QPushButton("Close")
+            close_button.clicked.connect(dialog.accept)
+            button_row = QHBoxLayout()
+            button_row.addStretch(1)
+            button_row.addWidget(close_button)
+            layout.addLayout(button_row)
+            dialog.setLayout(layout)
+            dialog.resize(820, 680)
+            dialog.exec()
+
+        def inspect_current_theory_analysis(self) -> None:
+            if self.current_theory_analysis is None:
+                return
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Theory Inspector Calculation")
+            layout = QVBoxLayout()
+            text = QTextEdit()
+            text.setReadOnly(True)
+            text.setPlainText(theory_analysis_report(self.current_theory_analysis))
             layout.addWidget(text)
             close_button = QPushButton("Close")
             close_button.clicked.connect(dialog.accept)
@@ -3646,6 +3750,7 @@ def main() -> int:
             self.chord_note_overrides = {}
             self.chord_note_filter_context = None
             self.current_chord_base_weights = {}
+            self.current_theory_analysis = None
             self.rendering_midi_previews.clear()
             self.clear_transport_players()
             self.track_audio_checks.clear()
@@ -3667,9 +3772,11 @@ def main() -> int:
             self.timeline_slider.setEnabled(False)
             self.fit_song_button.setEnabled(False)
             self.inspect_chord_button.setEnabled(False)
+            self.inspect_theory_button.setEnabled(False)
             self.editor_position.setText(_format_time(0))
             self.current_chord.setText("Chord: -")
             self.set_chord_context_text("Notes: -")
+            self.set_theory_analysis(None)
             self.reset_activity("Ready for new audio")
             self.track_list.clear()
             self.note_filter_list.clear()
