@@ -110,6 +110,10 @@ def run_project_smoke(window) -> None:
     window.flush_messages()
     window.active_worker_token = None
     _assert(window.current_result.project_dir == active_project_dir, "stale worker result ignored")
+    activity_label = window.activity_label.text()
+    window.messages.put(("ENABLE_PROCESS", 9))
+    window.flush_messages()
+    _assert(window.activity_label.text() == activity_label, "stale worker completion ignored")
     stale_loaded = EditorLoadResult(
         pipeline_result=window.current_result,
         base_project=window.base_editor_project,
@@ -118,7 +122,6 @@ def run_project_smoke(window) -> None:
         manual_chords=[],
         removed_chord_ranges=[],
     )
-    activity_label = window.activity_label.text()
     window.finish_editor_project_load(window.editor_load_token - 1, stale_loaded)
     _assert(window.activity_label.text() == activity_label, "stale editor load leaves activity label alone")
 

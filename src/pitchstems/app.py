@@ -1017,8 +1017,11 @@ def main() -> int:
             return self.worker_token
 
         def invalidate_worker_token(self) -> None:
+            had_active_worker = self.active_worker_token is not None
             self.worker_token += 1
             self.active_worker_token = None
+            if had_active_worker:
+                self.set_processing_state(False)
 
         def run_full_pipeline(self, token: int, request: FullRunRequest) -> None:
             try:
@@ -1116,9 +1119,6 @@ def main() -> int:
                         self.active_worker_token = None
                         self.set_processing_state(False)
                         self.end_activity("Processing complete")
-                    elif self.active_worker_token is None:
-                        self.set_processing_state(False)
-                        self.reset_activity("Ready")
                     else:
                         self.logger.info("Ignored stale worker completion for token %s", token)
                 elif isinstance(message, str) and message.startswith("__OUTPUT_DIR__"):
