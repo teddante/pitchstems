@@ -259,9 +259,18 @@ def find_existing_midi_previews(result: PipelineResult) -> dict[str, Path]:
 
 
 def clear_player_source(player: QMediaPlayer) -> None:
+    reset_player_source(player)
+    player.deleteLater()
+
+
+def reset_player_source(player: QMediaPlayer) -> None:
     player.pause()
     player.setSource(QUrl())
-    player.deleteLater()
+
+
+def start_player_source(player: QMediaPlayer, source: QUrl) -> None:
+    player.setSource(source)
+    player.play()
 
 
 def start_player(player: QMediaPlayer, position_ms: int) -> None:

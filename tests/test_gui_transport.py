@@ -5,10 +5,14 @@ import pytest
 
 pytest.importorskip("PySide6")
 
+from PySide6.QtCore import QUrl  # noqa: E402
+
 from pitchstems.gui_transport import (  # noqa: E402
     find_existing_midi_previews,
     loop_playback_start,
+    reset_player_source,
     safe_qt_multimedia_call,
+    start_player_source,
 )
 from pitchstems.pipeline import PipelineResult  # noqa: E402
 from pitchstems.separation import StemResult  # noqa: E402
@@ -83,6 +87,22 @@ def test_safe_qt_multimedia_call_returns_true_when_operation_succeeds() -> None:
     assert logger.messages == []
 
 
+def test_reset_player_source_pauses_and_clears_source() -> None:
+    player = _FakePlayer()
+
+    reset_player_source(player)
+
+    assert player.actions == ["pause", "setSource:"]
+
+
+def test_start_player_source_sets_source_and_plays() -> None:
+    player = _FakePlayer()
+
+    start_player_source(player, QUrl("file:///preview.wav"))
+
+    assert player.actions == ["setSource:file:///preview.wav", "play"]
+
+
 def _write_wav(path: Path) -> None:
     with wave.open(str(path), "wb") as wav:
         wav.setnchannels(1)
@@ -97,3 +117,17 @@ class _Logger:
 
     def exception(self, message: str) -> None:
         self.messages.append(message)
+
+
+class _FakePlayer:
+    def __init__(self) -> None:
+        self.actions: list[str] = []
+
+    def pause(self) -> None:
+        self.actions.append("pause")
+
+    def setSource(self, source: QUrl) -> None:
+        self.actions.append(f"setSource:{source.toString()}")
+
+    def play(self) -> None:
+        self.actions.append("play")

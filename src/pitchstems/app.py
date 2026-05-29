@@ -149,7 +149,14 @@ def main() -> int:
         PianoChordWidget,
     )
     from pitchstems.gui_timeline import TimelineView
-    from pitchstems.gui_transport import TransportController, find_existing_midi_previews, loop_playback_start
+    from pitchstems.gui_transport import (
+        TransportController,
+        find_existing_midi_previews,
+        loop_playback_start,
+        reset_player_source,
+        safe_qt_multimedia_call,
+        start_player_source,
+    )
 
     class MainWindow(QMainWindow):
         def __init__(self) -> None:
@@ -2492,14 +2499,21 @@ def main() -> int:
                 return
             notes = self.preview_notes_for_chord(label, note_names)
             preview_dir = self.current_result.project_dir / "editor" / "chord-preview"
-            self.chord_preview_player.pause()
-            self.chord_preview_player.setSource(QUrl())
+            if not safe_qt_multimedia_call(
+                self.logger,
+                "Chord preview reset failed",
+                lambda: reset_player_source(self.chord_preview_player),
+            ):
+                return
             preview = render_note_preview("official-chord", notes, preview_dir)
             if not preview:
                 return
-            self.chord_preview_player.setSource(QUrl.fromLocalFile(str(preview)))
-            self.chord_preview_player.play()
-            self.statusBar().showMessage(f"Playing official {self.display_chord(label)} chord.", 3000)
+            if safe_qt_multimedia_call(
+                self.logger,
+                "Chord preview playback failed",
+                lambda: start_player_source(self.chord_preview_player, QUrl.fromLocalFile(str(preview))),
+            ):
+                self.statusBar().showMessage(f"Playing official {self.display_chord(label)} chord.", 3000)
 
         def preview_notes_for_chord(self, label: str, note_names: list[str]) -> list[NoteEvent]:
             pitches = chord_preview_pitches(label, note_names)
