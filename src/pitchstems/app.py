@@ -50,6 +50,10 @@ from pitchstems.harmony_inspector import (
     selected_chord_analysis_notes,
 )
 from pitchstems.gui_options import default_midi_checked, device_label, optional_frequency
+from pitchstems.gui_track_controls import (
+    track_control_panel_height,
+    track_control_visibility,
+)
 from pitchstems.recent_projects import (
     normalize_recent_project_paths,
     recent_project_label,
@@ -1494,15 +1498,16 @@ def main() -> int:
                 if not is_visible:
                     continue
                 geometry = self.timeline.track_geometries.get(track.name.lower())
-                height = int(round(geometry[1])) if geometry else 132
-                panel.setFixedHeight(max(1, height))
+                height = track_control_panel_height(geometry[1] if geometry else None)
+                panel.setFixedHeight(height)
                 detail_rows = self.track_control_detail_rows.get(track.name)
                 if detail_rows is None:
                     continue
                 toggle_widget, audio_widget, midi_widget = detail_rows
-                toggle_widget.setVisible(height >= 38)
-                audio_widget.setVisible(height >= 58)
-                midi_widget.setVisible(height >= 70)
+                visibility = track_control_visibility(height)
+                toggle_widget.setVisible(visibility.toggles)
+                audio_widget.setVisible(visibility.audio_volume)
+                midi_widget.setVisible(visibility.midi_volume)
             self.playback_controls_widget.adjustSize()
 
         def sync_track_control_scroll(self, value: int) -> None:

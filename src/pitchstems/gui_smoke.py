@@ -70,6 +70,10 @@ def run_project_smoke(window) -> None:
 
     window.fit_editor_song_to_view()
     _assert(window.timeline.horizontalScrollBar().value() == 0, "fit song horizontal start")
+    toggle_row, audio_row, midi_row = window.track_control_detail_rows["bass"]
+    _assert(toggle_row.isVisible(), "fit song track toggles visible")
+    _assert(audio_row.isVisible(), "fit song audio volume visible")
+    _assert(midi_row.isVisible(), "fit song midi volume visible")
     _assert(window.save_editor_state(), "editor state save")
 
 

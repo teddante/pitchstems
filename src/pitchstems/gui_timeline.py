@@ -7,6 +7,7 @@ from PySide6.QtGui import QColor, QBrush, QFontMetrics, QImage, QPainter, QPen, 
 from PySide6.QtWidgets import QApplication, QGraphicsScene, QGraphicsView
 
 from pitchstems.editor_project import ChordRegion, EditorProject, midi_note_name
+from pitchstems.gui_track_controls import TRACK_CONTROL_MIN_HEIGHT
 from pitchstems.time_format import format_time
 
 
@@ -34,7 +35,7 @@ class TimelineView(QGraphicsView):
         self.ruler_height = 28
         self.chord_lane_height = 36
         self.chord_height = self.ruler_height + self.chord_lane_height
-        self.minimum_track_height = 78
+        self.minimum_track_height = TRACK_CONTROL_MIN_HEIGHT
         self.visible_tracks: set[str] = set()
         self.track_geometries: dict[str, tuple[float, float, int, int]] = {}
         self.notes_by_track: dict[str, list] = {}

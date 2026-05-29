@@ -10,6 +10,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from pitchstems.editor_project import ChordRegion, EditorProject, EditorTrack, NoteEvent  # noqa: E402
+from pitchstems.gui_track_controls import TRACK_CONTROL_MIN_HEIGHT  # noqa: E402
 from pitchstems.gui_timeline import TimelineView  # noqa: E402
 
 
@@ -75,5 +76,6 @@ def test_timeline_fit_song_to_view_keeps_zoom_within_supported_bounds(tmp_path: 
 
     assert 1 <= view.pixels_per_second <= 420
     assert 0.08 <= view.vertical_zoom <= 3.6
+    assert min(height for _y, height, _low, _high in view.track_geometries.values()) >= TRACK_CONTROL_MIN_HEIGHT
     assert view.horizontalScrollBar().value() == 0
     assert view.verticalScrollBar().value() == 0
