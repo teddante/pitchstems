@@ -25,6 +25,7 @@ def test_scale_registry_includes_common_modal_and_symmetrical_families() -> None
     assert "Bebop dominant" in names
     assert "Whole tone" in names
     assert "Diminished half-whole" in names
+    assert "Chromatic" in names
     assert "Enigmatic" in names
     assert "Raga Bhairav" in names
 
@@ -100,6 +101,19 @@ def test_theory_analysis_can_identify_whole_tone_collection() -> None:
     assert "C Whole tone" in [candidate.label for candidate in analysis.candidates[:3]]
 
 
+def test_theory_analysis_can_identify_chromatic_collection() -> None:
+    notes = [
+        _note(0.0, 1.0, 60 + offset, 90)
+        for offset in range(12)
+    ]
+
+    analysis = analyze_theory_region(notes, [], 0.0, 1.0)
+
+    assert analysis.label == "C Chromatic"
+    assert analysis.candidates[0].scale.intervals == tuple(range(12))
+    assert analysis.candidates[0].pitch_fit == 1.0
+
+
 def test_theory_report_explains_evidence_and_formula_terms() -> None:
     notes = [
         _note(0.0, 1.0, 60, 100),
@@ -112,6 +126,7 @@ def test_theory_report_explains_evidence_and_formula_terms() -> None:
 
     assert "MIDI energy model" in report
     assert "Scale / Key / Mode Candidates" in report
+    assert "Aliases:" in report
     assert "Ranking rule:" in report
     assert "Progression" in report
     assert "Core chord tones" in report
