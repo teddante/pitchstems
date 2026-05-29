@@ -59,6 +59,16 @@ def test_find_existing_midi_previews_returns_existing_stem_previews(tmp_path: Pa
     assert find_existing_midi_previews(result) == {"bass": bass_preview}
 
 
+def test_find_existing_midi_previews_uses_sanitized_stem_names(tmp_path: Path) -> None:
+    preview_dir = tmp_path / "editor" / "midi-preview"
+    preview_dir.mkdir(parents=True)
+    preview = preview_dir / "bad_stem_midi_preview.wav"
+    _write_wav(preview)
+    result = _pipeline_result(tmp_path, [StemResult("../bad/stem", tmp_path / "bad.wav")])
+
+    assert find_existing_midi_previews(result) == {"../bad/stem": preview}
+
+
 def test_find_existing_midi_previews_ignores_unreadable_wavs(tmp_path: Path) -> None:
     preview_dir = tmp_path / "editor" / "midi-preview"
     preview_dir.mkdir(parents=True)

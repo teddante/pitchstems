@@ -6,7 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import QUrl
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 
-from pitchstems.midi_preview import valid_preview_wav
+from pitchstems.midi_preview import midi_preview_path, valid_preview_wav
 from pitchstems.pipeline import PipelineResult
 
 
@@ -250,7 +250,7 @@ def find_existing_midi_previews(result: PipelineResult) -> dict[str, Path]:
     preview_dir = result.project_dir / "editor" / "midi-preview"
     previews = {}
     for stem in result.stems:
-        preview = preview_dir / f"{stem.name}_midi_preview.wav"
+        preview = midi_preview_path(stem.name, preview_dir)
         if valid_preview_wav(preview):
             previews[stem.name] = preview
     return previews

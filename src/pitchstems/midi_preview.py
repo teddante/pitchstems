@@ -35,7 +35,7 @@ def render_midi_preview(
         return None
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / f"{_safe_preview_name(stem, fallback='stem')}_midi_preview.wav"
+    output_path = midi_preview_path(stem, output_dir)
     metadata = _preview_metadata(stem, stem_notes, duration, sample_rate)
     metadata_path = _metadata_path(output_path)
     if valid_preview_wav(output_path) and _valid_metadata(metadata_path, metadata):
@@ -55,6 +55,10 @@ def render_midi_preview(
     _write_wav_atomic(output_path, pcm, sample_rate)
     _write_metadata_atomic(metadata_path, metadata)
     return output_path
+
+
+def midi_preview_path(stem: str, output_dir: Path) -> Path:
+    return output_dir / f"{_safe_preview_name(stem, fallback='stem')}_midi_preview.wav"
 
 
 def render_note_preview(
