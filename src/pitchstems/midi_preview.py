@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import math
 import os
@@ -131,16 +132,18 @@ def _preview_metadata(
         "stem": stem,
         "duration": round(duration, 6),
         "sample_rate": sample_rate,
-        "notes": [
-            {
-                "start": round(note.start, 6),
-                "end": round(note.end, 6),
-                "pitch": note.pitch,
-                "velocity": note.velocity,
-            }
-            for note in notes
-        ],
+        "note_count": len(notes),
+        "note_digest": _note_digest(notes),
     }
+
+
+def _note_digest(notes: list[NoteEvent]) -> str:
+    digest = hashlib.sha256()
+    for note in sorted(notes, key=lambda item: (item.start, item.end, item.pitch, item.velocity)):
+        digest.update(
+            f"{note.start:.6f}|{note.end:.6f}|{note.pitch}|{note.velocity}\n".encode("ascii")
+        )
+    return digest.hexdigest()
 
 
 def _add_note(samples: array, note: NoteEvent, sample_rate: int) -> None:

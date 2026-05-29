@@ -54,6 +54,34 @@ def test_render_midi_preview_replaces_stale_preview_metadata(tmp_path: Path) -> 
     assert json.loads(metadata.read_text(encoding="utf-8"))["format"] == "pitchstems-midi-preview"
 
 
+def test_render_midi_preview_metadata_uses_compact_note_digest(tmp_path: Path) -> None:
+    notes = [
+        NoteEvent(stem="piano", start=index * 0.01, end=index * 0.01 + 0.02, pitch=60 + index % 12, velocity=72)
+        for index in range(120)
+    ]
+
+    preview = render_midi_preview("piano", notes, tmp_path, duration=1.5, sample_rate=8000)
+
+    assert preview is not None
+    metadata = json.loads(preview.with_suffix(".wav.json").read_text(encoding="utf-8"))
+    assert "notes" not in metadata
+    assert metadata["note_count"] == len(notes)
+    assert len(metadata["note_digest"]) == 64
+
+
+def test_render_midi_preview_metadata_digest_changes_with_note_content(tmp_path: Path) -> None:
+    notes = [NoteEvent(stem="piano", start=0.0, end=0.2, pitch=60, velocity=90)]
+    changed_notes = [NoteEvent(stem="piano", start=0.0, end=0.2, pitch=61, velocity=90)]
+    preview = render_midi_preview("piano", notes, tmp_path, duration=0.4, sample_rate=8000)
+    assert preview is not None
+    metadata_path = preview.with_suffix(".wav.json")
+    original_digest = json.loads(metadata_path.read_text(encoding="utf-8"))["note_digest"]
+
+    render_midi_preview("piano", changed_notes, tmp_path, duration=0.4, sample_rate=8000)
+
+    assert json.loads(metadata_path.read_text(encoding="utf-8"))["note_digest"] != original_digest
+
+
 def test_render_midi_preview_replaces_invalid_existing_preview(tmp_path: Path) -> None:
     preview = tmp_path / "piano_midi_preview.wav"
     preview.write_bytes(b"not a wav")
