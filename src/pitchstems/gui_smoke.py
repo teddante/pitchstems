@@ -48,7 +48,7 @@ def run_startup_smoke(window) -> None:
 
 
 def run_project_smoke(window) -> None:
-    manifest_path = _create_smoke_project()
+    manifest_path = _create_smoke_project(stem_name="bass", pitches=[43, 47, 50])
     window.open_project_manifest(manifest_path)
     _wait_for(lambda: window.editor_project is not None, "editor project load")
 
@@ -76,37 +76,57 @@ def run_project_smoke(window) -> None:
     _assert(midi_row.isVisible(), "fit song midi volume visible")
     _assert(window.save_editor_state(), "editor state save")
 
+    second_manifest_path = _create_smoke_project(stem_name="piano", pitches=[60, 64, 67])
+    window.open_project_manifest(second_manifest_path)
+    _wait_for(
+        lambda: window.current_result is not None
+        and window.current_result.project_dir == second_manifest_path.parent
+        and window.editor_project is not None,
+        "second editor project load",
+    )
+    _assert("piano" in window.track_analysis_checks, "second project track controls")
+    _assert("bass" not in window.track_analysis_checks, "old project track controls cleared")
+    _assert(set(window.timeline.visible_tracks) == {"piano"}, "timeline visible tracks switched")
+    _assert(window.timeline.selection_range() is None, "timeline selection reset on project switch")
 
-def _create_smoke_project() -> Path:
+    window.reset_stage_state()
+    _assert(window.current_result is None, "reset clears current result")
+    _assert(window.editor_project is None, "reset clears editor project")
+    _assert(window.timeline.project is None, "reset clears timeline project")
+    _assert(not window.track_analysis_checks, "reset clears track controls")
+    _assert(not window.run_midi.isEnabled(), "reset disables rerun MIDI")
+
+
+def _create_smoke_project(stem_name: str, pitches: list[int]) -> Path:
     root = Path(tempfile.mkdtemp(prefix="pitchstems-gui-smoke-"))
     project_dir = root / "smoke.pitchstems"
     normalized = project_dir / "work" / "song.wav"
-    stem = project_dir / "stems" / "bass.wav"
-    midi = project_dir / "midi" / "bass.mid"
+    stem = project_dir / "stems" / f"{stem_name}.wav"
+    midi = project_dir / "midi" / f"{stem_name}.mid"
     for audio_path in [normalized, stem]:
         _write_wav(audio_path, duration_seconds=2.0)
-    _write_midi(midi)
+    _write_midi(midi, pitches)
     result = PipelineResult(
         project_dir=project_dir,
         normalized_audio=normalized,
-        stems=[StemResult("bass", stem)],
-        midi_files=[MidiResult("bass", midi)],
+        stems=[StemResult(stem_name, stem)],
+        midi_files=[MidiResult(stem_name, midi)],
         combined_midi=None,
         zip_path=None,
         source_audio=normalized,
     )
     return save_project_manifest(
         result,
-        midi_stems={"bass"},
+        midi_stems={stem_name},
         generate_midi=True,
         midi_policy="pitched",
         create_zip=False,
-        track_visibility={"bass": True},
-        track_analysis_enabled={"bass": True},
-        track_audio_enabled={"bass": True},
-        track_audio_volume={"bass": 80},
-        track_midi_enabled={"bass": False},
-        track_midi_volume={"bass": 70},
+        track_visibility={stem_name: True},
+        track_analysis_enabled={stem_name: True},
+        track_audio_enabled={stem_name: True},
+        track_audio_volume={stem_name: 80},
+        track_midi_enabled={stem_name: False},
+        track_midi_volume={stem_name: 70},
         notation_spelling="auto",
         playhead_seconds=0.0,
     )
@@ -122,16 +142,15 @@ def _write_wav(path: Path, duration_seconds: float, sample_rate: int = 8000) -> 
         audio.writeframes(b"\x00\x00" * frames)
 
 
-def _write_midi(path: Path) -> None:
+def _write_midi(path: Path, pitches: list[int]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     midi = MidiFile(ticks_per_beat=480)
     track = MidiTrack()
     track.append(MetaMessage("set_tempo", tempo=500000, time=0))
-    for note in [43, 47, 50]:
+    for note in pitches:
         track.append(Message("note_on", note=note, velocity=96, time=0))
-    track.append(Message("note_off", note=43, velocity=0, time=960))
-    track.append(Message("note_off", note=47, velocity=0, time=0))
-    track.append(Message("note_off", note=50, velocity=0, time=0))
+    for index, note in enumerate(pitches):
+        track.append(Message("note_off", note=note, velocity=0, time=960 if index == 0 else 0))
     midi.tracks.append(track)
     midi.save(path)
 
