@@ -114,6 +114,10 @@ def run_project_smoke(window) -> None:
     window.messages.put(("ENABLE_PROCESS", 9))
     window.flush_messages()
     _assert(window.activity_label.text() == activity_label, "stale worker completion ignored")
+    stale_preview = active_project_dir / "editor" / "midi-preview" / "piano_midi_preview.wav"
+    window.messages.put(("MIDI_PREVIEWS", window.midi_preview_token - 1, active_project_dir, {"piano"}, {"piano": stale_preview}))
+    window.flush_messages()
+    _assert("piano" not in window.transport.midi_preview_paths, "stale MIDI preview ignored")
     stale_loaded = EditorLoadResult(
         pipeline_result=window.current_result,
         base_project=window.base_editor_project,

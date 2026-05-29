@@ -174,6 +174,7 @@ def main() -> int:
             self.editor_load_worker: threading.Thread | None = None
             self.editor_load_token = 0
             self.editor_load_activity_tokens: set[int] = set()
+            self.midi_preview_token = 0
             self.midi_preview_workers: dict[tuple[Path, str], threading.Thread] = {}
             self.latest_output_dir: Path | None = None
             self.current_result: PipelineResult | None = None
@@ -1095,19 +1096,27 @@ def main() -> int:
                     _kind, token, project_dir, error = message
                     self.finish_editor_project_load_failed(int(token), project_dir, error)
                 elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEWS":
-                    _kind, project_dir, requested_stems, previews = message
+                    _kind, token, project_dir, requested_stems, previews = message
                     for stem_name in requested_stems:
                         self.midi_preview_workers.pop((project_dir, stem_name.lower()), None)
-                    if self.current_result is not None and self.current_result.project_dir == project_dir:
+                    if (
+                        token == self.midi_preview_token
+                        and self.current_result is not None
+                        and self.current_result.project_dir == project_dir
+                    ):
                         self.rendering_midi_previews.difference_update(requested_stems)
                         self.attach_midi_preview_players(previews)
                     else:
                         self.logger.info("Ignored stale MIDI preview render for %s", project_dir)
                 elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEW_FAILED":
-                    _kind, project_dir, requested_stems, error = message
+                    _kind, token, project_dir, requested_stems, error = message
                     for stem_name in requested_stems:
                         self.midi_preview_workers.pop((project_dir, stem_name.lower()), None)
-                    if self.current_result is not None and self.current_result.project_dir == project_dir:
+                    if (
+                        token == self.midi_preview_token
+                        and self.current_result is not None
+                        and self.current_result.project_dir == project_dir
+                    ):
                         self.rendering_midi_previews.difference_update(requested_stems)
                         self.refresh_timeline_track_summaries()
                         self.append_log(error)
@@ -1145,6 +1154,7 @@ def main() -> int:
             self.set_activity_message("Loading result...")
             self.editor_load_token += 1
             self.current_result = result
+            self.midi_preview_token += 1
             self.current_stems = result.stems
             self.current_input_stem = (result.source_audio or result.normalized_audio).stem
             self.latest_output_dir = result.project_dir
@@ -1615,6 +1625,7 @@ def main() -> int:
                 return
             project = self.editor_project
             preview_dir = result.project_dir / "editor" / "midi-preview"
+            token = self.midi_preview_token
             self.rendering_midi_previews.update(missing)
             self.refresh_timeline_track_summaries()
             self.append_log(f"Rendering MIDI preview audio for {', '.join(missing)} in the background...")
@@ -1632,10 +1643,18 @@ def main() -> int:
                         )
                         if preview:
                             previews[stem_name] = preview
-                    self.messages.put(("MIDI_PREVIEWS", result.project_dir, set(missing), previews))
+                    self.messages.put(("MIDI_PREVIEWS", token, result.project_dir, set(missing), previews))
                 except Exception as exc:
                     self.logger.exception("MIDI preview render failed")
-                    self.messages.put(("MIDI_PREVIEW_FAILED", result.project_dir, set(missing), f"Could not render MIDI previews: {exc}"))
+                    self.messages.put(
+                        (
+                            "MIDI_PREVIEW_FAILED",
+                            token,
+                            result.project_dir,
+                            set(missing),
+                            f"Could not render MIDI previews: {exc}",
+                        )
+                    )
 
             worker_thread = threading.Thread(target=worker, daemon=True)
             for stem_name in missing:
@@ -2680,6 +2699,7 @@ def main() -> int:
             self.invalidate_worker_token()
             self.editor_load_token += 1
             self.editor_load_activity_tokens.clear()
+            self.midi_preview_token += 1
             if _path is None:
                 self.drop_zone.reset_prompt()
             self.current_result = None
