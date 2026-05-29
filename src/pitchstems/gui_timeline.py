@@ -958,18 +958,24 @@ class TimelineView(QGraphicsView):
             pen,
             QBrush(QColor(219, 234, 254, 180)),
         )
-        rect.setZValue(45)
+        self._make_sticky_y(rect, 45)
         shown_label = self._chord_label_for_width(chord.label, max(8, int(width) - 8))
         text = self.scene.addText(shown_label)
         text.setDefaultTextColor(QColor("#1d4ed8"))
         text.setPos(x + 5, self.ruler_height + 4)
-        text.setZValue(46)
+        self._make_sticky_y(text, 46)
         self.chord_drag_preview_items = [rect, text]
+        self.update_sticky_labels()
 
     def _clear_chord_drag_preview(self) -> None:
         for item in self.chord_drag_preview_items:
             if item.scene() is self.scene:
                 self.scene.removeItem(item)
+        self.sticky_y_items = [
+            (item, y_offset)
+            for item, y_offset in self.sticky_y_items
+            if item not in self.chord_drag_preview_items
+        ]
         self.chord_drag_preview_items = []
 
     def _dragged_chord_from_event(self, event) -> ChordRegion:

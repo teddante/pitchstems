@@ -93,14 +93,26 @@ def test_tiny_chord_labels_fall_back_to_root_name(tmp_path: Path) -> None:
 def test_chord_drag_preview_draws_lightweight_feedback(tmp_path: Path) -> None:
     _app()
     view = TimelineView()
-    view.resize(900, 420)
+    view.resize(900, 180)
     view.set_project(_project(tmp_path))
+    view.verticalScrollBar().setValue(view.verticalScrollBar().maximum())
 
     view._draw_chord_drag_preview(ChordRegion(0.25, 1.25, "Gmaj9(no3)", 0.8))
 
     assert len(view.chord_drag_preview_items) == 2
     assert all(item.scene() is view.scene for item in view.chord_drag_preview_items)
+    assert all(
+        any(sticky_item is item for sticky_item, _offset in view.sticky_y_items)
+        for item in view.chord_drag_preview_items
+    )
+    assert view.chord_drag_preview_items[0].y() == pytest.approx(
+        max(0.0, view.mapToScene(0, view.viewport().rect().top()).y())
+    )
+
+    preview_items = list(view.chord_drag_preview_items)
 
     view._clear_chord_drag_preview()
 
+    assert all(item.scene() is None for item in preview_items)
     assert view.chord_drag_preview_items == []
+    assert not any(sticky_item in preview_items for sticky_item, _offset in view.sticky_y_items)
