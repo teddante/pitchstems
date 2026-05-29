@@ -27,7 +27,7 @@ jobs:
       - name: Install package and dev tools
         run: |
           python -m pip install -U pip
-          python -m pip install -e ".[dev]"
+          python -m pip install -e ".[dev,gui]"
 
       - name: Lint
         run: python -m ruff check src tests
@@ -37,6 +37,17 @@ jobs:
 
       - name: Compile
         run: python -m compileall src
+
+      - name: GUI smoke
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          @'
+          from PySide6.QtWidgets import QApplication
+          QApplication.exec = lambda self: 0
+          from pitchstems.app import main
+          raise SystemExit(main())
+          '@ | python -
 
       - name: Build package
         run: python -m build

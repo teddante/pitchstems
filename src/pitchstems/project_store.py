@@ -14,7 +14,7 @@ from pitchstems.transcription import MidiOptions, MidiResult
 
 
 PROJECT_FILENAME = "pitchstems.project.json"
-PROJECT_FORMAT_VERSION = 1
+PROJECT_FORMAT_VERSION = 2
 _MANIFEST_LOCK = threading.Lock()
 
 
@@ -49,6 +49,7 @@ def save_project_manifest(
     track_audio_volume: dict[str, int] | None = None,
     track_midi_enabled: dict[str, bool] | None = None,
     track_midi_volume: dict[str, int] | None = None,
+    notation_spelling: str | None = None,
     playhead_seconds: float | None = None,
     chord_overrides: list[dict[str, Any]] | None = None,
     chord_removals: list[dict[str, Any]] | None = None,
@@ -57,7 +58,7 @@ def save_project_manifest(
     project_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = project_manifest_path(project_dir)
     with _MANIFEST_LOCK:
-        existing = _read_json(manifest_path) if manifest_path.exists() else {}
+        existing = _read_existing_manifest(manifest_path)
         created_at = existing.get("created_at") or _now()
         source_audio = result.source_audio or _path_from_manifest(project_dir, existing.get("source_audio"))
 
@@ -107,6 +108,9 @@ def save_project_manifest(
                 "track_midi_volume": track_midi_volume
                 if track_midi_volume is not None
                 else existing.get("editor", {}).get("track_midi_volume", {}),
+                "notation_spelling": notation_spelling
+                if notation_spelling is not None
+                else existing.get("editor", {}).get("notation_spelling", "auto"),
                 "playhead_seconds": playhead_seconds
                 if playhead_seconds is not None
                 else existing.get("editor", {}).get("playhead_seconds", 0.0),
@@ -126,7 +130,7 @@ def save_project_manifest(
 def load_pipeline_result(path: Path):
     manifest_path = find_project_manifest(path)
     project_dir = manifest_path.parent
-    manifest = _read_json(manifest_path)
+    manifest = _migrate_manifest(_read_json(manifest_path))
     _validate_manifest(manifest_path, manifest)
 
     from pitchstems.pipeline import PipelineResult
@@ -150,12 +154,15 @@ def load_pipeline_result(path: Path):
 
 def load_project_manifest(path: Path) -> dict[str, Any]:
     manifest_path = find_project_manifest(path)
-    manifest = _read_json(manifest_path)
+    manifest = _migrate_manifest(_read_json(manifest_path))
     _validate_manifest(manifest_path, manifest)
     return manifest
 
 
 def _validate_manifest(path: Path, manifest: dict[str, Any]) -> None:
+    project_dir = path.parent.resolve()
+    if not isinstance(manifest, dict):
+        raise ValueError(f"{path} is not a PitchStems project")
     if manifest.get("format") != "pitchstems-project":
         raise ValueError(f"{path} is not a PitchStems project")
     try:
@@ -172,6 +179,101 @@ def _validate_manifest(path: Path, manifest: dict[str, Any]) -> None:
     for field_name, expected_type in required_fields.items():
         if not isinstance(manifest.get(field_name), expected_type):
             raise ValueError(f"{path} is missing required project field: {field_name}")
+    for index, item in enumerate(manifest.get("stems", [])):
+        if (
+            not isinstance(item, dict)
+            or not _non_empty_string(item.get("name"))
+            or not _non_empty_string(item.get("path"))
+        ):
+            raise ValueError(f"{path} has an invalid stem entry at index {index}")
+        _validate_project_path_value(path, project_dir, item["path"], f"stems[{index}].path")
+    for index, item in enumerate(manifest.get("midi_files", [])):
+        if (
+            not isinstance(item, dict)
+            or not _non_empty_string(item.get("stem"))
+            or not _non_empty_string(item.get("path"))
+        ):
+            raise ValueError(f"{path} has an invalid MIDI entry at index {index}")
+        _validate_project_path_value(path, project_dir, item["path"], f"midi_files[{index}].path")
+    _validate_project_path_value(path, project_dir, manifest["normalized_audio"], "normalized_audio")
+    for field_name in ("source_audio", "combined_midi", "zip_path"):
+        value = manifest.get(field_name)
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"{path} has an invalid project path field: {field_name}")
+        if value:
+            _validate_project_path_value(
+                path,
+                project_dir,
+                value,
+                field_name,
+                allow_external_absolute=field_name == "source_audio",
+            )
+
+
+def _validate_project_path_value(
+    manifest_path: Path,
+    project_dir: Path,
+    value: str,
+    field_name: str,
+    *,
+    allow_external_absolute: bool = False,
+) -> None:
+    if not value.strip():
+        raise ValueError(f"{manifest_path} has an empty project path field: {field_name}")
+    value_path = Path(value)
+    if value_path.is_absolute():
+        if allow_external_absolute:
+            return
+        resolved = value_path.resolve()
+    else:
+        resolved = (project_dir / value_path).resolve()
+    try:
+        resolved.relative_to(project_dir)
+    except ValueError as exc:
+        raise ValueError(
+            f"{manifest_path} has a project path outside the project folder: {field_name}"
+        ) from exc
+
+
+def _non_empty_string(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _migrate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(manifest, dict):
+        return manifest
+    if manifest.get("format") != "pitchstems-project":
+        return manifest
+    try:
+        format_version = int(manifest.get("format_version", 0))
+    except (TypeError, ValueError):
+        return manifest
+    if format_version > PROJECT_FORMAT_VERSION:
+        return manifest
+
+    migrated = dict(manifest)
+    settings = migrated.get("settings")
+    if not isinstance(settings, dict):
+        settings = {}
+    migrated["settings"] = settings
+
+    editor = migrated.get("editor")
+    if not isinstance(editor, dict):
+        editor = {}
+    editor.setdefault("track_visibility", {})
+    editor.setdefault("track_analysis_enabled", {})
+    editor.setdefault("track_audio_enabled", {})
+    editor.setdefault("track_audio_volume", {})
+    editor.setdefault("track_midi_enabled", {})
+    editor.setdefault("track_midi_volume", {})
+    editor.setdefault("notation_spelling", "auto")
+    editor.setdefault("playhead_seconds", 0.0)
+    editor.setdefault("chord_overrides", [])
+    editor.setdefault("chord_removals", [])
+    editor.setdefault("note_edits", [])
+    migrated["editor"] = editor
+    migrated["format_version"] = PROJECT_FORMAT_VERSION
+    return migrated
 
 
 def _dataclass_dict(value) -> dict[str, Any]:
@@ -193,6 +295,16 @@ def _jsonable(value):
 
 def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _read_existing_manifest(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    with contextlib.suppress(OSError, json.JSONDecodeError):
+        existing = _migrate_manifest(_read_json(path))
+        if isinstance(existing, dict) and existing.get("format") == "pitchstems-project":
+            return existing
+    return {}
 
 
 def _write_json_atomic(path: Path, data: dict[str, Any]) -> None:

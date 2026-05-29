@@ -2,6 +2,7 @@ from pathlib import Path
 import wave
 
 from mido import Message, MetaMessage, MidiFile, MidiTrack
+import pytest
 
 from pitchstems.editor_project import (
     ChordScoringOptions,
@@ -21,6 +22,7 @@ from pitchstems.editor_project import (
 )
 from pitchstems.pipeline import PipelineResult
 from pitchstems.separation import StemResult
+from pitchstems.transcription import MidiResult
 
 
 def test_read_midi_notes_returns_absolute_seconds(tmp_path: Path) -> None:
@@ -60,6 +62,33 @@ def test_build_editor_project_uses_audio_duration_when_midi_is_empty(tmp_path: P
 
     assert project.duration == 2.25
     assert project.tracks[0].audio_path == stem_path
+    assert project.notes == []
+
+
+def test_build_editor_project_skips_missing_or_corrupt_midi(tmp_path: Path) -> None:
+    normalized = tmp_path / "work" / "song.wav"
+    stem_path = tmp_path / "stems" / "song_bass.wav"
+    corrupt_midi = tmp_path / "midi" / "corrupt.mid"
+    _write_wav(normalized, duration_seconds=1.0)
+    _write_wav(stem_path, duration_seconds=1.5)
+    corrupt_midi.parent.mkdir(parents=True)
+    corrupt_midi.write_text("not midi", encoding="utf-8")
+    result = PipelineResult(
+        project_dir=tmp_path,
+        normalized_audio=normalized,
+        stems=[StemResult("bass", stem_path)],
+        midi_files=[
+            MidiResult("bass", tmp_path / "midi" / "missing.mid"),
+            MidiResult("bass", corrupt_midi),
+        ],
+        combined_midi=None,
+        zip_path=None,
+    )
+
+    project = build_editor_project(result)
+
+    assert project.duration == 1.5
+    assert project.tracks[0].name == "bass"
     assert project.notes == []
 
 
@@ -140,7 +169,7 @@ def test_analyze_chord_includes_contextual_candidates() -> None:
     assert "C6" in labels
     assert analysis.candidate_notes["C6"] == ["C", "E", "G", "A"]
     assert "Am7/C" in analysis.candidate_aliases["C6"]
-    assert any("Score formula:" in line for line in analysis.candidate_explanations["C6"])
+    assert any("Display score:" in line for line in analysis.candidate_explanations["C6"])
     assert any("Matched tones:" in line for line in analysis.candidate_explanations["C6"])
 
 
@@ -181,6 +210,21 @@ def test_analyze_chord_at_uses_notes_active_at_playhead() -> None:
     assert analysis.label == "C"
     assert analysis.active_note_names == ["C4", "E4", "G4"]
     assert analyze_chord_at(notes, 1.4).label is None
+
+
+def test_analyze_chord_at_sums_duplicate_pitch_class_energy() -> None:
+    notes = [
+        _note(0.0, 1.0, 43, velocity=20),  # G
+        _note(0.0, 1.0, 55, velocity=80),  # G
+        _note(0.0, 1.0, 47, velocity=64),  # B
+    ]
+
+    analysis = analyze_chord_at(notes, 0.5)
+
+    weights = dict(analysis.note_weights)
+    expected_g_energy = midi_velocity_energy(20) + midi_velocity_energy(80)
+    assert weights["G"] == 1.0
+    assert weights["B"] == pytest.approx(midi_velocity_energy(64) / expected_g_energy)
 
 
 def test_analyze_chord_region_weights_overlap_and_velocity() -> None:

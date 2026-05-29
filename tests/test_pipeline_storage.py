@@ -6,6 +6,7 @@ from mido import Message, MidiFile, MidiTrack
 
 import pitchstems.pipeline as pipeline
 from pitchstems.pipeline import (
+    PipelineResult,
     _project_dir,
     _remove_export_stem_copies,
     _safe_stem,
@@ -13,6 +14,7 @@ from pitchstems.pipeline import (
     process_audio_file,
     process_midi_from_stems,
 )
+from pitchstems.project_store import save_project_manifest
 from pitchstems.separation import StemResult
 from pitchstems.transcription import MidiResult
 
@@ -131,6 +133,45 @@ def test_midi_rerun_zip_includes_current_manifest(tmp_path: Path, monkeypatch) -
         manifest = archive.read("pitchstems.project.json").decode("utf-8")
     assert '"source_audio": "audio/source.mp3"' in manifest
     assert '"zip_path": "source_pitchstems.zip"' in manifest
+
+
+def test_midi_rerun_result_preserves_existing_source_audio(tmp_path: Path, monkeypatch) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    source_path = project_dir / "audio" / "source.mp3"
+    normalized_path = project_dir / "work" / "source.wav"
+    stem_path = project_dir / "stems" / "song_bass.wav"
+    for path in [source_path, normalized_path, stem_path]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"placeholder")
+    save_project_manifest(
+        PipelineResult(
+            project_dir=project_dir,
+            normalized_audio=normalized_path,
+            stems=[StemResult("bass", stem_path)],
+            midi_files=[],
+            combined_midi=None,
+            zip_path=None,
+            source_audio=source_path,
+        )
+    )
+
+    def fake_transcribe(stem_name, _audio_path, output_dir, **_kwargs):
+        midi_path = output_dir / f"{stem_name}.mid"
+        _write_midi(midi_path, 40)
+        return MidiResult(stem_name, midi_path)
+
+    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", fake_transcribe)
+
+    result = process_midi_from_stems(
+        project_dir=project_dir,
+        input_stem="source",
+        normalized_audio=normalized_path,
+        stems=[StemResult("bass", stem_path)],
+        midi_stems={"bass"},
+        create_zip=False,
+    )
+
+    assert result.source_audio == source_path
 
 
 def test_midi_rerun_keeps_existing_outputs_when_transcription_fails(tmp_path: Path, monkeypatch) -> None:

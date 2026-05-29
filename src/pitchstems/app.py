@@ -3,36 +3,77 @@ from __future__ import annotations
 import os
 import queue
 import threading
-from bisect import bisect_left, bisect_right
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 
 from pitchstems.acceleration import onnxruntime_status, torch_status
 from pitchstems.app_logging import app_logger, logs_dir, setup_app_logging
+from pitchstems.chord_preview import chord_preview_pitches
+from pitchstems.chord_regions import merge_chord_ranges
 from pitchstems.editor_project import (
+    ChordAnalysis,
     ChordRegion,
     ChordScoringOptions,
     EditorProject,
     NoteEvent,
-    PITCH_NAMES,
     active_notes_at,
     analyze_chord_at,
     analyze_chord_region,
-    build_editor_project,
+    chord_bass_name_for_label,
     chord_tones_for_label,
+    display_chord_label,
     midi_velocity_energy,
     midi_note_name,
 )
+from pitchstems.editor_loader import EditorLoadResult, apply_chord_edits, build_editor_load_result
+from pitchstems.editor_state import (
+    build_editor_state_snapshot,
+    editor_bool,
+    editor_float,
+    editor_int,
+    save_editor_state_snapshot,
+)
+from pitchstems.file_opening import open_folder
 from pitchstems.midi_preview import render_midi_preview, render_note_preview
 from pitchstems.model_catalog import model_choice
+from pitchstems.notation import pitch_class_for_name, pitch_class_name
 from pitchstems.pipeline import PipelineResult, process_audio_file, process_midi_from_stems
 from pitchstems.project_store import (
     PROJECT_FILENAME,
     load_pipeline_result,
-    load_project_manifest,
-    save_project_manifest,
+)
+from pitchstems.harmony_inspector import (
+    chord_analysis_track_names as inspector_chord_analysis_track_names,
+    chord_base_pitch_weights as inspector_chord_base_pitch_weights,
+    chord_note_constraints as inspector_chord_note_constraints,
+    chord_sample_text as inspector_chord_sample_text,
+    filtered_chord_analysis_notes as inspector_filtered_chord_analysis_notes,
+    harmony_context_key as inspector_harmony_context_key,
+    resolve_notation_preference,
+    selected_chord_analysis_notes,
+)
+from pitchstems.gui_options import default_midi_checked, device_label, optional_frequency
+from pitchstems.gui_track_controls import (
+    track_control_panel_height,
+    track_control_visibility,
+)
+from pitchstems.recent_projects import (
+    normalize_recent_project_paths,
+    recent_project_label,
+    remember_recent_project,
+    remove_recent_project,
 )
 from pitchstems.separation import SeparationOptions, StemResult
+from pitchstems.theory import (
+    ChordGapAnalysis,
+    TheoryAnalysis,
+    analyze_chord_gap,
+    analyze_theory_at,
+    analyze_theory_region,
+    chord_gap_report,
+    theory_analysis_report,
+)
+from pitchstems.time_format import format_time
 from pitchstems.transcription import MidiOptions
 
 
@@ -57,12 +98,23 @@ class MidiRunRequest:
     create_zip: bool
 
 
+@dataclass(frozen=True)
+class HarmonyContext:
+    mode: str
+    sampled_tracks: tuple[str, ...]
+    source_note_count: int
+    analyzed_note_count: int
+    chord_analysis: ChordAnalysis | None
+    theory_analysis: TheoryAnalysis | None
+    gap_analysis: ChordGapAnalysis | None
+
+
 def main() -> int:
     log_path = setup_app_logging()
     logger = app_logger()
     try:
         from PySide6.QtCore import QSettings, QTimer, Qt, QUrl
-        from PySide6.QtGui import QAction, QColor, QBrush, QFontMetrics, QImage, QKeySequence, QPainter, QPen, QPixmap, QShortcut
+        from PySide6.QtGui import QAction, QKeySequence, QShortcut
         from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
         from PySide6.QtWidgets import (
             QApplication,
@@ -72,8 +124,6 @@ def main() -> int:
             QDoubleSpinBox,
             QFileDialog,
             QGridLayout,
-            QGraphicsScene,
-            QGraphicsView,
             QGroupBox,
             QHBoxLayout,
             QLabel,
@@ -96,1178 +146,22 @@ def main() -> int:
         print("PySide6 is not installed. Install with `pip install -e .[gui]`.")
         return 1
 
-    class DropZone(QLabel):
-        def __init__(self) -> None:
-            super().__init__("Drop an audio file here")
-            self.setAcceptDrops(True)
-            self.setFocusPolicy(Qt.StrongFocus)
-            self.setAlignment(Qt.AlignCenter)
-            self.setWordWrap(True)
-            self.setMinimumHeight(105)
-            self.setMaximumHeight(130)
-            self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
-            self.setStyleSheet(
-                """
-                QLabel {
-                    border: 2px dashed #4c7aaf;
-                    border-radius: 8px;
-                    color: #1f2937;
-                    font-size: 19px;
-                    background: #f8fafc;
-                }
-                """
-            )
-            self.path: Path | None = None
-            self.on_path_changed = None
-
-        def set_audio_file(self, path: Path) -> None:
-            self.path = path
-            self.setText(f"Audio\n{path.name}\n{self._short_path(path.parent)}")
-            self.setToolTip(str(path))
-
-        def set_project_file(self, project_dir: Path, source_audio: Path | None) -> None:
-            self.path = source_audio
-            if source_audio:
-                self.setText(
-                    f"Project\n{project_dir.name}\nSource: {source_audio.name}"
-                )
-                self.setToolTip(f"Project: {project_dir}\nSource: {source_audio}")
-            else:
-                self.setText(f"Project\n{project_dir.name}")
-                self.setToolTip(str(project_dir))
-
-        def reset_prompt(self) -> None:
-            self.path = None
-            self.setText("Drop an audio file here")
-            self.setToolTip("")
-
-        def _short_path(self, path: Path, max_length: int = 72) -> str:
-            text = str(path)
-            if len(text) <= max_length:
-                return text
-            parts = path.parts
-            tail = str(Path(*parts[-2:])) if len(parts) >= 2 else path.name
-            return f"...\\{tail}"
-
-        def dragEnterEvent(self, event) -> None:
-            if event.mimeData().hasUrls():
-                event.acceptProposedAction()
-
-        def dropEvent(self, event) -> None:
-            urls = event.mimeData().urls()
-            if urls:
-                self.set_audio_file(Path(urls[0].toLocalFile()))
-                if self.on_path_changed:
-                    self.on_path_changed(self.path)
-
-    class NoWheelComboBox(QComboBox):
-        def wheelEvent(self, event) -> None:
-            event.ignore()
-
-    class NoWheelDoubleSpinBox(QDoubleSpinBox):
-        def wheelEvent(self, event) -> None:
-            event.ignore()
-
-    class NoWheelSpinBox(QSpinBox):
-        def wheelEvent(self, event) -> None:
-            event.ignore()
-
-    class PianoChordWidget(QWidget):
-        white_keys = [
-            ("C", 0),
-            ("D", 2),
-            ("E", 4),
-            ("F", 5),
-            ("G", 7),
-            ("A", 9),
-            ("B", 11),
-            ("C", 0),
-        ]
-        black_keys = [
-            ("C#", 1, 0.72),
-            ("Eb", 3, 1.72),
-            ("F#", 6, 3.72),
-            ("Ab", 8, 4.72),
-            ("Bb", 10, 5.72),
-        ]
-
-        def __init__(self) -> None:
-            super().__init__()
-            self.chord_label = ""
-            self.source_label = "Selected chord"
-            self.pitch_classes: set[int] = set()
-            self.setMinimumHeight(94)
-            self.setMaximumHeight(112)
-            self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            self.setToolTip("Select a chord candidate to see its tones on one octave of piano keys.")
-
-        def set_chord(
-            self,
-            label: str | None,
-            note_names: list[str],
-            source_label: str = "Selected chord",
-        ) -> None:
-            self.chord_label = label or ""
-            self.source_label = source_label
-            self.pitch_classes = {
-                PITCH_NAMES.index(note_name)
-                for note_name in note_names
-                if note_name in PITCH_NAMES
-            }
-            if self.chord_label and self.pitch_classes:
-                tones = " - ".join(note_names)
-                self.setToolTip(f"{self.source_label}: {self.chord_label}\n{tones}")
-            else:
-                self.setToolTip("Select a chord candidate to see its tones on one octave of piano keys.")
-            self.update()
-
-        def paintEvent(self, event) -> None:
-            painter = QPainter(self)
-            painter.setRenderHint(QPainter.Antialiasing)
-            bounds = self.rect().adjusted(4, 4, -4, -4)
-            painter.fillRect(bounds, QColor("#f8fafc"))
-            painter.setPen(QPen(QColor("#cbd5e1"), 1))
-            painter.drawRect(bounds)
-
-            title_height = 18
-            title = f"{self.source_label}: {self.chord_label}" if self.chord_label else "Selected chord"
-            title = QFontMetrics(painter.font()).elidedText(
-                title,
-                Qt.ElideRight,
-                max(0, bounds.width() - 12),
-            )
-            painter.setPen(QColor("#334155"))
-            painter.drawText(
-                bounds.left() + 6,
-                bounds.top() + 1,
-                max(0, bounds.width() - 12),
-                title_height,
-                Qt.AlignLeft | Qt.AlignVCenter,
-                title,
-            )
-
-            keyboard_top = bounds.top() + title_height + 2
-            keyboard_height = max(34, bounds.height() - title_height - 4)
-            key_count = len(self.white_keys)
-            white_width = max(1, bounds.width() / key_count)
-
-            for index, (name, pitch_class) in enumerate(self.white_keys):
-                x = round(bounds.left() + index * white_width)
-                next_x = round(bounds.left() + (index + 1) * white_width)
-                width = max(1, next_x - x)
-                highlighted = pitch_class in self.pitch_classes
-                painter.setBrush(QBrush(QColor("#fde68a" if highlighted else "#ffffff")))
-                painter.setPen(QPen(QColor("#94a3b8"), 1))
-                painter.drawRect(x, keyboard_top, width, keyboard_height)
-                painter.setPen(QColor("#1f2937" if highlighted else "#64748b"))
-                painter.drawText(
-                    x,
-                    keyboard_top + keyboard_height - 18,
-                    width,
-                    16,
-                    Qt.AlignCenter,
-                    name,
-                )
-
-            black_width = max(8, round(white_width * 0.56))
-            black_height = round(keyboard_height * 0.62)
-            for name, pitch_class, center_position in self.black_keys:
-                center_x = bounds.left() + center_position * white_width
-                x = round(center_x - black_width / 2)
-                highlighted = pitch_class in self.pitch_classes
-                painter.setBrush(QBrush(QColor("#fbbf24" if highlighted else "#111827")))
-                painter.setPen(QPen(QColor("#475569" if highlighted else "#020617"), 1))
-                painter.drawRect(x, keyboard_top, black_width, black_height)
-                painter.setPen(QColor("#111827" if highlighted else "#f8fafc"))
-                painter.drawText(x, keyboard_top + black_height - 16, black_width, 14, Qt.AlignCenter, name)
-
-            if not self.pitch_classes:
-                painter.setPen(QColor("#64748b"))
-                painter.drawText(
-                    bounds.left(),
-                    keyboard_top,
-                    bounds.width(),
-                    keyboard_height,
-                    Qt.AlignCenter,
-                    "No chord selected",
-                )
-
-    class TimelineView(QGraphicsView):
-        def __init__(self) -> None:
-            super().__init__()
-            self.project: EditorProject | None = None
-            self.position = 0.0
-            self.pixels_per_second = 92
-            self.vertical_zoom = 1.0
-            self.label_width = 72
-            self.ruler_height = 28
-            self.chord_lane_height = 36
-            self.chord_height = self.ruler_height + self.chord_lane_height
-            self.minimum_track_height = 78
-            self.visible_tracks: set[str] = set()
-            self.track_geometries: dict[str, tuple[float, float, int, int]] = {}
-            self.notes_by_track: dict[str, list] = {}
-            self.note_starts_by_track: dict[str, list[float]] = {}
-            self.max_note_duration_by_track: dict[str, float] = {}
-            self.pitch_ranges: dict[str, tuple[int, int]] = {}
-            self.last_redraw_stats = ""
-            self.sticky_x_items = []
-            self.sticky_y_items = []
-            self.playhead = None
-            self.selection_rect = None
-            self.selection_start: float | None = None
-            self.selection_end: float | None = None
-            self.selected_chord: ChordRegion | None = None
-            self.on_position_changed = None
-            self.on_selection_changed = None
-            self.on_chord_edited = None
-            self.on_chord_deleted = None
-            self.on_chord_selected = None
-            self.on_redraw_started = None
-            self.on_redraw_finished = None
-            self.pending_pixels_per_second: float | None = None
-            self.pending_vertical_zoom: float | None = None
-            self.pending_zoom_center_seconds: float | None = None
-            self.pending_zoom_center_y: float | None = None
-            self._chord_drag = None
-            self._selecting = False
-            self._selection_anchor: float | None = None
-            self._panning = False
-            self._last_pan_pos = None
-            self.scene = QGraphicsScene(self)
-            self.scene.setItemIndexMethod(QGraphicsScene.NoIndex)
-            self.setScene(self.scene)
-            self.setMinimumHeight(320)
-            self.setOptimizationFlag(QGraphicsView.DontSavePainterState, True)
-            self.setOptimizationFlag(QGraphicsView.DontAdjustForAntialiasing, True)
-            self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-            self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-            self.setMouseTracking(True)
-            self.setFocusPolicy(Qt.StrongFocus)
-            self.setStyleSheet("QGraphicsView { border: 1px solid #d1d5db; background: #f8fafc; }")
-            self.horizontalScrollBar().valueChanged.connect(self.update_sticky_labels)
-            self.verticalScrollBar().valueChanged.connect(self.update_sticky_labels)
-            self.horizontalScrollBar().valueChanged.connect(self.request_view_redraw)
-            self.verticalScrollBar().valueChanged.connect(self.request_view_redraw)
-            self.zoom_redraw_timer = QTimer(self)
-            self.zoom_redraw_timer.setSingleShot(True)
-            self.zoom_redraw_timer.timeout.connect(self.commit_pending_zoom)
-            self.view_redraw_timer = QTimer(self)
-            self.view_redraw_timer.setSingleShot(True)
-            self.view_redraw_timer.timeout.connect(self.redraw)
-
-        def set_project(self, project: EditorProject | None) -> None:
-            self.project = project
-            self.visible_tracks = {track.name.lower() for track in project.tracks} if project else set()
-            self._index_project()
-            self.position = 0.0
-            self.selection_start = None
-            self.selection_end = None
-            self._selecting = False
-            self._chord_drag = None
-            self.selected_chord = None
-            self.redraw()
-
-        def _index_project(self) -> None:
-            self.notes_by_track = {}
-            self.note_starts_by_track = {}
-            self.max_note_duration_by_track = {}
-            self.pitch_ranges = {}
-            if self.project is None:
-                return
-            for note in self.project.notes:
-                self.notes_by_track.setdefault(note.stem.lower(), []).append(note)
-            for track_key, notes in self.notes_by_track.items():
-                notes.sort(key=lambda note: (note.start, note.end, note.pitch))
-                self.note_starts_by_track[track_key] = [note.start for note in notes]
-                self.max_note_duration_by_track[track_key] = max(
-                    (note.duration for note in notes),
-                    default=0.0,
-                )
-            for track in self.project.tracks:
-                pitches = [note.pitch for note in self.notes_by_track.get(track.name.lower(), [])]
-                if pitches:
-                    self.pitch_ranges[track.name.lower()] = (
-                        max(0, min(pitches) - 2),
-                        min(127, max(pitches) + 2),
-                    )
-
-        def set_visible_tracks(self, tracks: set[str]) -> None:
-            self.visible_tracks = {track.lower() for track in tracks}
-            self.redraw()
-
-        def zoom_horizontal(self, factor: float) -> None:
-            if self.project is None:
-                return
-            if self.pending_zoom_center_seconds is None:
-                self.pending_zoom_center_seconds = self._view_center_seconds()
-            base = self.pending_pixels_per_second or self.pixels_per_second
-            self.pending_pixels_per_second = max(1, min(420, base * factor))
-            self.zoom_redraw_timer.start(65)
-
-        def zoom_vertical(self, factor: float) -> None:
-            if self.project is None:
-                return
-            if self.pending_zoom_center_y is None:
-                self.pending_zoom_center_y = self.mapToScene(self.viewport().rect().center()).y()
-            base = self.pending_vertical_zoom or self.vertical_zoom
-            self.pending_vertical_zoom = max(0.08, min(3.6, base * factor))
-            self.zoom_redraw_timer.start(65)
-
-        def fit_song_to_view(self) -> None:
-            if self.project is None:
-                return
-            self.zoom_redraw_timer.stop()
-            self.view_redraw_timer.stop()
-            self.pending_pixels_per_second = None
-            self.pending_vertical_zoom = None
-            self.pending_zoom_center_seconds = None
-            self.pending_zoom_center_y = None
-
-            duration = max(self.project.duration, 1.0)
-            viewport = self.viewport().rect()
-            time_width = max(80, viewport.width() - self.label_width - 92)
-            self.pixels_per_second = max(1, min(420, time_width / duration))
-
-            track_base_height = 0.0
-            for track in self._visible_project_tracks():
-                pitch_range = self.pitch_ranges.get(track.name.lower())
-                if pitch_range:
-                    low_pitch, high_pitch = pitch_range
-                    track_base_height += max(132, (high_pitch - low_pitch + 1) * 8 + 34)
-                else:
-                    track_base_height += 132
-            target_height = max(120, viewport.height() - 26)
-            track_target_height = max(48, target_height - self.chord_height - 34)
-            self.vertical_zoom = max(0.08, min(3.6, track_target_height / max(track_base_height, 1.0)))
-
-            self.redraw()
-            self.horizontalScrollBar().setValue(0)
-            self.verticalScrollBar().setValue(0)
-            self.update_sticky_labels()
-
-        def reset_zoom(self) -> None:
-            if self.project is None:
-                return
-            self.zoom_redraw_timer.stop()
-            self.pending_pixels_per_second = None
-            self.pending_vertical_zoom = None
-            self.pending_zoom_center_seconds = None
-            self.pending_zoom_center_y = None
-            center_seconds = self._view_center_seconds()
-            self.pixels_per_second = 92
-            self.vertical_zoom = 1.0
-            self.redraw()
-            self._center_on_seconds(center_seconds)
-
-        def commit_pending_zoom(self) -> None:
-            if self.project is None:
-                self.pending_pixels_per_second = None
-                self.pending_vertical_zoom = None
-                self.pending_zoom_center_seconds = None
-                self.pending_zoom_center_y = None
-                return
-            has_time_zoom = self.pending_pixels_per_second is not None
-            has_pitch_zoom = self.pending_vertical_zoom is not None
-            if not has_time_zoom and not has_pitch_zoom:
-                return
-
-            center_seconds = self.pending_zoom_center_seconds or self._view_center_seconds()
-            center_y = self.pending_zoom_center_y
-            if center_y is None:
-                center_y = self.mapToScene(self.viewport().rect().center()).y()
-            if self.pending_pixels_per_second is not None:
-                self.pixels_per_second = self.pending_pixels_per_second
-            if self.pending_vertical_zoom is not None:
-                self.vertical_zoom = self.pending_vertical_zoom
-
-            self.pending_pixels_per_second = None
-            self.pending_vertical_zoom = None
-            self.pending_zoom_center_seconds = None
-            self.pending_zoom_center_y = None
-
-            self._update_scene_rect_for_current_zoom()
-            if has_time_zoom:
-                self._center_on_seconds(center_seconds)
-            if has_pitch_zoom:
-                x = self._x(center_seconds) if has_time_zoom else self.mapToScene(self.viewport().rect().center()).x()
-                self.centerOn(x, center_y)
-            self.view_redraw_timer.stop()
-            self.redraw()
-            self.update_sticky_labels()
-
-        def request_view_redraw(self, _value: int | None = None) -> None:
-            if self.project is None:
-                return
-            self.view_redraw_timer.start(35)
-
-        def _update_scene_rect_for_current_zoom(self) -> None:
-            if self.project is None:
-                return
-            duration = max(self.project.duration, 10.0)
-            self.track_geometries = self._build_track_geometries()
-            width = self.label_width + duration * self.pixels_per_second + 80
-            height = self.chord_height + sum(
-                geometry[1] for geometry in self.track_geometries.values()
-            ) + 34
-            self.scene.setSceneRect(0, 0, width, height)
-
-        def set_position(self, seconds: float) -> None:
-            if self.project is None:
-                self.position = 0.0
-                return
-            self.position = max(0.0, min(seconds, max(self.project.duration, 0.0)))
-            self._move_playhead()
-
-        def redraw(self) -> None:
-            if self.project is not None and self.on_redraw_started:
-                self.on_redraw_started()
-            self.setUpdatesEnabled(False)
-            try:
-                self.scene.clear()
-                self.playhead = None
-                self.selection_rect = None
-                self.track_geometries = {}
-                self.sticky_x_items = []
-                self.sticky_y_items = []
-                if self.project is None:
-                    self.scene.addText("Run separation + MIDI to create an editor timeline.").setPos(18, 18)
-                    self.scene.setSceneRect(0, 0, 760, 320)
-                    return
-
-                duration = max(self.project.duration, 10.0)
-                self.track_geometries = self._build_track_geometries()
-                width = self.label_width + duration * self.pixels_per_second + 80
-                height = self.chord_height + sum(
-                    geometry[1] for geometry in self.track_geometries.values()
-                ) + 34
-                self.scene.setSceneRect(0, 0, width, height)
-                self.scene.addRect(0, 0, width, height, QPen(Qt.NoPen), QBrush(QColor("#f8fafc")))
-                visible_rect = self._visible_scene_rect().adjusted(-160, -90, 220, 90)
-                visible_start = max(0.0, (visible_rect.left() - self.label_width) / self.pixels_per_second)
-                visible_end = min(duration, (visible_rect.right() - self.label_width) / self.pixels_per_second)
-                if visible_end < visible_start:
-                    visible_start, visible_end = 0.0, duration
-                note_count = self._count_visible_notes(visible_start, visible_end, visible_rect)
-                self.last_redraw_stats = (
-                    f"Timeline redraw: visible notes {note_count}/{len(self.project.notes)}, "
-                    f"zoom {self.pixels_per_second:.0f}px/s, pitch {self.vertical_zoom:.2f}x"
-                )
-                self._draw_time_grid(duration, width, height, visible_start, visible_end)
-                self._draw_chords(visible_start, visible_end)
-                self._draw_tracks(visible_start, visible_end, visible_rect, note_count)
-                self._draw_selection(height)
-                self._draw_playhead(height)
-                self.update_sticky_labels()
-            finally:
-                self.setUpdatesEnabled(True)
-                self.viewport().update()
-                if self.project is not None and self.on_redraw_finished:
-                    self.on_redraw_finished()
-
-        def _draw_time_grid(
-            self,
-            duration: float,
-            width: float,
-            height: float,
-            visible_start: float,
-            visible_end: float,
-        ) -> None:
-            self.scene.addRect(0, 0, self.label_width, height, QPen(Qt.NoPen), QBrush(QColor("#eef2f7")))
-            header = self.scene.addRect(
-                0,
-                0,
-                width,
-                self.ruler_height,
-                QPen(Qt.NoPen),
-                QBrush(QColor("#eef2f7")),
-            )
-            self._make_sticky_y(header, 26)
-            minor_step, major_step = self._time_grid_steps()
-            tick = max(0.0, int(visible_start // minor_step) * minor_step)
-            end_tick = min(duration + minor_step, visible_end + minor_step)
-            while tick <= end_tick:
-                x = self._x(tick)
-                is_major = self._is_major_tick(tick, major_step)
-                color = QColor("#cbd5e1") if is_major else QColor("#e5e7eb")
-                self.scene.addLine(x, 0, x, height, QPen(color, 1))
-                if is_major:
-                    text = self.scene.addText(_format_time(tick))
-                    text.setDefaultTextColor(QColor("#475569"))
-                    text.setPos(x + 4, 3)
-                    self._make_sticky_y(text, 32)
-                tick += minor_step
-            self.scene.addLine(self.label_width, 0, self.label_width, height, QPen(QColor("#cbd5e1"), 1))
-            ruler_line = self.scene.addLine(0, self.ruler_height, width, self.ruler_height, QPen(QColor("#cbd5e1"), 1))
-            self._make_sticky_y(ruler_line, 33)
-            header_line = self.scene.addLine(0, self.chord_height, width, self.chord_height, QPen(QColor("#cbd5e1"), 1))
-            self._make_sticky_y(header_line, 33)
-
-        def _time_grid_steps(self) -> tuple[float, float]:
-            nice_steps = [
-                0.25,
-                0.5,
-                1,
-                2,
-                5,
-                10,
-                15,
-                30,
-                60,
-                120,
-                300,
-                600,
-            ]
-            target_label_px = 92
-            major_step = nice_steps[-1]
-            for step in nice_steps:
-                if step * self.pixels_per_second >= target_label_px:
-                    major_step = step
-                    break
-            minor_step = self._minor_step_for_major(major_step)
-            return minor_step, major_step
-
-        def _minor_step_for_major(self, major_step: float) -> float:
-            if major_step <= 1:
-                return major_step / 2
-            if major_step in {2, 10, 30, 120, 600}:
-                return major_step / 2
-            if major_step in {5, 15, 60, 300}:
-                return major_step / 5
-            return major_step
-
-        def _is_major_tick(self, tick: float, major_step: float) -> bool:
-            return abs((tick / major_step) - round(tick / major_step)) < 0.0001
-
-        def _draw_chords(self, visible_start: float, visible_end: float) -> None:
-            lane = self.scene.addRect(
-                0,
-                self.ruler_height,
-                self.scene.width(),
-                self.chord_lane_height,
-                QPen(Qt.NoPen),
-                QBrush(QColor("#f3e8ff")),
-            )
-            self._make_sticky_y(lane, 27)
-            label = self.scene.addText("Chords")
-            label.setDefaultTextColor(QColor("#334155"))
-            label.setPos(12, self.ruler_height + 9)
-            self._make_sticky_xy(label, 34)
-            for chord in self.project.chords:
-                if chord.end < visible_start or chord.start > visible_end:
-                    continue
-                x = self._x(chord.start)
-                width = max(18, chord.duration * self.pixels_per_second)
-                is_selected = chord == self.selected_chord
-                rect = self.scene.addRect(
-                    x,
-                    self.ruler_height + 6,
-                    width,
-                    24,
-                    QPen(QColor("#1d4ed8" if is_selected else "#7c3aed"), 2 if is_selected else 1),
-                    QBrush(QColor("#dbeafe" if is_selected else "#ede9fe")),
-                )
-                self._make_sticky_y(rect, 28)
-                rect.setData(0, chord)
-                rect.setToolTip(
-                    f"{chord.label}  {_format_time(chord.start)} - {_format_time(chord.end)}\n"
-                    f"Confidence: {chord.confidence:.0%}\n"
-                    "Drag the middle to move, drag an edge to resize, Delete removes the selected chord."
-                )
-                label_width = max(8, int(width) - 8)
-                shown_label = QFontMetrics(QApplication.font()).elidedText(
-                    chord.label,
-                    Qt.ElideRight,
-                    label_width,
-                )
-                text = self.scene.addText(shown_label)
-                text.setDefaultTextColor(QColor("#4c1d95"))
-                text.setPos(x + 5, self.ruler_height + 5)
-                text.setData(0, chord)
-                text.setToolTip(rect.toolTip())
-                text.setZValue(8)
-                self._make_sticky_y(text, 34)
-
-        def _draw_tracks(
-            self,
-            visible_start: float,
-            visible_end: float,
-            visible_rect,
-            visible_note_count: int,
-        ) -> None:
-            tracks = self._visible_project_tracks()
-            if not tracks:
-                text = self.scene.addText("No timeline tracks visible. Tick View for a track to show it here.")
-                text.setDefaultTextColor(QColor("#64748b"))
-                text.setPos(self.label_width + 18, self.chord_height + 18)
-                self._make_sticky_y(text, 12)
-                return
-            for index, track in enumerate(tracks):
-                y, height, low_pitch, high_pitch = self.track_geometries[track.name.lower()]
-                fill = QColor("#ffffff") if index % 2 == 0 else QColor("#f1f5f9")
-                self.scene.addRect(0, y, self.scene.width(), height, QPen(Qt.NoPen), QBrush(fill))
-                self.scene.addLine(
-                    0,
-                    y + height,
-                    self.scene.width(),
-                    y + height,
-                    QPen(QColor("#e2e8f0"), 1),
-                )
-                self._draw_pitch_guides(y, height, low_pitch, high_pitch)
-
-            draw_note_labels = self.pixels_per_second >= 150 and visible_note_count <= 900
-            dense_render = self.pixels_per_second < 55 or visible_note_count > 2400
-            enable_tooltips = visible_note_count <= 1400 and not dense_render
-            for track in tracks:
-                track_key = track.name.lower()
-                geometry = self.track_geometries.get(track_key)
-                if geometry is None:
-                    continue
-                y, height, low_pitch, high_pitch = geometry
-                if y > visible_rect.bottom() or y + height < visible_rect.top():
-                    continue
-                visible_notes = self._visible_notes_for_track(track_key, visible_start, visible_end)
-                if dense_render:
-                    self._draw_dense_notes(
-                        visible_notes,
-                        y,
-                        height,
-                        low_pitch,
-                        high_pitch,
-                        visible_start,
-                        visible_end,
-                    )
-                else:
-                    for note in visible_notes:
-                        self._draw_note_event(
-                            note,
-                            y,
-                            height,
-                            low_pitch,
-                            high_pitch,
-                            draw_note_labels,
-                            enable_tooltips,
-                        )
-
-        def _draw_note_event(
-            self,
-            note,
-            y: float,
-            height: float,
-            low_pitch: int,
-            high_pitch: int,
-            draw_note_labels: bool,
-            enable_tooltips: bool,
-        ) -> None:
-            note_height = self._note_height(height, low_pitch, high_pitch)
-            pitch_y = self._pitch_y(note.pitch, y, height, low_pitch, high_pitch, note_height)
-            x = self._x(note.start)
-            width = max(1.0, note.duration * self.pixels_per_second)
-            color = _track_color(note.stem)
-            velocity = max(1, min(note.velocity, 127))
-            velocity_ratio = velocity / 127
-            fill_color = QColor(color)
-            fill_color.setAlpha(int(70 + velocity_ratio * 185))
-            pen_color = QColor(color.darker(150 if velocity_ratio < 0.55 else 125))
-            pen_width = 0 if self.pixels_per_second < 80 else 1 if velocity_ratio < 0.72 else 2
-            pen = QPen(Qt.NoPen) if pen_width == 0 else QPen(pen_color, pen_width)
-            rect = self.scene.addRect(
-                x,
-                pitch_y,
-                width,
-                note_height,
-                pen,
-                QBrush(fill_color),
-            )
-            if enable_tooltips:
-                rect.setToolTip(
-                    f"{note.stem}: {note.name}\n"
-                    f"{_format_time(note.start)} - {_format_time(note.end)}"
-                    f"  duration {note.duration:.2f}s\n"
-                    f"Velocity: {velocity}/127 ({velocity_ratio:.0%})"
-                )
-            if draw_note_labels and width >= 36:
-                label = self.scene.addText(note.name)
-                label.setDefaultTextColor(QColor("#0f172a"))
-                label.setPos(x + 3, pitch_y - 3)
-
-        def _draw_dense_notes(
-            self,
-            notes,
-            y: float,
-            height: float,
-            low_pitch: int,
-            high_pitch: int,
-            visible_start: float,
-            visible_end: float,
-        ) -> None:
-            if not notes:
-                return
-            x_origin = self._x(visible_start)
-            image_width = max(1, int((visible_end - visible_start) * self.pixels_per_second) + 8)
-            image_height = max(1, int(height) + 1)
-            image = QImage(image_width, image_height, QImage.Format_ARGB32_Premultiplied)
-            image.fill(Qt.transparent)
-            painter = QPainter(image)
-            note_height = self._note_height(height, low_pitch, high_pitch)
-            bin_seconds = max(0.06, 4.0 / self.pixels_per_second)
-            bins: dict[tuple[int, int], tuple[int, str]] = {}
-            long_notes = []
-            first_visible_bin = int(max(0.0, visible_start) / bin_seconds)
-            last_visible_bin = int(max(visible_end, visible_start) / bin_seconds) + 1
-            try:
-                for note in notes:
-                    start_bin = max(first_visible_bin, int(note.start / bin_seconds))
-                    end_bin = min(last_visible_bin, max(start_bin, int(note.end / bin_seconds)))
-                    if end_bin - start_bin > 96:
-                        long_notes.append(note)
-                        continue
-                    for time_bin in range(start_bin, end_bin + 1):
-                        key = (time_bin, note.pitch)
-                        previous_velocity, _previous_stem = bins.get(key, (0, note.stem))
-                        if note.velocity > previous_velocity:
-                            bins[key] = (note.velocity, note.stem)
-                for note in long_notes:
-                    start = max(note.start, visible_start)
-                    end = min(note.end, visible_end)
-                    x = int((start - visible_start) * self.pixels_per_second)
-                    width = max(2, int((end - start) * self.pixels_per_second))
-                    pitch_y = int(self._pitch_y(note.pitch, 0, height, low_pitch, high_pitch, note_height))
-                    color = QColor(_track_color(note.stem))
-                    color.setAlpha(int(50 + min(1.0, note.velocity / 127) * 145))
-                    painter.fillRect(x, pitch_y, width, max(1, int(note_height)), color)
-                for (time_bin, pitch), (velocity, stem) in bins.items():
-                    start = max(visible_start, time_bin * bin_seconds)
-                    x = int((start - visible_start) * self.pixels_per_second)
-                    width = max(2, int(bin_seconds * self.pixels_per_second))
-                    pitch_y = int(self._pitch_y(pitch, 0, height, low_pitch, high_pitch, note_height))
-                    color = QColor(_track_color(stem))
-                    color.setAlpha(int(55 + min(1.0, velocity / 127) * 150))
-                    painter.fillRect(x, pitch_y, width, max(1, int(note_height)), color)
-            finally:
-                painter.end()
-            item = self.scene.addPixmap(QPixmap.fromImage(image))
-            item.setPos(x_origin, y)
-
-        def _draw_playhead(self, height: float) -> None:
-            self.playhead = self.scene.addLine(0, 0, 0, height, QPen(QColor("#ef4444"), 2))
-            self._move_playhead()
-
-        def _draw_selection(self, height: float) -> None:
-            self.selection_rect = None
-            selection = self.selection_range()
-            if selection is None:
-                return
-            start, end = selection
-            x = self._x(start)
-            width = max(2.0, (end - start) * self.pixels_per_second)
-            self.selection_rect = self.scene.addRect(
-                x,
-                0,
-                width,
-                height,
-                QPen(QColor("#2563eb"), 1),
-                QBrush(QColor(37, 99, 235, 38)),
-            )
-            self.selection_rect.setZValue(9)
-
-        def _move_playhead(self) -> None:
-            if self.playhead is None:
-                return
-            x = self._x(self.position)
-            line = self.playhead.line()
-            line.setLine(x, line.y1(), x, line.y2())
-            self.playhead.setLine(line)
-
-        def selection_range(self) -> tuple[float, float] | None:
-            if self.selection_start is None or self.selection_end is None:
-                return None
-            start, end = sorted((self.selection_start, self.selection_end))
-            if end - start < 0.05:
-                return None
-            return start, end
-
-        def clear_selection(self) -> None:
-            self.selection_start = None
-            self.selection_end = None
-            self._selecting = False
-            self._selection_anchor = None
-            if self.selection_rect is not None:
-                self.scene.removeItem(self.selection_rect)
-                self.selection_rect = None
-            if self.on_selection_changed:
-                self.on_selection_changed(None)
-
-        def _set_selection(self, start: float, end: float, notify: bool = False) -> None:
-            if self.project is None:
-                return
-            duration = max(self.project.duration, 0.0)
-            self.selection_start = max(0.0, min(start, duration))
-            self.selection_end = max(0.0, min(end, duration))
-            height = self.scene.sceneRect().height()
-            if self.selection_rect is not None:
-                self.scene.removeItem(self.selection_rect)
-            self._draw_selection(height)
-            if notify and self.on_selection_changed:
-                self.on_selection_changed(self.selection_range())
-
-        def _build_track_geometries(self) -> dict[str, tuple[float, float, int, int]]:
-            geometries: dict[str, tuple[float, float, int, int]] = {}
-            y = self.chord_height
-            for track in self._visible_project_tracks():
-                pitch_range = self.pitch_ranges.get(track.name.lower())
-                if pitch_range:
-                    low_pitch, high_pitch = pitch_range
-                    base_height = max(132, (high_pitch - low_pitch + 1) * 8 + 34)
-                    height = max(self.minimum_track_height, base_height * self.vertical_zoom)
-                else:
-                    low_pitch = 48
-                    high_pitch = 72
-                    height = max(self.minimum_track_height, 132 * self.vertical_zoom)
-                geometries[track.name.lower()] = (y, height, low_pitch, high_pitch)
-                y += height
-            return geometries
-
-        def _visible_project_tracks(self):
-            if self.project is None:
-                return []
-            return [
-                track
-                for track in self.project.tracks
-                if track.name.lower() in self.visible_tracks
-            ]
-
-        def _draw_pitch_guides(
-            self,
-            y: float,
-            height: float,
-            low_pitch: int,
-            high_pitch: int,
-        ) -> None:
-            for pitch in range(low_pitch, high_pitch + 1):
-                if pitch % 12 != 0:
-                    continue
-                note_height = self._note_height(height, low_pitch, high_pitch)
-                pitch_y = self._pitch_y(pitch, y, height, low_pitch, high_pitch, note_height)
-                self.scene.addLine(
-                    self.label_width,
-                    pitch_y + note_height / 2,
-                    self.scene.width(),
-                    pitch_y + note_height / 2,
-                    QPen(QColor("#e2e8f0"), 1),
-                )
-                label = self.scene.addText(midi_note_name(pitch))
-                label.setDefaultTextColor(QColor("#64748b"))
-                label_x = 12
-                label.setPos(label_x, pitch_y - 5)
-                self._make_sticky(label, label_x)
-
-        def _visible_scene_rect(self):
-            return self.mapToScene(self.viewport().rect()).boundingRect()
-
-        def _count_visible_notes(self, visible_start: float, visible_end: float, visible_rect) -> int:
-            count = 0
-            for track_key in self.notes_by_track:
-                if track_key not in self.visible_tracks:
-                    continue
-                geometry = self.track_geometries.get(track_key)
-                if geometry is None:
-                    continue
-                y, height, _low_pitch, _high_pitch = geometry
-                if y > visible_rect.bottom() or y + height < visible_rect.top():
-                    continue
-                count += len(self._visible_notes_for_track(track_key, visible_start, visible_end))
-            return count
-
-        def _visible_notes_for_track(self, track_key: str, visible_start: float, visible_end: float):
-            notes = self.notes_by_track.get(track_key, [])
-            starts = self.note_starts_by_track.get(track_key, [])
-            if not notes or not starts:
-                return []
-            max_duration = self.max_note_duration_by_track.get(track_key, 0.0)
-            start_index = bisect_left(starts, max(0.0, visible_start - max_duration))
-            end_index = bisect_right(starts, visible_end)
-            return [
-                note
-                for note in notes[start_index:end_index]
-                if note.end >= visible_start and note.start <= visible_end
-            ]
-
-        def _make_sticky(self, item, x_offset: float) -> None:
-            item.setZValue(20)
-            self.sticky_x_items.append((item, x_offset))
-
-        def _make_sticky_y(self, item, z_value: int = 30) -> None:
-            item.setZValue(z_value)
-            self.sticky_y_items.append((item, item.y()))
-
-        def _make_sticky_xy(self, item, z_value: int = 30) -> None:
-            item.setZValue(z_value)
-            self.sticky_x_items.append((item, item.x()))
-            self.sticky_y_items.append((item, item.y()))
-
-        def update_sticky_labels(self, _value: int | None = None) -> None:
-            if not self.sticky_x_items and not self.sticky_y_items:
-                return
-            view_left = self.mapToScene(self.viewport().rect().left(), 0).x()
-            view_top = self.mapToScene(0, self.viewport().rect().top()).y()
-            x_base = max(0.0, view_left)
-            y_base = max(0.0, view_top)
-            for item, x_offset in self.sticky_x_items:
-                item.setX(x_base + x_offset)
-            for item, y_offset in self.sticky_y_items:
-                item.setY(y_base + y_offset)
-
-        def _pitch_y(
-            self,
-            pitch: int,
-            y: float,
-            height: float,
-            low_pitch: int,
-            high_pitch: int,
-            note_height: float,
-        ) -> float:
-            span = max(1, high_pitch - low_pitch)
-            drawable = max(1.0, height - 30 - note_height)
-            return y + 16 + ((high_pitch - pitch) / span) * drawable
-
-        def _note_height(self, height: float, low_pitch: int, high_pitch: int) -> float:
-            span = max(1, high_pitch - low_pitch + 1)
-            return max(7.0, min(13.0, (height - 30) / span * 0.82))
-
-        def mousePressEvent(self, event) -> None:
-            if event.button() in {Qt.MiddleButton, Qt.RightButton}:
-                self._panning = True
-                self._last_pan_pos = event.pos()
-                self.setCursor(Qt.ClosedHandCursor)
-                event.accept()
-                return
-            if event.button() == Qt.LeftButton and self._start_chord_edit_from_event(event):
-                event.accept()
-                return
-            if event.button() == Qt.LeftButton and self._start_selection_from_event(event):
-                event.accept()
-                return
-            if event.button() == Qt.LeftButton and self._scrub_from_event(event):
-                event.accept()
-                return
-            super().mousePressEvent(event)
-
-        def mouseMoveEvent(self, event) -> None:
-            if self._panning and self._last_pan_pos is not None:
-                delta = event.pos() - self._last_pan_pos
-                self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
-                self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
-                self._last_pan_pos = event.pos()
-                event.accept()
-                return
-            if self._chord_drag and self._update_chord_edit_from_event(event):
-                event.accept()
-                return
-            if self._selecting and self._update_selection_from_event(event):
-                event.accept()
-                return
-            if event.buttons() & Qt.LeftButton and self._scrub_from_event(event):
-                event.accept()
-                return
-            super().mouseMoveEvent(event)
-
-        def mouseReleaseEvent(self, event) -> None:
-            if self._panning and event.button() in {Qt.MiddleButton, Qt.RightButton}:
-                self._panning = False
-                self._last_pan_pos = None
-                self.unsetCursor()
-                event.accept()
-                return
-            if self._chord_drag and event.button() == Qt.LeftButton:
-                self._finish_chord_edit_from_event(event)
-                event.accept()
-                return
-            if self._selecting and event.button() == Qt.LeftButton:
-                self._selecting = False
-                self._update_selection_from_event(event, notify=True)
-                event.accept()
-                return
-            super().mouseReleaseEvent(event)
-
-        def keyPressEvent(self, event) -> None:
-            if event.key() in {Qt.Key_Delete, Qt.Key_Backspace} and self.selected_chord is not None:
-                chord = self.selected_chord
-                self.selected_chord = None
-                self._chord_drag = None
-                if self.on_chord_deleted:
-                    self.on_chord_deleted(chord)
-                event.accept()
-                return
-            super().keyPressEvent(event)
-
-        def wheelEvent(self, event) -> None:
-            modifiers = event.modifiers()
-            degrees = event.angleDelta().y() / 120
-            horizontal_degrees = event.angleDelta().x() / 120
-            if modifiers & Qt.ControlModifier and modifiers & Qt.ShiftModifier:
-                if not degrees:
-                    event.accept()
-                    return
-                self.zoom_vertical(1.14 ** degrees)
-                event.accept()
-                return
-            if modifiers & Qt.ControlModifier:
-                if not degrees:
-                    event.accept()
-                    return
-                self.zoom_horizontal(1.14 ** degrees)
-                event.accept()
-                return
-            if modifiers & Qt.ShiftModifier:
-                self.horizontalScrollBar().setValue(
-                    self.horizontalScrollBar().value() - int((degrees or horizontal_degrees) * 72)
-                )
-                event.accept()
-                return
-            super().wheelEvent(event)
-
-        def _scrub_from_event(self, event) -> bool:
-            if self.project is None:
-                return False
-            point = self.mapToScene(event.pos())
-            if point.x() < self.label_width:
-                return False
-            seconds = (point.x() - self.label_width) / self.pixels_per_second
-            if self.on_position_changed:
-                self.on_position_changed(seconds)
-            else:
-                self.set_position(seconds)
-            return True
-
-        def _start_chord_edit_from_event(self, event) -> bool:
-            if self.project is None:
-                return False
-            chord = self._chord_at_event(event)
-            if chord is None:
-                if self._event_in_chord_lane(event):
-                    self.selected_chord = None
-                    if self.on_chord_selected:
-                        self.on_chord_selected(None)
-                    self.redraw()
-                return False
-            seconds = self._seconds_from_event(event)
-            edge = max(0.04, 8 / self.pixels_per_second)
-            if abs(seconds - chord.start) <= edge:
-                mode = "resize_start"
-            elif abs(seconds - chord.end) <= edge:
-                mode = "resize_end"
-            else:
-                mode = "move"
-            self.selected_chord = chord
-            self._chord_drag = {
-                "chord": chord,
-                "mode": mode,
-                "press_seconds": seconds,
-                "preview": chord,
-            }
-            self.setCursor(Qt.SizeHorCursor if mode != "move" else Qt.ClosedHandCursor)
-            if self.on_chord_selected:
-                self.on_chord_selected(chord)
-            self.redraw()
-            return True
-
-        def _update_chord_edit_from_event(self, event) -> bool:
-            if self.project is None or not self._chord_drag:
-                return False
-            preview = self._dragged_chord_from_event(event)
-            self._chord_drag["preview"] = preview
-            return True
-
-        def _finish_chord_edit_from_event(self, event) -> None:
-            if not self._chord_drag:
-                return
-            original = self._chord_drag["chord"]
-            edited = self._dragged_chord_from_event(event)
-            self._chord_drag = None
-            self.unsetCursor()
-            self.selected_chord = edited
-            if self.on_chord_edited:
-                self.on_chord_edited(original, edited)
-
-        def _dragged_chord_from_event(self, event) -> ChordRegion:
-            original = self._chord_drag["chord"]
-            mode = self._chord_drag["mode"]
-            seconds = self._seconds_from_event(event)
-            duration = max(0.0, self.project.duration if self.project else original.end)
-            minimum = max(0.08, 4 / self.pixels_per_second)
-            if mode == "move":
-                delta = seconds - self._chord_drag["press_seconds"]
-                length = original.duration
-                start = max(0.0, min(original.start + delta, max(0.0, duration - length)))
-                end = start + length
-            elif mode == "resize_start":
-                end = original.end
-                start = max(0.0, min(seconds, end - minimum))
-            else:
-                start = original.start
-                end = min(duration, max(seconds, start + minimum))
-            return ChordRegion(start=start, end=end, label=original.label, confidence=original.confidence)
-
-        def _chord_at_event(self, event) -> ChordRegion | None:
-            if self.project is None:
-                return None
-            point = self.mapToScene(event.pos())
-            if point.x() < self.label_width:
-                return None
-            if not self._event_in_chord_lane(event):
-                return None
-            seconds = self._seconds_from_event(event)
-            for chord in reversed(self.project.chords):
-                edge_slop = max(0.04, 5 / self.pixels_per_second)
-                if chord.start - edge_slop <= seconds <= chord.end + edge_slop:
-                    return chord
-            return None
-
-        def _seconds_from_event(self, event) -> float:
-            point = self.mapToScene(event.pos())
-            return max(0.0, (point.x() - self.label_width) / self.pixels_per_second)
-
-        def _start_selection_from_event(self, event) -> bool:
-            if self.project is None:
-                return False
-            point = self.mapToScene(event.pos())
-            if point.x() < self.label_width:
-                return False
-            if not self._event_in_chord_lane(event) and not (event.modifiers() & Qt.ShiftModifier):
-                return False
-            seconds = (point.x() - self.label_width) / self.pixels_per_second
-            self._selection_anchor = max(0.0, min(seconds, max(self.project.duration, 0.0)))
-            self._selecting = True
-            self._set_selection(self._selection_anchor, self._selection_anchor)
-            return True
-
-        def _update_selection_from_event(self, event, notify: bool = False) -> bool:
-            if self.project is None or self._selection_anchor is None:
-                return False
-            point = self.mapToScene(event.pos())
-            seconds = (point.x() - self.label_width) / self.pixels_per_second
-            self._set_selection(self._selection_anchor, seconds, notify=notify)
-            return True
-
-        def _x(self, seconds: float) -> float:
-            return self.label_width + seconds * self.pixels_per_second
-
-        def _view_center_seconds(self) -> float:
-            point = self.mapToScene(self.viewport().rect().center())
-            return max(0.0, (point.x() - self.label_width) / self.pixels_per_second)
-
-        def _center_on_seconds(self, seconds: float) -> None:
-            center = self.mapToScene(self.viewport().rect().center())
-            self.centerOn(self._x(seconds), center.y())
-
-        def _event_in_chord_lane(self, event) -> bool:
-            point_y = self.mapToScene(event.pos()).y()
-            viewport_y = event.pos().y()
-            return (
-                self.ruler_height <= point_y <= self.chord_height
-                or self.ruler_height <= viewport_y <= self.chord_height
-            )
+    from pitchstems.gui_widgets import (
+        DropZone,
+        NoWheelComboBox,
+        NoWheelDoubleSpinBox,
+        NoWheelSpinBox,
+        PianoChordWidget,
+    )
+    from pitchstems.gui_timeline import TimelineView
+    from pitchstems.gui_transport import (
+        TransportController,
+        find_existing_midi_previews,
+        loop_playback_start,
+        reset_player_source,
+        safe_qt_multimedia_call,
+        start_player_source,
+    )
 
     class MainWindow(QMainWindow):
         def __init__(self) -> None:
@@ -1279,7 +173,13 @@ def main() -> int:
             self.logger = logger
             self.messages: queue.Queue[object] = queue.Queue()
             self.worker: threading.Thread | None = None
-            self.midi_preview_workers: dict[tuple[Path, str], threading.Thread] = {}
+            self.worker_token = 0
+            self.active_worker_token: int | None = None
+            self.editor_load_worker: threading.Thread | None = None
+            self.editor_load_token = 0
+            self.editor_load_activity_tokens: set[int] = set()
+            self.midi_preview_token = 0
+            self.midi_preview_workers: dict[tuple[Path, str], tuple[int, threading.Thread]] = {}
             self.latest_output_dir: Path | None = None
             self.current_result: PipelineResult | None = None
             self.current_stems: list[StemResult] = []
@@ -1288,17 +188,19 @@ def main() -> int:
             self.recent_projects_menu = None
             self.base_editor_project: EditorProject | None = None
             self.editor_project: EditorProject | None = None
-            self.is_playing = False
-            self.track_players: dict[str, QMediaPlayer] = {}
-            self.track_audio_outputs: dict[str, QAudioOutput] = {}
-            self.midi_players: dict[str, QMediaPlayer] = {}
-            self.midi_audio_outputs: dict[str, QAudioOutput] = {}
-            self.midi_preview_paths: dict[str, Path] = {}
             self.track_analysis_checks: dict[str, QCheckBox] = {}
             self.track_audio_checks: dict[str, QCheckBox] = {}
             self.track_audio_sliders: dict[str, QSlider] = {}
             self.track_midi_checks: dict[str, QCheckBox] = {}
             self.track_midi_sliders: dict[str, QSlider] = {}
+            self.transport = TransportController(
+                parent=self,
+                logger=self.logger,
+                track_audio_checks=self.track_audio_checks,
+                track_audio_sliders=self.track_audio_sliders,
+                track_midi_checks=self.track_midi_checks,
+                track_midi_sliders=self.track_midi_sliders,
+            )
             self.rendering_midi_previews: set[str] = set()
             self.activity_depth = 0
             self.manual_chords: list[ChordRegion] = []
@@ -1306,6 +208,9 @@ def main() -> int:
             self.chord_note_overrides: dict[int, str] = {}
             self.chord_note_filter_context = None
             self.current_chord_base_weights: dict[int, float] = {}
+            self.current_harmony_context: HarmonyContext | None = None
+            self.current_theory_analysis: TheoryAnalysis | None = None
+            self.current_chord_gap_analysis: ChordGapAnalysis | None = None
             self.updating_chord_note_filter = False
 
             self.drop_zone = DropZone()
@@ -1407,10 +312,10 @@ def main() -> int:
             self.editor_summary.setStyleSheet("color: #4b5563;")
             self.editor_position = QLabel("00:00.000")
             self.editor_position.setMinimumWidth(86)
-            self.current_chord = QLabel("Chord: -")
+            self.current_chord = QLabel("Harmony: -")
             self.current_chord.setFixedWidth(320)
             self.current_chord.setStyleSheet("font-weight: 700; color: #4c1d95;")
-            self.chord_context = QLabel("Notes: -")
+            self.chord_context = QLabel("Sample: -")
             self.chord_context.setWordWrap(True)
             self.chord_context.setFixedHeight(74)
             self.chord_context.setAlignment(Qt.AlignLeft | Qt.AlignTop)
@@ -1428,7 +333,7 @@ def main() -> int:
             self.reset_note_filter_button = QPushButton("Reset Evidence")
             self.reset_note_filter_button.setToolTip("Clear manual include/exclude note choices for the current chord analysis.")
             self.chord_detector_help = QLabel(
-                "Chord detection uses MIDI energy: overlap time times squared velocity, summed by note name across selected Chord tracks."
+                "Harmony comes from the selected Chord tracks: MIDI note energy feeds chord detection, then the chord track feeds key, scale, mode, and gap suggestions."
             )
             self.chord_detector_help.setWordWrap(True)
             self.chord_detector_help.setStyleSheet("color: #64748b;")
@@ -1440,7 +345,15 @@ def main() -> int:
             self.min_note_evidence_slider.setToolTip(
                 "Ignore note names below this normalized evidence level when naming chords. Raw evidence still appears in Inspect."
             )
+            self.notation_spelling = NoWheelComboBox()
+            self.notation_spelling.addItem("Notation: Auto", "auto")
+            self.notation_spelling.addItem("Notation: Sharps", "sharp")
+            self.notation_spelling.addItem("Notation: Flats", "flat")
+            self.notation_spelling.setToolTip(
+                "Controls enharmonic spelling for displayed notes and chords. Auto follows the current key/chord context where possible."
+            )
             self.timeline = TimelineView()
+            self.timeline.set_note_name_formatter(self.display_note_name)
             self.timeline.on_position_changed = self.set_editor_position_seconds
             self.timeline.on_selection_changed = self.set_editor_selection
             self.timeline.on_chord_edited = self.edit_timeline_chord
@@ -1477,8 +390,28 @@ def main() -> int:
             self.track_note_counts: dict[str, int] = {}
             self.editor_track_visibility: dict[str, bool] = {}
             self.chord_list = QListWidget()
-            self.chord_list.setMinimumHeight(160)
+            self.chord_list.setMinimumHeight(130)
             self.chord_list.setAlternatingRowColors(True)
+            self.theory_context = QLabel("Theory: -")
+            self.theory_context.setWordWrap(True)
+            self.theory_context.setFixedHeight(54)
+            self.theory_context.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+            self.theory_context.setStyleSheet("color: #475569;")
+            self.theory_list = QListWidget()
+            self.theory_list.setMinimumHeight(120)
+            self.theory_list.setAlternatingRowColors(True)
+            self.inspect_theory_button = QPushButton("Inspect Theory")
+            self.inspect_theory_button.setEnabled(False)
+            self.inspect_theory_button.setToolTip(
+                "Open a detailed report of the current scale, key, mode, and progression evidence."
+            )
+            self.gap_suggestion_list = QListWidget()
+            self.gap_suggestion_list.setMinimumHeight(105)
+            self.gap_suggestion_list.setAlternatingRowColors(True)
+            self.use_gap_suggestion_button = QPushButton("Use")
+            self.use_gap_suggestion_button.setEnabled(False)
+            self.inspect_gap_suggestion_button = QPushButton("Inspect")
+            self.inspect_gap_suggestion_button.setEnabled(False)
             self.piano_chord_view = PianoChordWidget()
             self.preview_chord_button = QPushButton("Play Chord")
             self.use_chord_button = QPushButton("Use for Selection")
@@ -1486,7 +419,7 @@ def main() -> int:
             self.preview_chord_button.setEnabled(False)
             self.use_chord_button.setEnabled(False)
             self.inspect_chord_button.setEnabled(False)
-            self.inspect_chord_button.setToolTip("Open a detailed report of the current Chord Inspector inputs, weights, constraints, and candidate scoring.")
+            self.inspect_chord_button.setToolTip("Open a detailed report of the current harmony inputs, note weights, constraints, and chord candidate scoring.")
             self.chord_preview_player = QMediaPlayer(self)
             self.chord_preview_output = QAudioOutput(self)
             self.chord_preview_output.setVolume(0.85)
@@ -1667,7 +600,8 @@ def main() -> int:
             editor_side = QVBoxLayout()
             editor_side.setContentsMargins(0, 0, 0, 0)
             editor_side.setSpacing(8)
-            editor_side.addWidget(_section_label("Chord Inspector"))
+            editor_side.addWidget(_section_label("Harmony Inspector"))
+            editor_side.addWidget(self.notation_spelling)
             editor_side.addWidget(self.chord_context)
             editor_side.addWidget(self.chord_detector_help)
             evidence_floor_row = QHBoxLayout()
@@ -1688,6 +622,20 @@ def main() -> int:
             editor_side.addLayout(chord_action_grid)
             editor_side.addWidget(self.piano_chord_view)
             editor_side.addWidget(self.chord_list, 1)
+            theory_header = QHBoxLayout()
+            theory_header.setSpacing(6)
+            theory_header.addWidget(_section_label("Theory Inspector"))
+            theory_header.addWidget(self.inspect_theory_button)
+            editor_side.addLayout(theory_header)
+            editor_side.addWidget(self.theory_context)
+            editor_side.addWidget(self.theory_list, 1)
+            gap_header = QHBoxLayout()
+            gap_header.setSpacing(6)
+            gap_header.addWidget(_section_label("Gap Suggestions"))
+            gap_header.addWidget(self.use_gap_suggestion_button)
+            gap_header.addWidget(self.inspect_gap_suggestion_button)
+            editor_side.addLayout(gap_header)
+            editor_side.addWidget(self.gap_suggestion_list, 1)
             editor_side_panel.setLayout(editor_side)
             track_mix_panel = QWidget()
             track_mix_panel.setFixedWidth(292)
@@ -1741,6 +689,13 @@ def main() -> int:
             self.use_chord_button.clicked.connect(self.assign_selected_chord_to_selection)
             self.reset_note_filter_button.clicked.connect(self.reset_chord_note_filter)
             self.inspect_chord_button.clicked.connect(self.inspect_current_chord_analysis)
+            self.inspect_theory_button.clicked.connect(self.inspect_current_theory_analysis)
+            self.use_gap_suggestion_button.clicked.connect(self.use_selected_gap_suggestion)
+            self.inspect_gap_suggestion_button.clicked.connect(self.inspect_current_gap_suggestions)
+            self.gap_suggestion_list.currentItemChanged.connect(
+                lambda *_args: self.refresh_gap_suggestion_actions()
+            )
+            self.notation_spelling.currentIndexChanged.connect(self.handle_notation_spelling_changed)
             self.note_filter_list.itemChanged.connect(self.handle_chord_note_filter_changed)
             self.min_note_evidence_slider.valueChanged.connect(self.handle_min_note_evidence_changed)
             self.chord_list.itemDoubleClicked.connect(self.preview_chord_item)
@@ -1761,6 +716,13 @@ def main() -> int:
 
             self.transport_timer = QTimer(self)
             self.transport_timer.timeout.connect(self.update_transport_position)
+            self.editor_save_timer = QTimer(self)
+            self.editor_save_timer.setSingleShot(True)
+            self.editor_save_timer.timeout.connect(self.save_editor_state)
+
+        def closeEvent(self, event) -> None:
+            self.save_editor_state()
+            super().closeEvent(event)
 
         def begin_activity(self, message: str, busy: bool = True) -> None:
             self.activity_depth += 1
@@ -1887,44 +849,18 @@ def main() -> int:
             self._add_action(self.recent_projects_menu, "Clear Recent Projects", None, self.clear_recent_projects)
 
         def recent_project_paths(self) -> list[Path]:
-            value = self.settings.value("recent_projects", [])
-            if isinstance(value, str):
-                raw_paths = [value]
-            else:
-                raw_paths = list(value or [])
-            paths: list[Path] = []
-            seen: set[str] = set()
-            for raw_path in raw_paths:
-                path = Path(str(raw_path)).expanduser()
-                key = str(path).lower()
-                if key in seen:
-                    continue
-                seen.add(key)
-                paths.append(path)
-            return paths
+            return normalize_recent_project_paths(self.settings.value("recent_projects", []))
 
         def recent_project_label(self, manifest_path: Path) -> str:
-            project_dir = manifest_path.parent
-            if manifest_path.name == PROJECT_FILENAME:
-                return f"{project_dir.name}  ({self._short_path(project_dir.parent)})"
-            return f"{manifest_path.name}  ({self._short_path(manifest_path.parent)})"
-
-        def _short_path(self, path: Path, max_length: int = 46) -> str:
-            text = str(path)
-            if len(text) <= max_length:
-                return text
-            return f"...{text[-(max_length - 3):]}"
+            return recent_project_label(manifest_path)
 
         def remember_recent_project(self, project_dir: Path) -> None:
-            manifest = (project_dir / PROJECT_FILENAME).expanduser().resolve()
-            recent = [path for path in self.recent_project_paths() if path.resolve() != manifest]
-            recent.insert(0, manifest)
-            self.settings.setValue("recent_projects", [str(path) for path in recent[:10]])
+            recent = remember_recent_project(self.recent_project_paths(), project_dir)
+            self.settings.setValue("recent_projects", [str(path) for path in recent])
             self.refresh_recent_projects_menu()
 
         def remove_recent_project(self, manifest_path: Path) -> None:
-            target = manifest_path.expanduser().resolve()
-            recent = [path for path in self.recent_project_paths() if path.expanduser().resolve() != target]
+            recent = remove_recent_project(self.recent_project_paths(), manifest_path)
             self.settings.setValue("recent_projects", [str(path) for path in recent])
             self.refresh_recent_projects_menu()
 
@@ -2009,6 +945,7 @@ def main() -> int:
             self.open_project_manifest(Path(filename))
 
         def open_project_manifest(self, manifest_path: Path) -> None:
+            self.invalidate_worker_token()
             self.begin_activity("Opening project...")
             try:
                 self.logger.info("Opening project manifest: %s", manifest_path)
@@ -2054,7 +991,8 @@ def main() -> int:
             self.set_processing_state(True)
             self.begin_activity("Running separation + MIDI...")
             self.append_log("Starting separation + MIDI pipeline...")
-            self.worker = threading.Thread(target=self.run_full_pipeline, args=(request,), daemon=True)
+            token = self.start_worker_token()
+            self.worker = threading.Thread(target=self.run_full_pipeline, args=(token, request), daemon=True)
             self.worker.start()
 
         def start_midi_processing(self) -> None:
@@ -2075,10 +1013,23 @@ def main() -> int:
             self.set_processing_state(True)
             self.begin_activity("Rerunning MIDI...")
             self.append_log("Rerunning MIDI from existing stems...")
-            self.worker = threading.Thread(target=self.run_midi_stage, args=(request,), daemon=True)
+            token = self.start_worker_token()
+            self.worker = threading.Thread(target=self.run_midi_stage, args=(token, request), daemon=True)
             self.worker.start()
 
-        def run_full_pipeline(self, request: FullRunRequest) -> None:
+        def start_worker_token(self) -> int:
+            self.worker_token += 1
+            self.active_worker_token = self.worker_token
+            return self.worker_token
+
+        def invalidate_worker_token(self) -> None:
+            had_active_worker = self.active_worker_token is not None
+            self.worker_token += 1
+            self.active_worker_token = None
+            if had_active_worker:
+                self.set_processing_state(False)
+
+        def run_full_pipeline(self, token: int, request: FullRunRequest) -> None:
             try:
                 self.logger.info("Starting full pipeline for %s", request.input_path)
                 result = process_audio_file(
@@ -2090,17 +1041,17 @@ def main() -> int:
                     midi_options=request.midi_options,
                     midi_stems=request.midi_stems,
                     create_zip=request.create_zip,
-                    log=self.messages.put,
+                    log=lambda message: self.messages.put(("WORKER_LOG", token, message)),
                 )
-                self.messages.put(("RESULT", result))
-                self.messages.put(f"Project ready: {result.project_dir}")
+                self.messages.put(("RESULT", token, result))
+                self.messages.put(("WORKER_LOG", token, f"Project ready: {result.project_dir}"))
             except Exception as exc:
                 self.logger.exception("Full pipeline failed")
-                self.messages.put(f"Error: {exc}")
+                self.messages.put(("WORKER_LOG", token, f"Error: {exc}"))
             finally:
-                self.messages.put("__ENABLE_PROCESS__")
+                self.messages.put(("ENABLE_PROCESS", token))
 
-        def run_midi_stage(self, request: MidiRunRequest) -> None:
+        def run_midi_stage(self, token: int, request: MidiRunRequest) -> None:
             try:
                 self.logger.info("Starting MIDI rerun for %s", request.result.project_dir)
                 result = process_midi_from_stems(
@@ -2112,15 +1063,15 @@ def main() -> int:
                     midi_options=request.midi_options,
                     midi_stems=request.midi_stems,
                     create_zip=request.create_zip,
-                    log=self.messages.put,
+                    log=lambda message: self.messages.put(("WORKER_LOG", token, message)),
                 )
-                self.messages.put(("RESULT", result))
-                self.messages.put(f"Updated project MIDI: {result.project_dir}")
+                self.messages.put(("RESULT", token, result))
+                self.messages.put(("WORKER_LOG", token, f"Updated project MIDI: {result.project_dir}"))
             except Exception as exc:
                 self.logger.exception("MIDI rerun failed")
-                self.messages.put(f"Error: {exc}")
+                self.messages.put(("WORKER_LOG", token, f"Error: {exc}"))
             finally:
-                self.messages.put("__ENABLE_PROCESS__")
+                self.messages.put(("ENABLE_PROCESS", token))
 
         def flush_messages(self) -> None:
             while True:
@@ -2129,30 +1080,61 @@ def main() -> int:
                 except queue.Empty:
                     return
                 if isinstance(message, tuple) and message[0] == "RESULT":
-                    self.set_current_result(message[1])
+                    _kind, token, result = message
+                    if self.is_active_worker_token(int(token)):
+                        self.set_current_result(result)
+                    else:
+                        self.logger.info("Ignored stale worker result for %s", result.project_dir)
+                elif isinstance(message, tuple) and message[0] == "WORKER_LOG":
+                    _kind, token, text = message
+                    if self.is_active_worker_token(int(token)):
+                        self.append_log(str(text))
+                        if text and not str(text).startswith("Tracks:"):
+                            self.set_activity_message(str(text)[:120])
+                    else:
+                        self.logger.info("Ignored stale worker log: %s", text)
+                elif isinstance(message, tuple) and message[0] == "EDITOR_LOADED":
+                    _kind, token, loaded = message
+                    self.finish_editor_project_load(int(token), loaded)
+                elif isinstance(message, tuple) and message[0] == "EDITOR_LOAD_FAILED":
+                    _kind, token, project_dir, error = message
+                    self.finish_editor_project_load_failed(int(token), project_dir, error)
                 elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEWS":
-                    _kind, project_dir, requested_stems, previews = message
+                    _kind, token, project_dir, requested_stems, previews = message
                     for stem_name in requested_stems:
-                        self.midi_preview_workers.pop((project_dir, stem_name.lower()), None)
-                    if self.current_result is not None and self.current_result.project_dir == project_dir:
+                        self.clear_midi_preview_worker(project_dir, stem_name, int(token))
+                    if (
+                        token == self.midi_preview_token
+                        and self.current_result is not None
+                        and self.current_result.project_dir == project_dir
+                    ):
                         self.rendering_midi_previews.difference_update(requested_stems)
                         self.attach_midi_preview_players(previews)
                     else:
                         self.logger.info("Ignored stale MIDI preview render for %s", project_dir)
                 elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEW_FAILED":
-                    _kind, project_dir, requested_stems, error = message
+                    _kind, token, project_dir, requested_stems, error = message
                     for stem_name in requested_stems:
-                        self.midi_preview_workers.pop((project_dir, stem_name.lower()), None)
-                    if self.current_result is not None and self.current_result.project_dir == project_dir:
+                        self.clear_midi_preview_worker(project_dir, stem_name, int(token))
+                    if (
+                        token == self.midi_preview_token
+                        and self.current_result is not None
+                        and self.current_result.project_dir == project_dir
+                    ):
                         self.rendering_midi_previews.difference_update(requested_stems)
                         self.refresh_timeline_track_summaries()
                         self.append_log(error)
                         self.end_activity("MIDI preview audio failed")
                     else:
                         self.logger.info("Ignored stale MIDI preview failure for %s: %s", project_dir, error)
-                elif message == "__ENABLE_PROCESS__":
-                    self.set_processing_state(False)
-                    self.end_activity("Processing complete")
+                elif isinstance(message, tuple) and message[0] == "ENABLE_PROCESS":
+                    _kind, token = message
+                    if self.is_active_worker_token(int(token)):
+                        self.active_worker_token = None
+                        self.set_processing_state(False)
+                        self.end_activity("Processing complete")
+                    else:
+                        self.logger.info("Ignored stale worker completion for token %s", token)
                 elif isinstance(message, str) and message.startswith("__OUTPUT_DIR__"):
                     self.latest_output_dir = Path(message.removeprefix("__OUTPUT_DIR__"))
                     if self.open_when_done.isChecked():
@@ -2164,37 +1146,78 @@ def main() -> int:
                 else:
                     self.logger.warning("Ignored unknown worker message: %r", message)
 
+        def is_active_worker_token(self, token: int) -> bool:
+            return self.active_worker_token == token
+
         def append_log(self, message: str) -> None:
             self.logger.info(message)
             self.log.append(message)
 
         def set_current_result(self, result: PipelineResult, open_output: bool = True) -> None:
             self.logger.info("Setting current result: %s", result.project_dir)
+            self.stop_transport()
             self.set_activity_message("Loading result...")
+            self.editor_load_token += 1
             self.current_result = result
+            self.midi_preview_token += 1
+            self.midi_preview_workers.clear()
             self.current_stems = result.stems
             self.current_input_stem = (result.source_audio or result.normalized_audio).stem
             self.latest_output_dir = result.project_dir
+            self.base_editor_project = None
+            self.editor_project = None
+            self.manual_chords = []
+            self.removed_chord_ranges = []
             self.rendering_midi_previews.clear()
             self.run_midi.setEnabled(True)
             self.separation_status.setText(f"Ready: {len(result.stems)} stems saved in {result.project_dir / 'stems'}")
             self.midi_status.setText(
                 f"Ready: {len(result.midi_files)} MIDI files. Change Basic Pitch settings or MIDI stem ticks, then use Rerun MIDI only."
             )
-            self.load_editor_project(result)
+            self.editor_summary.setText("Building editor timeline...")
+            self.timeline_slider.setEnabled(False)
+            self.fit_song_button.setEnabled(False)
+            self.clear_transport_players()
             self.remember_recent_project(result.project_dir)
             if open_output and self.open_when_done.isChecked():
                 self.open_latest_output()
+            self.start_editor_project_load(result, self.editor_load_token)
 
-        def load_editor_project(self, result: PipelineResult) -> None:
-            self.logger.info("Building editor project model")
-            self.set_activity_message("Building editor project...")
-            self.base_editor_project = build_editor_project(result)
-            self.editor_project = self.base_editor_project
-            editor_state = self.load_editor_state(result)
-            self.manual_chords = self.chord_overrides_from_editor_state(editor_state)
-            self.removed_chord_ranges = self.chord_removals_from_editor_state(editor_state)
-            self.apply_manual_chords()
+        def start_editor_project_load(self, result: PipelineResult, token: int) -> None:
+            self.logger.info("Starting editor project load: %s", result.project_dir)
+            self.editor_load_activity_tokens.add(token)
+            self.begin_activity("Building editor project...")
+
+            def worker() -> None:
+                try:
+                    loaded = build_editor_load_result(result)
+                    self.messages.put(("EDITOR_LOADED", token, loaded))
+                except Exception as exc:
+                    self.logger.exception("Editor project load failed")
+                    self.messages.put(("EDITOR_LOAD_FAILED", token, result.project_dir, f"{exc}"))
+
+            self.editor_load_worker = threading.Thread(
+                target=worker,
+                name="PitchStemsEditorLoad",
+                daemon=True,
+            )
+            self.editor_load_worker.start()
+
+        def finish_editor_project_load(self, token: int, loaded: EditorLoadResult) -> None:
+            if token != self.editor_load_token or self.current_result is None:
+                self.logger.info("Ignored stale editor load for %s", loaded.pipeline_result.project_dir)
+                self.finish_editor_load_activity(token, "Ready")
+                return
+            if self.current_result.project_dir != loaded.pipeline_result.project_dir:
+                self.logger.info("Ignored editor load for inactive project: %s", loaded.pipeline_result.project_dir)
+                self.finish_editor_load_activity(token, "Ready")
+                return
+
+            self.base_editor_project = loaded.base_project
+            self.editor_project = loaded.editor_project
+            editor_state = loaded.editor_state
+            self.manual_chords = loaded.manual_chords
+            self.removed_chord_ranges = loaded.removed_chord_ranges
             self.logger.info(
                 "Editor model built: tracks=%d notes=%d chords=%d",
                 len(self.editor_project.tracks),
@@ -2203,7 +1226,13 @@ def main() -> int:
             )
             project = self.editor_project
             track_visibility = editor_state.get("track_visibility", {})
-            playhead_seconds = float(editor_state.get("playhead_seconds", 0.0) or 0.0)
+            notation_spelling = editor_state.get("notation_spelling", "auto")
+            notation_index = self.notation_spelling.findData(notation_spelling)
+            if notation_index >= 0:
+                self.notation_spelling.blockSignals(True)
+                self.notation_spelling.setCurrentIndex(notation_index)
+                self.notation_spelling.blockSignals(False)
+            playhead_seconds = editor_float(editor_state.get("playhead_seconds"), 0.0, low=0.0)
             self.editor_summary.setText(
                 f"Editor project: {len(project.tracks)} tracks, {len(project.notes)} notes, "
                 f"{len(project.chords)} chord regions."
@@ -2215,7 +1244,7 @@ def main() -> int:
             self.timeline_slider.setEnabled(maximum > 0)
             self.timeline_slider.blockSignals(False)
             self.fit_song_button.setEnabled(maximum > 0)
-            self.editor_position.setText(_format_time(playhead_seconds))
+            self.editor_position.setText(format_time(playhead_seconds))
             self.refresh_editor_lists(track_visibility)
             self.refresh_playback_controls(editor_state)
             self.clear_transport_players()
@@ -2228,45 +1257,33 @@ def main() -> int:
             self.set_editor_position_seconds(playhead_seconds)
             self.main_tabs.setCurrentIndex(1)
             self.logger.info("Editor project loaded")
+            self.finish_editor_load_activity(token, "Editor project loaded")
 
-        def chord_overrides_from_editor_state(self, editor_state: dict) -> list[ChordRegion]:
-            chords: list[ChordRegion] = []
-            for item in editor_state.get("chord_overrides", []):
-                try:
-                    start = float(item.get("start", 0.0))
-                    end = float(item.get("end", 0.0))
-                    label = str(item.get("label", "")).strip()
-                    confidence = float(item.get("confidence", 1.0))
-                except (TypeError, ValueError):
-                    continue
-                if label and end > start:
-                    chords.append(ChordRegion(start=start, end=end, label=label, confidence=confidence))
-            return sorted(chords, key=lambda chord: (chord.start, chord.end, chord.label))
+        def finish_editor_project_load_failed(self, token: int, project_dir: Path, error: str) -> None:
+            if token != self.editor_load_token:
+                self.logger.info("Ignored stale editor load failure for %s: %s", project_dir, error)
+                self.finish_editor_load_activity(token, "Ready")
+                return
+            self.logger.error("Could not open project editor for %s: %s", project_dir, error)
+            self.append_log(f"Could not open project editor: {error}")
+            self.append_log(f"Log file: {self.log_path}")
+            self.editor_summary.setText("Could not build editor timeline.")
+            self.timeline.set_project(None)
+            self.finish_editor_load_activity(token, "Could not open project editor")
 
-        def chord_removals_from_editor_state(self, editor_state: dict) -> list[tuple[float, float]]:
-            ranges: list[tuple[float, float]] = []
-            for item in editor_state.get("chord_removals", []):
-                try:
-                    start = float(item.get("start", 0.0))
-                    end = float(item.get("end", 0.0))
-                except (TypeError, ValueError):
-                    continue
-                if end > start:
-                    ranges.append((start, end))
-            return sorted(ranges)
+        def finish_editor_load_activity(self, token: int, message: str) -> None:
+            if token not in self.editor_load_activity_tokens:
+                return
+            self.editor_load_activity_tokens.discard(token)
+            self.end_activity(message)
 
         def apply_manual_chords(self) -> None:
             if self.editor_project is None or (not self.manual_chords and not self.removed_chord_ranges):
                 return
-            chords = list(self.editor_project.chords)
-            for start, end in self.removed_chord_ranges:
-                chords = [chord for chord in chords if chord.end <= start or chord.start >= end]
-            for manual in self.manual_chords:
-                chords = [chord for chord in chords if chord.end <= manual.start or chord.start >= manual.end]
-                chords.append(manual)
-            self.editor_project = replace(
+            self.editor_project = apply_chord_edits(
                 self.editor_project,
-                chords=sorted(chords, key=lambda chord: (chord.start, chord.end, chord.label)),
+                self.manual_chords,
+                self.removed_chord_ranges,
             )
 
         def refresh_editor_project_from_chord_edits(self, selected_chord: ChordRegion | None = None) -> None:
@@ -2292,13 +1309,6 @@ def main() -> int:
             self.refresh_detected_chord_list()
             self.save_editor_state()
 
-        def load_editor_state(self, result: PipelineResult) -> dict:
-            try:
-                manifest = load_project_manifest(result.project_dir / PROJECT_FILENAME)
-            except Exception:
-                return {}
-            return manifest.get("editor", {})
-
         def refresh_editor_lists(self, track_visibility: dict[str, bool] | None = None) -> None:
             track_visibility = track_visibility or {}
             self.editor_track_visibility = track_visibility
@@ -2317,7 +1327,7 @@ def main() -> int:
                 return
             for chord in self.editor_project.chords[:200]:
                 self.chord_list.addItem(
-                    f"{_format_time(chord.start)}  {chord.label}  ({chord.confidence:.0%})"
+                    f"{format_time(chord.start)}  {self.display_chord(chord.label)}  ({chord.confidence:.0%})"
                 )
             if len(self.editor_project.chords) > 200:
                 self.chord_list.addItem(f"... {len(self.editor_project.chords) - 200} more")
@@ -2423,7 +1433,7 @@ def main() -> int:
                 toggle_row.setSpacing(6)
 
                 show_check = QCheckBox("View")
-                show_check.setChecked(track_visibility.get(track.name, True))
+                show_check.setChecked(editor_bool(track_visibility.get(track.name), True))
                 show_check.setToolTip(
                     "Show this track's lane on the timeline. Turning it off hides this row too; use Show All to restore hidden tracks."
                 )
@@ -2432,8 +1442,13 @@ def main() -> int:
                 toggle_row.addWidget(show_check)
 
                 analysis_check = QCheckBox("Chord")
-                analysis_check.setChecked(analysis_enabled.get(track.name, track_visibility.get(track.name, True)))
-                analysis_check.setToolTip("Include this track's generated MIDI notes in the Chord Inspector sample.")
+                analysis_check.setChecked(
+                    editor_bool(
+                        analysis_enabled.get(track.name),
+                        editor_bool(track_visibility.get(track.name), True),
+                    )
+                )
+                analysis_check.setToolTip("Include this track's generated MIDI notes in the Harmony Inspector sample.")
                 analysis_check.toggled.connect(lambda *_args: self.refresh_current_harmony(self.timeline.position))
                 analysis_check.toggled.connect(lambda *_args: self.save_editor_state())
                 analysis_check.toggled.connect(lambda *_args: self.refresh_timeline_track_summaries())
@@ -2441,11 +1456,11 @@ def main() -> int:
                 toggle_row.addWidget(analysis_check)
 
                 audio_check = QCheckBox("Audio")
-                audio_check.setChecked(audio_enabled.get(track.name, True))
+                audio_check.setChecked(editor_bool(audio_enabled.get(track.name), True))
                 audio_check.setToolTip("Play this separated stem audio in the editor transport. Does not affect chord detection.")
                 audio_slider = QSlider(Qt.Horizontal)
                 audio_slider.setRange(0, 100)
-                audio_slider.setValue(int(audio_volume.get(track.name, 80)))
+                audio_slider.setValue(editor_int(audio_volume.get(track.name), 80, 0, 100))
                 audio_slider.setToolTip("Separated stem audio volume.")
                 audio_check.toggled.connect(lambda *_args: self.refresh_playback_mix())
                 audio_check.toggled.connect(lambda *_args: self.save_editor_state())
@@ -2457,14 +1472,16 @@ def main() -> int:
                 self.track_audio_sliders[track.name] = audio_slider
                 toggle_row.addWidget(audio_check)
 
-                midi_check = QCheckBox("MIDI")
-                midi_check.setChecked(midi_enabled.get(track.name, False))
                 has_midi_notes = note_count > 0
+                midi_check = QCheckBox("MIDI")
+                midi_check.setChecked(
+                    has_midi_notes and editor_bool(midi_enabled.get(track.name), False)
+                )
                 midi_check.setEnabled(has_midi_notes)
                 midi_check.setToolTip("Play this stem's generated MIDI preview audio. Missing previews render only when this MIDI track is turned on.")
                 midi_slider = QSlider(Qt.Horizontal)
                 midi_slider.setRange(0, 100)
-                midi_slider.setValue(int(midi_volume.get(track.name, 70)))
+                midi_slider.setValue(editor_int(midi_volume.get(track.name), 70, 0, 100))
                 midi_slider.setEnabled(has_midi_notes)
                 midi_slider.setToolTip("MIDI preview volume.")
                 midi_check.toggled.connect(
@@ -2515,7 +1532,7 @@ def main() -> int:
             self.sync_track_control_panel()
 
         def handle_midi_track_toggled(self, stem_name: str, checked: bool) -> None:
-            if checked and self.current_result is not None and stem_name not in self.midi_preview_paths:
+            if checked and self.current_result is not None and stem_name not in self.transport.midi_preview_paths:
                 self.start_midi_preview_render(self.current_result, {stem_name})
             self.refresh_playback_mix()
             self.refresh_timeline_track_summaries()
@@ -2556,15 +1573,16 @@ def main() -> int:
                 if not is_visible:
                     continue
                 geometry = self.timeline.track_geometries.get(track.name.lower())
-                height = int(round(geometry[1])) if geometry else 132
-                panel.setFixedHeight(max(1, height))
+                height = track_control_panel_height(geometry[1] if geometry else None)
+                panel.setFixedHeight(height)
                 detail_rows = self.track_control_detail_rows.get(track.name)
                 if detail_rows is None:
                     continue
                 toggle_widget, audio_widget, midi_widget = detail_rows
-                toggle_widget.setVisible(height >= 38)
-                audio_widget.setVisible(height >= 58)
-                midi_widget.setVisible(height >= 70)
+                visibility = track_control_visibility(height)
+                toggle_widget.setVisible(visibility.toggles)
+                audio_widget.setVisible(visibility.audio_volume)
+                midi_widget.setVisible(visibility.midi_volume)
             self.playback_controls_widget.adjustSize()
 
         def sync_track_control_scroll(self, value: int) -> None:
@@ -2580,52 +1598,25 @@ def main() -> int:
         def prepare_transport_players(self, result: PipelineResult) -> None:
             self.set_activity_message("Preparing audio players...")
             self.pause_transport()
-            self.clear_transport_players()
-            self.midi_preview_paths = self.find_existing_midi_previews(result)
-            for stem in result.stems:
-                player = QMediaPlayer(self)
-                output = QAudioOutput(self)
-                player.setAudioOutput(output)
-                player.setSource(QUrl.fromLocalFile(str(stem.path)))
-                self.track_players[stem.name] = player
-                self.track_audio_outputs[stem.name] = output
-            self.attach_midi_preview_players(self.midi_preview_paths, finish_activity=False)
+            self.transport.prepare_players(result)
+            self.attach_midi_preview_players(dict(self.transport.midi_preview_paths), finish_activity=False)
             requested_midi = {
                 stem_name
                 for stem_name, checkbox in self.track_midi_checks.items()
-                if checkbox.isChecked() and stem_name not in self.midi_preview_paths
+                if checkbox.isChecked() and stem_name not in self.transport.midi_preview_paths
             }
             if requested_midi:
                 self.start_midi_preview_render(result, requested_midi)
             self.refresh_playback_mix()
 
         def clear_transport_players(self) -> None:
-            for player in self.transport_players():
-                try:
-                    player.pause()
-                    player.setSource(QUrl())
-                    player.deleteLater()
-                except RuntimeError:
-                    self.logger.exception("Transport player cleanup failed")
-            for output in [*self.track_audio_outputs.values(), *self.midi_audio_outputs.values()]:
-                output.deleteLater()
-            self.track_players.clear()
-            self.track_audio_outputs.clear()
-            self.midi_players.clear()
-            self.midi_audio_outputs.clear()
-            self.midi_preview_paths.clear()
+            self.transport.clear_players()
 
         def transport_players(self) -> list[QMediaPlayer]:
-            return list(self.track_players.values()) + list(self.midi_players.values())
+            return self.transport.players()
 
         def find_existing_midi_previews(self, result: PipelineResult) -> dict[str, Path]:
-            preview_dir = result.project_dir / "editor" / "midi-preview"
-            previews = {}
-            for stem in result.stems:
-                preview = preview_dir / f"{stem.name}_midi_preview.wav"
-                if preview.exists():
-                    previews[stem.name] = preview
-            return previews
+            return find_existing_midi_previews(result)
 
         def start_midi_preview_render(
             self,
@@ -2639,7 +1630,7 @@ def main() -> int:
                 track.name
                 for track in self.editor_project.tracks
                 if (not requested_keys or track.name.lower() in requested_keys)
-                if track.name not in self.midi_preview_paths
+                if track.name not in self.transport.midi_preview_paths
                 and any(note.stem.lower() == track.name.lower() for note in self.editor_project.notes)
                 and not self._midi_preview_worker_running(result.project_dir, track.name)
             ]
@@ -2647,6 +1638,7 @@ def main() -> int:
                 return
             project = self.editor_project
             preview_dir = result.project_dir / "editor" / "midi-preview"
+            token = self.midi_preview_token
             self.rendering_midi_previews.update(missing)
             self.refresh_timeline_track_summaries()
             self.append_log(f"Rendering MIDI preview audio for {', '.join(missing)} in the background...")
@@ -2664,19 +1656,40 @@ def main() -> int:
                         )
                         if preview:
                             previews[stem_name] = preview
-                    self.messages.put(("MIDI_PREVIEWS", result.project_dir, set(missing), previews))
+                    self.messages.put(("MIDI_PREVIEWS", token, result.project_dir, set(missing), previews))
                 except Exception as exc:
                     self.logger.exception("MIDI preview render failed")
-                    self.messages.put(("MIDI_PREVIEW_FAILED", result.project_dir, set(missing), f"Could not render MIDI previews: {exc}"))
+                    self.messages.put(
+                        (
+                            "MIDI_PREVIEW_FAILED",
+                            token,
+                            result.project_dir,
+                            set(missing),
+                            f"Could not render MIDI previews: {exc}",
+                        )
+                    )
 
             worker_thread = threading.Thread(target=worker, daemon=True)
             for stem_name in missing:
-                self.midi_preview_workers[(result.project_dir, stem_name.lower())] = worker_thread
+                self.midi_preview_workers[(result.project_dir, stem_name.lower())] = (token, worker_thread)
             worker_thread.start()
 
         def _midi_preview_worker_running(self, project_dir: Path, stem_name: str) -> bool:
-            worker = self.midi_preview_workers.get((project_dir, stem_name.lower()))
-            return bool(worker and worker.is_alive())
+            key = (project_dir, stem_name.lower())
+            entry = self.midi_preview_workers.get(key)
+            if entry is None:
+                return False
+            token, worker = entry
+            if token != self.midi_preview_token or not worker.is_alive():
+                self.midi_preview_workers.pop(key, None)
+                return False
+            return True
+
+        def clear_midi_preview_worker(self, project_dir: Path, stem_name: str, token: int) -> None:
+            key = (project_dir, stem_name.lower())
+            entry = self.midi_preview_workers.get(key)
+            if entry is not None and entry[0] == token:
+                self.midi_preview_workers.pop(key, None)
 
         def attach_midi_preview_players(self, previews: dict[str, Path], finish_activity: bool = True) -> None:
             if not previews:
@@ -2684,30 +1697,9 @@ def main() -> int:
                 if finish_activity:
                     self.end_activity("No MIDI preview audio rendered")
                 return
-            self.midi_preview_paths.update(previews)
-            for stem_name, midi_preview in previews.items():
+            for stem_name in previews:
                 self.rendering_midi_previews.discard(stem_name)
-                if stem_name in self.midi_players:
-                    continue
-                midi_player = QMediaPlayer(self)
-                midi_output = QAudioOutput(self)
-                midi_player.setAudioOutput(midi_output)
-                midi_player.setSource(QUrl.fromLocalFile(str(midi_preview)))
-                self.midi_players[stem_name] = midi_player
-                self.midi_audio_outputs[stem_name] = midi_output
-                midi_check = self.track_midi_checks.get(stem_name)
-                midi_slider = self.track_midi_sliders.get(stem_name)
-                if midi_check:
-                    midi_check.setEnabled(True)
-                    midi_check.setToolTip("Play the generated MIDI preview audio for this stem. This does not affect chord detection.")
-                if midi_slider:
-                    midi_slider.setEnabled(True)
-                    midi_slider.setToolTip("MIDI preview audio volume.")
-                if self.is_playing and self.midi_track_enabled(stem_name):
-                    midi_player.setPosition(int(self.timeline.position * 1000))
-                    midi_player.play()
-                else:
-                    midi_player.pause()
+            self.transport.attach_midi_preview_players(previews, self.timeline.position)
             self.refresh_playback_mix()
             self.refresh_timeline_track_summaries()
             if finish_activity:
@@ -2715,39 +1707,17 @@ def main() -> int:
                 self.end_activity("MIDI preview audio ready")
 
         def refresh_playback_mix(self) -> None:
-            for stem_name, output in self.track_audio_outputs.items():
-                enabled = self.track_audio_checks.get(stem_name)
-                slider = self.track_audio_sliders.get(stem_name)
-                is_enabled = enabled.isChecked() if enabled else True
-                volume = slider.value() / 100 if slider else 0.8
-                output.setVolume(volume if is_enabled else 0.0)
-            for stem_name, output in self.midi_audio_outputs.items():
-                slider = self.track_midi_sliders.get(stem_name)
-                volume = slider.value() / 100 if slider else 0.7
-                output.setVolume(volume if self.midi_track_enabled(stem_name) else 0.0)
+            self.transport.refresh_mix()
             self.apply_midi_transport_state()
 
         def midi_track_enabled(self, stem_name: str) -> bool:
-            checkbox = self.track_midi_checks.get(stem_name)
-            return bool(checkbox and checkbox.isEnabled() and checkbox.isChecked())
+            return self.transport.midi_track_enabled(stem_name)
 
         def apply_midi_transport_state(self) -> None:
-            if not self.is_playing:
-                return
-            position_ms = int(self.timeline.position * 1000)
-            for stem_name, player in self.midi_players.items():
-                try:
-                    if self.midi_track_enabled(stem_name):
-                        if player.playbackState() != QMediaPlayer.PlayingState:
-                            player.setPosition(position_ms)
-                            player.play()
-                    else:
-                        player.pause()
-                except RuntimeError:
-                    self.logger.exception("MIDI transport state update failed")
+            self.transport.apply_midi_transport_state(self.timeline.position)
 
         def toggle_playback(self) -> None:
-            if self.is_playing:
+            if self.transport.is_playing:
                 self.pause_transport()
             else:
                 self.play_transport()
@@ -2756,7 +1726,7 @@ def main() -> int:
             if self.editor_project is None or self.current_result is None:
                 self.append_log("Open or run a project before playback.")
                 return
-            if not self.track_players:
+            if not self.transport.track_players:
                 self.append_log("Preparing playback...")
                 self.begin_activity("Preparing playback...")
                 self.prepare_transport_players(self.current_result)
@@ -2765,52 +1735,29 @@ def main() -> int:
             start_position = self.loop_playback_start_seconds()
             if start_position != self.timeline.position:
                 self.set_editor_position_seconds(start_position, save=False, seek_players=False)
-            position_ms = int(start_position * 1000)
-            for player in self.track_players.values():
-                player.setPosition(position_ms)
-                player.play()
-            for stem_name, player in self.midi_players.items():
-                player.setPosition(position_ms)
-                if self.midi_track_enabled(stem_name):
-                    player.play()
-                else:
-                    player.pause()
-            self.is_playing = True
+            self.transport.play(start_position)
             self.play_button.setText("Pause")
             self.stop_button.setEnabled(True)
             self.transport_timer.start(80)
             QTimer.singleShot(250, self.resync_transport_players)
 
         def pause_transport(self) -> None:
-            if not self.is_playing:
+            if not self.transport.pause():
                 return
-            for player in self.transport_players():
-                player.pause()
-            self.is_playing = False
             self.play_button.setText("Play")
             self.transport_timer.stop()
             self.save_editor_state()
 
         def stop_transport(self) -> None:
-            self.is_playing = False
+            self.transport.stop()
             self.play_button.setText("Play")
             self.stop_button.setEnabled(False)
             self.transport_timer.stop()
-            for player in self.transport_players():
-                try:
-                    player.pause()
-                    player.setPosition(0)
-                except RuntimeError:
-                    self.logger.exception("Transport stop failed")
             if self.editor_project is not None:
                 self.set_editor_position_seconds(0.0, seek_players=False)
 
         def seek_audio_players(self, seconds: float) -> None:
-            if not self.track_players:
-                return
-            position_ms = int(seconds * 1000)
-            for player in self.transport_players():
-                player.setPosition(position_ms)
+            self.transport.seek(seconds)
 
         def update_transport_position(self) -> None:
             master = self.transport_master_player()
@@ -2828,34 +1775,13 @@ def main() -> int:
             self.set_editor_position_seconds(seconds, save=False, seek_players=False)
 
         def transport_master_player(self) -> QMediaPlayer | None:
-            return next(iter(self.track_players.values()), None)
+            return self.transport.master_player()
 
         def resync_transport_players(self, master: QMediaPlayer | None = None) -> None:
-            if not self.is_playing:
-                return
-            master = master or self.transport_master_player()
-            if master is None:
-                return
-            master_position = master.position()
-            for player in self.transport_players():
-                if player is master:
-                    continue
-                try:
-                    if player.playbackState() != QMediaPlayer.PlayingState:
-                        continue
-                    if abs(player.position() - master_position) > 120:
-                        player.setPosition(master_position)
-                except RuntimeError:
-                    self.logger.exception("Transport resync failed")
+            self.transport.resync(master)
 
         def loop_playback_start_seconds(self) -> float:
-            selection = self.timeline.selection_range()
-            if selection is None:
-                return self.timeline.position
-            start, end = selection
-            if start <= self.timeline.position < end:
-                return self.timeline.position
-            return start
+            return loop_playback_start(self.timeline.position, self.timeline.selection_range())
 
         def set_editor_position_seconds(
             self,
@@ -2869,13 +1795,13 @@ def main() -> int:
             self.timeline_slider.blockSignals(True)
             self.timeline_slider.setValue(value)
             self.timeline_slider.blockSignals(False)
-            self.editor_position.setText(_format_time(seconds))
+            self.editor_position.setText(format_time(seconds))
             self.timeline.set_position(seconds)
             self.refresh_current_harmony(seconds)
             if seek_players:
                 self.seek_audio_players(seconds)
             if save:
-                self.save_editor_state()
+                self.request_editor_state_save()
 
         def set_editor_selection(self, selection: tuple[float, float] | None) -> None:
             self.refresh_current_harmony(self.timeline.position)
@@ -2885,7 +1811,7 @@ def main() -> int:
                 return
             start, end = selection
             self.statusBar().showMessage(
-                f"Loop selection active: {_format_time(start)} - {_format_time(end)}. Press Play to loop this range.",
+                f"Loop selection active: {format_time(start)} - {format_time(end)}. Press Play to loop this range.",
                 5000,
             )
 
@@ -2897,22 +1823,194 @@ def main() -> int:
             self.chord_context.setText(text)
             self.chord_context.setToolTip(text)
 
+        def refresh_current_theory(self, source_notes: list[NoteEvent], seconds: float) -> None:
+            if self.editor_project is None:
+                self.set_theory_analysis(None)
+                return
+            selection = self.timeline.selection_range()
+            if selection is not None:
+                start, end = selection
+                analysis = analyze_theory_region(source_notes, self.editor_project.chords, start, end)
+            else:
+                analysis = analyze_theory_at(source_notes, self.editor_project.chords, seconds)
+            self.set_theory_analysis(analysis)
+
+        def set_theory_analysis(self, analysis: TheoryAnalysis | None) -> None:
+            self.current_theory_analysis = analysis
+            self.theory_list.clear()
+            has_candidates = bool(analysis and analysis.candidates)
+            self.inspect_theory_button.setEnabled(has_candidates)
+            if not has_candidates or analysis is None:
+                self.theory_context.setText("Theory: -")
+                self.theory_context.setToolTip("No scale, key, or mode evidence yet.")
+                return
+            note_text = ", ".join(
+                f"{self.display_weighted_note_name(name)} ({weight:.0%})"
+                for name, weight in analysis.note_weights[:8]
+            )
+            self.theory_context.setText(
+                f"Likely: {analysis.label} (score {analysis.confidence:.0%})\n"
+                f"Weighted notes: {note_text or '-'}"
+            )
+            self.theory_context.setToolTip(self.theory_context.text())
+            for candidate in analysis.candidates[:8]:
+                notes = " - ".join(candidate.notes)
+                item = QListWidgetItem(
+                    f"{candidate.label}  {candidate.score:.0%}\n"
+                    f"{notes}\n"
+                    f"fit {candidate.pitch_fit:.0%}, centre {candidate.center_strength:.0%}, "
+                    f"chords {candidate.chord_support:.0%}"
+                )
+                item.setToolTip("\n".join(candidate.explanation))
+                self.theory_list.addItem(item)
+            if analysis.progression is not None:
+                self.theory_list.addItem(
+                    "Progression\n"
+                    f"{' - '.join(analysis.progression.chord_labels) or '-'}\n"
+                    f"{' - '.join(analysis.progression.roman_numerals) or '-'}"
+                )
+            if analysis.core_notes or analysis.scale_notes:
+                self.theory_list.addItem(
+                    "Playable notes\n"
+                    f"Core: {' - '.join(analysis.core_notes) or '-'}\n"
+                    f"Scale: {' - '.join(analysis.scale_notes) or '-'}"
+                )
+
+        def refresh_current_gap_suggestions(self, source_notes: list[NoteEvent]) -> None:
+            if self.editor_project is None:
+                self.set_gap_analysis(None)
+                return
+            gap = self.current_chord_gap_range()
+            if gap is None:
+                self.set_gap_analysis(None)
+                return
+            start, end = gap
+            analysis = analyze_chord_gap(
+                source_notes,
+                self.editor_project.chords,
+                start,
+                end,
+                scoring_options=self.chord_scoring_options(),
+            )
+            self.set_gap_analysis(analysis)
+
+        def current_chord_gap_range(self) -> tuple[float, float] | None:
+            if self.editor_project is None:
+                return None
+            selection = self.timeline.selection_range()
+            if selection is not None:
+                start, end = selection
+                if end - start >= 0.05:
+                    return start, end
+                return None
+            position = self.timeline.position
+            sorted_chords = sorted(self.editor_project.chords, key=lambda chord: (chord.start, chord.end))
+            for chord in sorted_chords:
+                if chord.start <= position < chord.end:
+                    return None
+            previous = max(
+                (chord for chord in sorted_chords if chord.end <= position),
+                key=lambda chord: chord.end,
+                default=None,
+            )
+            next_chord = min(
+                (chord for chord in sorted_chords if chord.start >= position),
+                key=lambda chord: chord.start,
+                default=None,
+            )
+            start = previous.end if previous is not None else 0.0
+            end = next_chord.start if next_chord is not None else self.editor_project.duration
+            if end - start < 0.05:
+                return None
+            return start, end
+
+        def set_gap_analysis(self, analysis: ChordGapAnalysis | None) -> None:
+            self.current_chord_gap_analysis = analysis
+            self.gap_suggestion_list.clear()
+            if analysis is None or not analysis.suggestions:
+                self.gap_suggestion_list.addItem("No chord-track gap selected or under the playhead.")
+                self.refresh_gap_suggestion_actions()
+                return
+            self.gap_suggestion_list.addItem(
+                f"Gap {format_time(analysis.start)} - {format_time(analysis.end)}"
+            )
+            for index, suggestion in enumerate(analysis.suggestions[:8]):
+                item = QListWidgetItem(
+                    f"{self.display_chord(suggestion.label)}  {suggestion.score:.0%}\n"
+                    f"{suggestion.action.replace('_', ' ')} | local {suggestion.local_evidence:.0%}, "
+                    f"theory {suggestion.theory_fit:.0%}, voice {suggestion.voice_leading:.0%}"
+                )
+                item.setData(Qt.UserRole, index)
+                item.setToolTip("\n".join(suggestion.explanation))
+                self.gap_suggestion_list.addItem(item)
+            self.gap_suggestion_list.setCurrentRow(1)
+            self.refresh_gap_suggestion_actions()
+
+        def refresh_gap_suggestion_actions(self) -> None:
+            item = self.gap_suggestion_list.currentItem()
+            has_suggestion = bool(item and item.data(Qt.UserRole) is not None)
+            self.use_gap_suggestion_button.setEnabled(has_suggestion)
+            self.inspect_gap_suggestion_button.setEnabled(
+                self.current_chord_gap_analysis is not None
+                and bool(self.current_chord_gap_analysis.suggestions)
+            )
+
         def chord_min_note_floor(self) -> float:
             return self.min_note_evidence_slider.value() / 100
 
         def chord_scoring_options(self) -> ChordScoringOptions:
             return ChordScoringOptions(weak_note_floor=self.chord_min_note_floor())
 
+        def selected_notation_preference(self) -> str:
+            return self.notation_spelling.currentData() or "auto"
+
+        def resolved_notation_preference(self, chord_label: str | None = None) -> str:
+            return resolve_notation_preference(
+                self.selected_notation_preference(),
+                self.current_theory_analysis.label if self.current_theory_analysis else None,
+                chord_label,
+            )
+
+        def display_chord(self, label: str | None) -> str:
+            if not label:
+                return "No clear chord"
+            return display_chord_label(label, self.resolved_notation_preference(label))
+
+        def display_chord_tones(self, label: str) -> list[str]:
+            return chord_tones_for_label(label, self.resolved_notation_preference(label))
+
+        def display_chord_bass(self, label: str) -> str | None:
+            return chord_bass_name_for_label(label, self.resolved_notation_preference(label))
+
+        def display_note_name(self, pitch: int) -> str:
+            return midi_note_name(pitch, self.resolved_notation_preference())
+
+        def display_pitch_class_name(self, pitch_class: int) -> str:
+            return pitch_class_name(pitch_class, self.resolved_notation_preference())
+
+        def display_weighted_note_name(self, note_name: str) -> str:
+            pitch_class = pitch_class_for_name(note_name)
+            if pitch_class is None:
+                return note_name
+            return self.display_pitch_class_name(pitch_class)
+
         def handle_min_note_evidence_changed(self, value: int) -> None:
             self.min_note_evidence_label.setText(f"Min note evidence: {value}%")
             self.refresh_current_harmony(self.timeline.position)
 
+        def handle_notation_spelling_changed(self, *_args) -> None:
+            self.timeline.redraw()
+            self.refresh_current_harmony(self.timeline.position)
+
         def refresh_current_harmony(self, seconds: float) -> None:
             if self.editor_project is None:
-                self.current_chord.setText("Chord: -")
-                self.set_chord_context_text("Notes: -")
+                self.current_chord.setText("Harmony: -")
+                self.set_chord_context_text("Sample: -")
                 self.chord_list.clear()
                 self.refresh_chord_keyboard()
+                self.set_theory_analysis(None)
+                self.set_gap_analysis(None)
+                self.current_harmony_context = None
                 self.note_filter_list.clear()
                 self.inspect_chord_button.setEnabled(False)
                 return
@@ -2938,16 +2036,19 @@ def main() -> int:
                     excluded_pitch_classes=excluded,
                     scoring_options=scoring_options,
                 )
-                chord = analysis.label or "No clear chord"
+                self.refresh_current_theory(source_notes, seconds)
+                chord = self.display_chord(analysis.label)
                 self.current_chord.setText(
-                    f"Selection: {chord}  ({analysis.confidence:.0%})  "
-                    f"{_format_time(start)} - {_format_time(end)}"
+                    f"Selection: {chord}  (score {analysis.confidence:.0%})  "
+                    f"{format_time(start)} - {format_time(end)}"
                 )
                 self._set_chord_candidates(analysis)
+                self.refresh_current_gap_suggestions(source_notes)
+                self.update_harmony_context("selection", source_notes, analysis_notes, analysis)
                 self.populate_note_filter_list(self.current_chord_base_weights)
                 if analysis.note_weights:
                     note_text = ", ".join(
-                        f"{name} ({weight:.0%})"
+                        f"{self.display_weighted_note_name(name)} ({weight:.0%})"
                         for name, weight in analysis.note_weights[:12]
                     )
                     self.set_chord_context_text(f"{sample_text}\nWeighted notes: {note_text}")
@@ -2969,122 +2070,78 @@ def main() -> int:
                 scoring_options=scoring_options,
             )
             active_notes = active_notes_at(analysis_notes, seconds)
-            chord = analysis.label or "No clear chord"
-            self.current_chord.setText(f"Chord: {chord}  ({analysis.confidence:.0%})")
+            self.refresh_current_theory(source_notes, seconds)
+            chord = self.display_chord(analysis.label)
+            self.current_chord.setText(f"Harmony: {chord}  (score {analysis.confidence:.0%})")
             self._set_chord_candidates(analysis)
+            self.refresh_current_gap_suggestions(source_notes)
+            self.update_harmony_context("playhead", source_notes, analysis_notes, analysis)
             self.populate_note_filter_list(self.current_chord_base_weights)
             if active_notes:
                 unique_pitches = sorted({note.pitch for note in active_notes})
                 shown_pitches = unique_pitches[:32]
-                note_text = ", ".join(midi_note_name(pitch) for pitch in shown_pitches)
+                note_text = ", ".join(self.display_note_name(pitch) for pitch in shown_pitches)
                 if len(unique_pitches) > len(shown_pitches):
                     note_text += f", +{len(unique_pitches) - len(shown_pitches)} more"
                 self.set_chord_context_text(f"{sample_text}\nNotes: {note_text}")
             else:
                 self.set_chord_context_text(f"{sample_text}\nNotes: -")
 
+        def update_harmony_context(
+            self,
+            mode: str,
+            source_notes: list[NoteEvent],
+            analysis_notes: list[NoteEvent],
+            chord_analysis: ChordAnalysis,
+        ) -> None:
+            self.current_harmony_context = HarmonyContext(
+                mode=mode,
+                sampled_tracks=tuple(self.chord_analysis_track_names()),
+                source_note_count=len(source_notes),
+                analyzed_note_count=len(analysis_notes),
+                chord_analysis=chord_analysis,
+                theory_analysis=self.current_theory_analysis,
+                gap_analysis=self.current_chord_gap_analysis,
+            )
+
         def chord_context_key(self, seconds: float):
-            selection = self.timeline.selection_range()
-            if selection is not None:
-                start, end = selection
-                return ("selection", round(start, 3), round(end, 3))
-            return ("point", round(seconds, 2))
+            return inspector_harmony_context_key(seconds, self.timeline.selection_range())
 
         def chord_analysis_notes(self) -> list[NoteEvent]:
-            if self.editor_project is None:
-                return []
-            if not self.track_analysis_checks:
-                return self.editor_project.notes
-            analysis_tracks = {
-                stem_name.lower()
-                for stem_name, checkbox in self.track_analysis_checks.items()
-                if checkbox.isChecked()
-            }
-            return [
-                note
-                for note in self.editor_project.notes
-                if note.stem.lower() in analysis_tracks
-            ]
+            return selected_chord_analysis_notes(
+                self.editor_project,
+                self.selected_chord_analysis_tracks(),
+            )
 
         def chord_sample_text(self, notes: list[NoteEvent]) -> str:
             if self.editor_project is None:
                 return "Sample: -"
-            names = self.chord_analysis_track_names()
-            if not names:
-                return "Chord sample: no tracks selected. Tick Chord to include a track."
-            shown = ", ".join(names[:5])
-            if len(names) > 5:
-                shown += f", +{len(names) - 5} more"
-            return f"Chord sample: {shown} ({len(notes)} MIDI notes). View, Audio, and MIDI ticks do not affect detection."
+            return inspector_chord_sample_text(self.chord_analysis_track_names(), len(notes))
 
         def chord_analysis_track_names(self) -> list[str]:
-            if self.editor_project is None:
-                return []
+            return inspector_chord_analysis_track_names(
+                self.editor_project,
+                self.selected_chord_analysis_tracks(),
+            )
+
+        def selected_chord_analysis_tracks(self) -> set[str] | None:
             if not self.track_analysis_checks:
-                return [
-                    track.name
-                    for track in self.editor_project.tracks
-                    if any(note.stem.lower() == track.name.lower() for note in self.editor_project.notes)
-                ]
-            return [
-                track.name
-                for track in self.editor_project.tracks
-                if self.track_analysis_checks.get(track.name)
-                and self.track_analysis_checks[track.name].isChecked()
-            ]
+                return None
+            return {
+                stem_name
+                for stem_name, checkbox in self.track_analysis_checks.items()
+                if checkbox.isChecked()
+            }
 
         def chord_base_pitch_weights(self, notes: list[NoteEvent], context) -> dict[int, float]:
-            if not notes:
-                return {}
-            weights: dict[int, float] = {}
-            if context[0] == "selection":
-                _kind, start, end = context
-                for note in notes:
-                    overlap = max(0.0, min(note.end, end) - max(note.start, start))
-                    if overlap <= 0:
-                        continue
-                    weights[note.pitch % 12] = (
-                        weights.get(note.pitch % 12, 0.0)
-                        + overlap * midi_velocity_energy(note.velocity)
-                    )
-            else:
-                _kind, seconds = context
-                for note in notes:
-                    if note.start <= seconds < note.end:
-                        weights[note.pitch % 12] = max(
-                            weights.get(note.pitch % 12, 0.0),
-                            midi_velocity_energy(note.velocity),
-                        )
-            if not weights:
-                return {}
-            maximum = max(weights.values())
-            return {pitch_class: weight / maximum for pitch_class, weight in weights.items()}
+            return inspector_chord_base_pitch_weights(notes, context)
 
         def filtered_chord_analysis_notes(self, notes: list[NoteEvent], context) -> list[NoteEvent]:
-            excluded_pitch_classes = {
-                pitch_class
-                for pitch_class, state in self.chord_note_overrides.items()
-                if state == "exclude"
-            }
-            filtered = [
-                note
-                for note in notes
-                if note.pitch % 12 not in excluded_pitch_classes
-            ]
-            return filtered
+            _required, excluded_pitch_classes = self.chord_note_constraints()
+            return inspector_filtered_chord_analysis_notes(notes, excluded_pitch_classes)
 
         def chord_note_constraints(self) -> tuple[set[int], set[int]]:
-            required = {
-                pitch_class
-                for pitch_class, state in self.chord_note_overrides.items()
-                if state == "force"
-            }
-            excluded = {
-                pitch_class
-                for pitch_class, state in self.chord_note_overrides.items()
-                if state == "exclude"
-            }
-            return required, excluded
+            return inspector_chord_note_constraints(self.chord_note_overrides)
 
         def populate_note_filter_list(self, weights: dict[int, float]) -> None:
             self.updating_chord_note_filter = True
@@ -3103,7 +2160,7 @@ def main() -> int:
                     elif state == "force":
                         detail = "forced in"
                     label = {"exclude": "Exclude", "auto": "Auto", "force": "Force"}[state]
-                    item = QListWidgetItem(f"{label} {PITCH_NAMES[pitch_class]}  -  {detail}")
+                    item = QListWidgetItem(f"{label} {self.display_pitch_class_name(pitch_class)}  -  {detail}")
                     item.setData(Qt.UserRole, pitch_class)
                     tristate_flag = getattr(Qt, "ItemIsUserTristate", Qt.ItemIsUserCheckable)
                     item.setFlags(item.flags() | Qt.ItemIsUserCheckable | tristate_flag)
@@ -3149,7 +2206,7 @@ def main() -> int:
                 return
             report = self.current_chord_analysis_report()
             dialog = QDialog(self)
-            dialog.setWindowTitle("Chord Inspector Calculation")
+            dialog.setWindowTitle("Harmony Inspector Calculation")
             layout = QVBoxLayout()
             text = QTextEdit()
             text.setReadOnly(True)
@@ -3164,6 +2221,67 @@ def main() -> int:
             dialog.setLayout(layout)
             dialog.resize(820, 680)
             dialog.exec()
+
+        def inspect_current_theory_analysis(self) -> None:
+            if self.current_theory_analysis is None:
+                return
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Theory Inspector Calculation")
+            layout = QVBoxLayout()
+            text = QTextEdit()
+            text.setReadOnly(True)
+            text.setPlainText(theory_analysis_report(self.current_theory_analysis))
+            layout.addWidget(text)
+            close_button = QPushButton("Close")
+            close_button.clicked.connect(dialog.accept)
+            button_row = QHBoxLayout()
+            button_row.addStretch(1)
+            button_row.addWidget(close_button)
+            layout.addLayout(button_row)
+            dialog.setLayout(layout)
+            dialog.resize(820, 680)
+            dialog.exec()
+
+        def inspect_current_gap_suggestions(self) -> None:
+            if self.current_chord_gap_analysis is None:
+                return
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Chord Gap Suggestions")
+            layout = QVBoxLayout()
+            text = QTextEdit()
+            text.setReadOnly(True)
+            text.setPlainText(chord_gap_report(self.current_chord_gap_analysis))
+            layout.addWidget(text)
+            close_button = QPushButton("Close")
+            close_button.clicked.connect(dialog.accept)
+            button_row = QHBoxLayout()
+            button_row.addStretch(1)
+            button_row.addWidget(close_button)
+            layout.addLayout(button_row)
+            dialog.setLayout(layout)
+            dialog.resize(820, 680)
+            dialog.exec()
+
+        def use_selected_gap_suggestion(self) -> None:
+            if self.current_chord_gap_analysis is None:
+                return
+            item = self.gap_suggestion_list.currentItem()
+            if item is None or item.data(Qt.UserRole) is None:
+                return
+            suggestion = self.current_chord_gap_analysis.suggestions[int(item.data(Qt.UserRole))]
+            chord = ChordRegion(
+                start=suggestion.start,
+                end=suggestion.end,
+                label=suggestion.label,
+                confidence=suggestion.score,
+            )
+            self.insert_manual_chord(chord)
+            self.refresh_editor_project_from_chord_edits(chord)
+            self.statusBar().showMessage(
+                f"Filled gap with {self.display_chord(suggestion.label)}: "
+                f"{format_time(suggestion.start)} - {format_time(suggestion.end)}.",
+                5000,
+            )
 
         def current_chord_analysis_report(self) -> str:
             source_notes = self.chord_analysis_notes()
@@ -3183,7 +2301,7 @@ def main() -> int:
                     excluded_pitch_classes=excluded,
                     scoring_options=scoring_options,
                 )
-                mode = f"Selection {_format_time(start)} - {_format_time(end)} ({end - start:.3f} sec)"
+                mode = f"Selection {format_time(start)} - {format_time(end)} ({end - start:.3f} sec)"
                 evidence_rows, totals = self.chord_selection_evidence_rows(analysis_notes, start, end)
             else:
                 seconds = self.timeline.position
@@ -3194,14 +2312,14 @@ def main() -> int:
                     excluded_pitch_classes=excluded,
                     scoring_options=scoring_options,
                 )
-                mode = f"Playhead {_format_time(seconds)}"
+                mode = f"Playhead {format_time(seconds)}"
                 evidence_rows, totals = self.chord_point_evidence_rows(analysis_notes, seconds)
 
             lines = [
-                "Chord Inspector Calculation",
+                "Harmony Inspector Calculation",
                 "=" * 29,
                 f"Context: {mode}",
-                f"Detected chord: {analysis.label or 'No clear chord'} ({analysis.confidence:.0%})",
+                f"Detected chord: {self.display_chord(analysis.label)} (ranking score {analysis.confidence:.0%})",
                 f"Sampled tracks: {', '.join(self.chord_analysis_track_names()) or '-'}",
                 f"Source MIDI notes in sampled tracks: {len(source_notes):,}",
                 f"Filtered/analyzed note events: {len(analysis_notes):,}",
@@ -3219,12 +2337,12 @@ def main() -> int:
                 "Chord-Name Ranking",
                 "-" * 18,
                 "The visible percentage is a local ranking score, not a statistical probability.",
-                "Selection score = coverage * purity.",
+                "Display score = coverage * purity, using the MIDI evidence already shown above.",
                 "Coverage asks how strongly the candidate's expected notes are present.",
                 "Purity asks how much of the selected energy belongs to the candidate's notes.",
                 "Automatic chord names that require a tone below visible evidence resolution are rejected.",
                 "Forced notes constrain chord names without inventing MIDI energy.",
-                "No bass/root, exact-match, missing-note, or simplicity bonuses are applied.",
+                "No naming bonuses, penalties, or user-tuned weights are applied.",
                 "",
                 "Manual Note Evidence Overrides",
                 "-" * 30,
@@ -3237,13 +2355,15 @@ def main() -> int:
             if totals:
                 max_total = max(totals.values())
                 for pitch_class, total in sorted(totals.items(), key=lambda item: (-item[1], item[0])):
-                    lines.append(f"{PITCH_NAMES[pitch_class]:>2}: raw {total:.4f}, normalized {total / max_total:.0%}")
+                    lines.append(f"{self.display_pitch_class_name(pitch_class):>2}: raw {total:.4f}, normalized {total / max_total:.0%}")
             else:
                 lines.append("-")
             if analysis.note_weights:
                 lines.extend(["", "Pitch Classes Used By Detector", "-" * 30])
                 for name, weight in analysis.note_weights:
-                    lines.append(f"{name:>2}: {weight:.0%}")
+                    pitch_class = pitch_class_for_name(name)
+                    shown_name = self.display_pitch_class_name(pitch_class) if pitch_class is not None else name
+                    lines.append(f"{shown_name:>2}: {weight:.0%}")
 
             lines.extend(["", "Input Note Events", "-" * 17])
             if evidence_rows:
@@ -3256,12 +2376,12 @@ def main() -> int:
             lines.extend(["", "Chord Candidates And Formula Breakdown", "-" * 39])
             if analysis.candidates:
                 for label, confidence in analysis.candidates:
-                    notes = " - ".join(analysis.candidate_notes.get(label, [])) or "-"
-                    aliases = ", ".join(analysis.candidate_aliases.get(label, [])) or "-"
+                    notes = " - ".join(self.display_chord_tones(label)) or "-"
+                    aliases = ", ".join(self.display_chord(alias) for alias in analysis.candidate_aliases.get(label, [])) or "-"
                     lines.extend(
                         [
                             "",
-                            f"{label} ({confidence:.0%})",
+                            f"{self.display_chord(label)} ({confidence:.0%})",
                             f"Official tones: {notes}",
                             f"Alternate names: {aliases}",
                         ]
@@ -3272,12 +2392,12 @@ def main() -> int:
             if analysis.partial_candidates:
                 lines.extend(["", "Partial Chord Candidates", "-" * 24])
                 for label, confidence in analysis.partial_candidates:
-                    notes = " - ".join(analysis.partial_candidate_notes.get(label, [])) or "-"
-                    aliases = ", ".join(analysis.partial_candidate_aliases.get(label, [])) or "-"
+                    notes = " - ".join(self.display_chord_tones(label)) or "-"
+                    aliases = ", ".join(self.display_chord(alias) for alias in analysis.partial_candidate_aliases.get(label, [])) or "-"
                     lines.extend(
                         [
                             "",
-                            f"{label} ({confidence:.0%})",
+                            f"{self.display_chord(label)} ({confidence:.0%})",
                             f"Observed tones: {notes}",
                             f"Alternate names: {aliases}",
                         ]
@@ -3304,8 +2424,8 @@ def main() -> int:
                 weight = overlap * velocity_energy
                 totals[note.pitch % 12] = totals.get(note.pitch % 12, 0.0) + weight
                 rows.append(
-                    f"{note.stem:12} {note.name:4} pitch {note.pitch:3} "
-                    f"start {_format_time(note.start)} end {_format_time(note.end)} "
+                    f"{note.stem:12} {self.display_note_name(note.pitch):4} pitch {note.pitch:3} "
+                    f"start {format_time(note.start)} end {format_time(note.end)} "
                     f"overlap {overlap:.3f}s velocity {note.velocity:3} "
                     f"velocity energy {velocity_energy:.4f} note energy {weight:.4f}"
                 )
@@ -3320,10 +2440,10 @@ def main() -> int:
             totals: dict[int, float] = {}
             for note in sorted(active_notes_at(notes, seconds), key=lambda item: (item.stem, item.pitch, item.start)):
                 weight = midi_velocity_energy(note.velocity)
-                totals[note.pitch % 12] = max(totals.get(note.pitch % 12, 0.0), weight)
+                totals[note.pitch % 12] = totals.get(note.pitch % 12, 0.0) + weight
                 rows.append(
-                    f"{note.stem:12} {note.name:4} pitch {note.pitch:3} "
-                    f"start {_format_time(note.start)} end {_format_time(note.end)} "
+                    f"{note.stem:12} {self.display_note_name(note.pitch):4} pitch {note.pitch:3} "
+                    f"start {format_time(note.start)} end {format_time(note.end)} "
                     f"active at playhead velocity {note.velocity:3} velocity energy {weight:.4f}"
                 )
             return rows, totals
@@ -3331,30 +2451,31 @@ def main() -> int:
         def pitch_class_list(self, pitch_classes: set[int]) -> str:
             if not pitch_classes:
                 return "-"
-            return ", ".join(PITCH_NAMES[pitch_class] for pitch_class in sorted(pitch_classes))
+            return ", ".join(self.display_pitch_class_name(pitch_class) for pitch_class in sorted(pitch_classes))
 
         def _set_chord_candidates(self, analysis) -> None:
             if analysis.candidates:
                 self.chord_list.clear()
                 for label, confidence in analysis.candidates:
-                    note_names = analysis.candidate_notes.get(label, [])
+                    display_label = self.display_chord(label)
+                    note_names = self.display_chord_tones(label)
                     notes = self._candidate_notes_text(analysis, label)
                     aliases = analysis.candidate_aliases.get(label, [])
                     alias_text = ""
                     if aliases:
-                        shown_aliases = ", ".join(aliases[:4])
+                        shown_aliases = ", ".join(self.display_chord(alias) for alias in aliases[:4])
                         if len(aliases) > 4:
                             shown_aliases += f", +{len(aliases) - 4} more"
                         alias_text = f"\naka: {shown_aliases}"
-                    item = QListWidgetItem(f"{label}  {confidence:.0%}\n{notes}{alias_text}")
+                    item = QListWidgetItem(f"{display_label}  {confidence:.0%}\n{notes}{alias_text}")
                     item.setData(Qt.UserRole, label)
                     item.setData(Qt.UserRole + 1, confidence)
                     item.setData(Qt.UserRole + 2, note_names)
                     item.setToolTip(
-                        f"{label}\n"
+                        f"{display_label}\n"
                         f"Official chord tones: {notes}\n"
-                        f"Alternate names: {', '.join(aliases) if aliases else '-'}\n"
-                        f"Detector confidence: {confidence:.0%}\n\n"
+                        f"Alternate names: {', '.join(self.display_chord(alias) for alias in aliases) if aliases else '-'}\n"
+                        f"Detector ranking score: {confidence:.0%}\n\n"
                         + "\n".join(analysis.candidate_explanations.get(label, []))
                     )
                     self.chord_list.addItem(item)
@@ -3362,18 +2483,19 @@ def main() -> int:
                 self.chord_list.clear()
                 self.chord_list.addItem("No full chord candidates here.")
                 for label, confidence in analysis.partial_candidates:
-                    note_names = analysis.partial_candidate_notes.get(label, [])
+                    display_label = self.display_chord(label)
+                    note_names = self.display_chord_tones(label)
                     notes = self._partial_candidate_notes_text(analysis, label)
                     aliases = analysis.partial_candidate_aliases.get(label, [])
                     alias_text = ""
                     if aliases:
-                        alias_text = f"\naka: {', '.join(aliases[:4])}"
-                    item = QListWidgetItem(f"{label}  {confidence:.0%}\n{notes}{alias_text}")
+                        alias_text = f"\naka: {', '.join(self.display_chord(alias) for alias in aliases[:4])}"
+                    item = QListWidgetItem(f"{display_label}  {confidence:.0%}\n{notes}{alias_text}")
                     item.setData(Qt.UserRole, label)
                     item.setData(Qt.UserRole + 1, confidence)
                     item.setData(Qt.UserRole + 2, note_names)
                     item.setToolTip(
-                        f"{label}\n"
+                        f"{display_label}\n"
                         f"Observed shell tones: {notes}\n"
                         "Partial/shell candidate, not a full chord detection.\n\n"
                         + "\n".join(analysis.partial_candidate_explanations.get(label, []))
@@ -3401,9 +2523,9 @@ def main() -> int:
         def refresh_chord_keyboard(self) -> None:
             track_chord = self.active_chord_track_region()
             if track_chord is not None:
-                note_names = chord_tones_for_label(track_chord.label)
+                note_names = self.display_chord_tones(track_chord.label)
                 self.piano_chord_view.set_chord(
-                    track_chord.label,
+                    self.display_chord(track_chord.label),
                     note_names,
                     "Chord track",
                 )
@@ -3428,21 +2550,23 @@ def main() -> int:
             return None
 
         def _candidate_notes_text(self, analysis, label: str) -> str:
-            notes = analysis.candidate_notes.get(label, [])
+            notes = self.display_chord_tones(label) if label else analysis.candidate_notes.get(label, [])
             if not notes:
                 return "-"
             text = " - ".join(notes)
-            if "/" in label:
-                text += f"  bass {label.split('/', 1)[1]}"
+            bass_name = self.display_chord_bass(label)
+            if bass_name is not None:
+                text += f"  bass {bass_name}"
             return text
 
         def _partial_candidate_notes_text(self, analysis, label: str) -> str:
-            notes = analysis.partial_candidate_notes.get(label, [])
+            notes = self.display_chord_tones(label) if label else analysis.partial_candidate_notes.get(label, [])
             if not notes:
                 return "-"
             text = " - ".join(notes)
-            if "/" in label:
-                text += f"  bass {label.split('/', 1)[1]}"
+            bass_name = self.display_chord_bass(label)
+            if bass_name is not None:
+                text += f"  bass {bass_name}"
             return text
 
         def refresh_chord_actions(self) -> None:
@@ -3463,17 +2587,24 @@ def main() -> int:
                 return
             notes = self.preview_notes_for_chord(label, note_names)
             preview_dir = self.current_result.project_dir / "editor" / "chord-preview"
-            self.chord_preview_player.pause()
-            self.chord_preview_player.setSource(QUrl())
+            if not safe_qt_multimedia_call(
+                self.logger,
+                "Chord preview reset failed",
+                lambda: reset_player_source(self.chord_preview_player),
+            ):
+                return
             preview = render_note_preview("official-chord", notes, preview_dir)
             if not preview:
                 return
-            self.chord_preview_player.setSource(QUrl.fromLocalFile(str(preview)))
-            self.chord_preview_player.play()
-            self.statusBar().showMessage(f"Playing official {label} chord.", 3000)
+            if safe_qt_multimedia_call(
+                self.logger,
+                "Chord preview playback failed",
+                lambda: start_player_source(self.chord_preview_player, QUrl.fromLocalFile(str(preview))),
+            ):
+                self.statusBar().showMessage(f"Playing official {self.display_chord(label)} chord.", 3000)
 
         def preview_notes_for_chord(self, label: str, note_names: list[str]) -> list[NoteEvent]:
-            pitches = _chord_preview_pitches(label, note_names)
+            pitches = chord_preview_pitches(label, note_names)
             return [
                 NoteEvent(
                     stem="official-chord",
@@ -3501,7 +2632,7 @@ def main() -> int:
             self.insert_manual_chord(manual)
             self.refresh_editor_project_from_chord_edits(manual)
             self.statusBar().showMessage(
-                f"Assigned {label} to {_format_time(start)} - {_format_time(end)}.",
+                f"Assigned {self.display_chord(label)} to {format_time(start)} - {format_time(end)}.",
                 5000,
             )
 
@@ -3511,31 +2642,31 @@ def main() -> int:
                 for existing in self.manual_chords
                 if existing.end <= chord.start or existing.start >= chord.end
             ]
-            self.removed_chord_ranges = self._merge_chord_ranges(
+            self.removed_chord_ranges = merge_chord_ranges(
                 [*self.removed_chord_ranges, (chord.start, chord.end)]
             )
             self.manual_chords.append(chord)
             self.manual_chords.sort(key=lambda item: (item.start, item.end, item.label))
 
         def edit_timeline_chord(self, original: ChordRegion, edited: ChordRegion) -> None:
-            self.removed_chord_ranges = self._merge_chord_ranges(
+            self.removed_chord_ranges = merge_chord_ranges(
                 [*self.removed_chord_ranges, (original.start, original.end), (edited.start, edited.end)]
             )
             self.manual_chords = [chord for chord in self.manual_chords if chord != original]
             self.insert_manual_chord(edited)
             self.refresh_editor_project_from_chord_edits(edited)
             self.statusBar().showMessage(
-                f"Moved {edited.label} to {_format_time(edited.start)} - {_format_time(edited.end)}.",
+                f"Moved {self.display_chord(edited.label)} to {format_time(edited.start)} - {format_time(edited.end)}.",
                 5000,
             )
 
         def delete_timeline_chord(self, chord: ChordRegion) -> None:
-            self.removed_chord_ranges = self._merge_chord_ranges(
+            self.removed_chord_ranges = merge_chord_ranges(
                 [*self.removed_chord_ranges, (chord.start, chord.end)]
             )
             self.manual_chords = [manual for manual in self.manual_chords if manual != chord]
             self.refresh_editor_project_from_chord_edits(None)
-            self.statusBar().showMessage(f"Deleted {chord.label}.", 4000)
+            self.statusBar().showMessage(f"Deleted {self.display_chord(chord.label)}.", 4000)
 
         def show_timeline_chord_status(self, chord: ChordRegion | None) -> None:
             if chord is None:
@@ -3543,19 +2674,9 @@ def main() -> int:
                 return
             self.refresh_chord_keyboard()
             self.statusBar().showMessage(
-                f"Selected {chord.label}: drag middle to move, drag edges to resize, Delete removes it.",
+                f"Selected {self.display_chord(chord.label)}: drag middle to move, drag edges to resize, Delete removes it.",
                 6000,
             )
-
-        def _merge_chord_ranges(self, ranges: list[tuple[float, float]]) -> list[tuple[float, float]]:
-            valid = sorted((start, end) for start, end in ranges if end > start)
-            merged: list[tuple[float, float]] = []
-            for start, end in valid:
-                if not merged or start > merged[-1][1]:
-                    merged.append((start, end))
-                else:
-                    merged[-1] = (merged[-1][0], max(merged[-1][1], end))
-            return merged
 
         def refresh_visible_tracks(self) -> None:
             visible = {
@@ -3577,63 +2698,40 @@ def main() -> int:
         def save_editor_state(self) -> bool:
             if self.current_result is None or self.editor_project is None:
                 return False
-            visibility = {}
-            for stem_name, checkbox in self.track_visibility_checks.items():
-                visibility[stem_name] = checkbox.isChecked()
-            analysis_enabled = {
-                stem_name: checkbox.isChecked()
-                for stem_name, checkbox in self.track_analysis_checks.items()
-            }
-            audio_enabled = {
-                stem_name: checkbox.isChecked()
-                for stem_name, checkbox in self.track_audio_checks.items()
-            }
-            audio_volume = {
-                stem_name: slider.value()
-                for stem_name, slider in self.track_audio_sliders.items()
-            }
-            midi_enabled = {
-                stem_name: checkbox.isChecked()
-                for stem_name, checkbox in self.track_midi_checks.items()
-            }
-            midi_volume = {
-                stem_name: slider.value()
-                for stem_name, slider in self.track_midi_sliders.items()
-            }
-            chord_overrides = [
-                {
-                    "start": chord.start,
-                    "end": chord.end,
-                    "label": chord.label,
-                    "confidence": chord.confidence,
-                }
-                for chord in self.manual_chords
-            ]
-            chord_removals = [
-                {"start": start, "end": end}
-                for start, end in self.removed_chord_ranges
-            ]
+            if self.editor_save_timer.isActive():
+                self.editor_save_timer.stop()
+            snapshot = build_editor_state_snapshot(
+                track_visibility_checks=self.track_visibility_checks,
+                track_analysis_checks=self.track_analysis_checks,
+                track_audio_checks=self.track_audio_checks,
+                track_audio_sliders=self.track_audio_sliders,
+                track_midi_checks=self.track_midi_checks,
+                track_midi_sliders=self.track_midi_sliders,
+                notation_spelling=self.selected_notation_preference(),
+                playhead_seconds=self.timeline.position,
+                manual_chords=self.manual_chords,
+                removed_chord_ranges=self.removed_chord_ranges,
+            )
             try:
-                save_project_manifest(
-                    self.current_result,
-                    track_visibility=visibility,
-                    track_analysis_enabled=analysis_enabled,
-                    track_audio_enabled=audio_enabled,
-                    track_audio_volume=audio_volume,
-                    track_midi_enabled=midi_enabled,
-                    track_midi_volume=midi_volume,
-                    playhead_seconds=self.timeline.position,
-                    chord_overrides=chord_overrides,
-                    chord_removals=chord_removals,
-                )
+                save_editor_state_snapshot(self.current_result, snapshot)
             except Exception as exc:
                 self.logger.exception("Could not save editor state")
                 self.statusBar().showMessage(f"Could not save project state: {exc}", 6000)
                 return False
             return True
 
+        def request_editor_state_save(self, delay_ms: int = 750) -> None:
+            if self.current_result is None or self.editor_project is None:
+                return
+            self.editor_save_timer.start(delay_ms)
+
         def reset_stage_state(self, _path: Path | None = None) -> None:
             self.stop_transport()
+            self.invalidate_worker_token()
+            self.editor_load_token += 1
+            self.editor_load_activity_tokens.clear()
+            self.midi_preview_token += 1
+            self.midi_preview_workers.clear()
             if _path is None:
                 self.drop_zone.reset_prompt()
             self.current_result = None
@@ -3646,6 +2744,12 @@ def main() -> int:
             self.chord_note_overrides = {}
             self.chord_note_filter_context = None
             self.current_chord_base_weights = {}
+            self.current_harmony_context = None
+            self.current_theory_analysis = None
+            self.current_chord_gap_analysis = None
+            self.notation_spelling.blockSignals(True)
+            self.notation_spelling.setCurrentIndex(0)
+            self.notation_spelling.blockSignals(False)
             self.rendering_midi_previews.clear()
             self.clear_transport_players()
             self.track_audio_checks.clear()
@@ -3667,9 +2771,14 @@ def main() -> int:
             self.timeline_slider.setEnabled(False)
             self.fit_song_button.setEnabled(False)
             self.inspect_chord_button.setEnabled(False)
-            self.editor_position.setText(_format_time(0))
-            self.current_chord.setText("Chord: -")
-            self.set_chord_context_text("Notes: -")
+            self.inspect_theory_button.setEnabled(False)
+            self.use_gap_suggestion_button.setEnabled(False)
+            self.inspect_gap_suggestion_button.setEnabled(False)
+            self.editor_position.setText(format_time(0))
+            self.current_chord.setText("Harmony: -")
+            self.set_chord_context_text("Sample: -")
+            self.set_theory_analysis(None)
+            self.set_gap_analysis(None)
             self.reset_activity("Ready for new audio")
             self.track_list.clear()
             self.note_filter_list.clear()
@@ -3725,8 +2834,8 @@ def main() -> int:
                 onset_threshold=self.onset_threshold.value(),
                 frame_threshold=self.frame_threshold.value(),
                 minimum_note_length=self.minimum_note_length.value(),
-                minimum_frequency=_optional_frequency(self.minimum_frequency.value()),
-                maximum_frequency=_optional_frequency(self.maximum_frequency.value()),
+                minimum_frequency=optional_frequency(self.minimum_frequency.value()),
+                maximum_frequency=optional_frequency(self.maximum_frequency.value()),
                 multiple_pitch_bends=self.multiple_pitch_bends.isChecked(),
                 melodia_trick=self.melodia_trick.isChecked(),
                 midi_tempo=self.midi_tempo.value(),
@@ -3754,7 +2863,7 @@ def main() -> int:
 
             for index, stem_name in enumerate(choice.stems):
                 checkbox = QCheckBox(stem_name)
-                checkbox.setChecked(previous.get(stem_name, _default_midi_checked(stem_name)))
+                checkbox.setChecked(previous.get(stem_name, default_midi_checked(stem_name)))
                 can_run = self.generate_midi.isChecked() and (saved_stem is None or stem_name == saved_stem)
                 checkbox.setEnabled(can_run)
                 if saved_stem is not None and stem_name != saved_stem:
@@ -3788,7 +2897,7 @@ def main() -> int:
                 f"Evidence: {choice.score_summary}"
             )
             self.model_runtime.setText(
-                f"Separation: {choice.source} on {_device_label(self.bs_device.currentData(), torch.cuda_available)}. "
+                f"Separation: {choice.source} on {device_label(self.bs_device.currentData(), torch.cuda_available)}. "
                 f"MIDI: Spotify Basic Pitch ONNX on {'ONNX CUDA' if ort.has_cuda else 'ONNX CPU'}."
             )
             self.model_backend_detail.setText(
@@ -3800,13 +2909,20 @@ def main() -> int:
 
         def open_latest_output(self) -> None:
             target = self.latest_output_dir or Path(self.output_dir.text())
-            target.mkdir(parents=True, exist_ok=True)
-            os.startfile(target)
+            self.open_folder_path(target, "output folder")
 
         def open_logs_folder(self) -> None:
-            target = logs_dir()
-            target.mkdir(parents=True, exist_ok=True)
-            os.startfile(target)
+            self.open_folder_path(logs_dir(), "logs folder")
+
+        def open_folder_path(self, target: Path, label: str) -> None:
+            try:
+                opened = open_folder(target)
+            except Exception as exc:
+                self.logger.exception("Could not open %s: %s", label, target)
+                self.append_log(f"Could not open {label}: {exc}")
+                self.statusBar().showMessage(f"Could not open {label}. See logs for details.", 6000)
+                return
+            self.statusBar().showMessage(f"Opened {label}: {opened}", 3000)
 
     def _section_label(text: str) -> QLabel:
         label = QLabel(text)
@@ -3825,9 +2941,6 @@ def main() -> int:
         spin = _double_spin(0.0, 20000.0, 0.0, 10.0, 1)
         spin.setSpecialValueText(special)
         return spin
-
-    def _optional_frequency(value: float) -> float | None:
-        return value if value > 0 else None
 
     def _grid_control(layout: QGridLayout, row: int, column: int, label: str, default: str, widget: QWidget) -> None:
         stack = QVBoxLayout()
@@ -3848,75 +2961,26 @@ def main() -> int:
             if widget is not None:
                 widget.deleteLater()
 
-    def _default_midi_checked(stem_name: str) -> bool:
-        return stem_name.lower() not in {"drums", "drum", "wet"}
-
-    def _device_label(device: str | None, cuda_available: bool) -> str:
-        if device == "cpu":
-            return "PyTorch CPU (forced)"
-        if device:
-            return f"PyTorch CUDA ({device})"
-        return "PyTorch CUDA (auto)" if cuda_available else "PyTorch CPU (auto fallback)"
-
-    def _format_time(seconds: float) -> str:
-        seconds = max(0.0, seconds)
-        minutes = int(seconds // 60)
-        remainder = seconds - (minutes * 60)
-        return f"{minutes:02d}:{remainder:06.3f}"
-
-    def _chord_preview_pitches(label: str, note_names: list[str]) -> list[int]:
-        pitches = []
-        previous = None
-        for note_name in note_names:
-            pitch_class = _pitch_class(note_name)
-            pitch = 48 + pitch_class
-            while previous is not None and pitch <= previous:
-                pitch += 12
-            pitches.append(pitch)
-            previous = pitch
-        if "/" in label:
-            bass_name = label.split("/", 1)[1]
-            bass_pitch = 36 + _pitch_class(bass_name)
-            pitches.insert(0, bass_pitch)
-        return pitches
-
-    def _pitch_class(note_name: str) -> int:
-        pitch_classes = {
-            "C": 0,
-            "C#": 1,
-            "Db": 1,
-            "D": 2,
-            "D#": 3,
-            "Eb": 3,
-            "E": 4,
-            "F": 5,
-            "F#": 6,
-            "Gb": 6,
-            "G": 7,
-            "G#": 8,
-            "Ab": 8,
-            "A": 9,
-            "A#": 10,
-            "Bb": 10,
-            "B": 11,
-        }
-        return pitch_classes.get(note_name, 0)
-
-    def _track_color(stem_name: str) -> QColor:
-        palette = {
-            "vocals": "#0ea5e9",
-            "bass": "#22c55e",
-            "guitar": "#f59e0b",
-            "piano": "#8b5cf6",
-            "other": "#64748b",
-            "drums": "#ef4444",
-            "instrumental": "#14b8a6",
-        }
-        return QColor(palette.get(stem_name.lower(), "#475569"))
-
     app = QApplication([])
     window = MainWindow()
     window.show()
+    smoke_mode = os.environ.get("PITCHSTEMS_GUI_SMOKE")
+    if smoke_mode in {"startup", "project"}:
+        from pitchstems.gui_smoke import run_project_smoke, run_startup_smoke
+
+        def run_smoke_and_exit() -> None:
+            try:
+                run_startup_smoke(window)
+                if smoke_mode == "project":
+                    run_project_smoke(window)
+            except Exception:
+                logger.exception("GUI startup smoke failed")
+                app.exit(1)
+                return
+            app.exit(0)
+
+        QTimer.singleShot(0, run_smoke_and_exit)
+        QTimer.singleShot(10000, lambda: app.exit(2))
     return app.exec()
 
 
