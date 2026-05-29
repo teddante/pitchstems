@@ -81,37 +81,140 @@ class ChordGapAnalysis:
     theory_analysis: TheoryAnalysis | None = None
 
 
-SCALE_REGISTRY: tuple[ScaleDefinition, ...] = (
-    ScaleDefinition("Ionian", (0, 2, 4, 5, 7, 9, 11), "diatonic", ("major",)),
-    ScaleDefinition("Dorian", (0, 2, 3, 5, 7, 9, 10), "diatonic"),
-    ScaleDefinition("Phrygian", (0, 1, 3, 5, 7, 8, 10), "diatonic"),
-    ScaleDefinition("Lydian", (0, 2, 4, 6, 7, 9, 11), "diatonic"),
-    ScaleDefinition("Mixolydian", (0, 2, 4, 5, 7, 9, 10), "diatonic"),
-    ScaleDefinition("Aeolian", (0, 2, 3, 5, 7, 8, 10), "diatonic", ("natural minor",)),
-    ScaleDefinition("Locrian", (0, 1, 3, 5, 6, 8, 10), "diatonic"),
-    ScaleDefinition("Harmonic minor", (0, 2, 3, 5, 7, 8, 11), "minor"),
-    ScaleDefinition("Melodic minor", (0, 2, 3, 5, 7, 9, 11), "minor"),
-    ScaleDefinition("Dorian b2", (0, 1, 3, 5, 7, 9, 10), "melodic minor mode"),
-    ScaleDefinition("Lydian augmented", (0, 2, 4, 6, 8, 9, 11), "melodic minor mode"),
-    ScaleDefinition("Lydian dominant", (0, 2, 4, 6, 7, 9, 10), "melodic minor mode"),
-    ScaleDefinition("Mixolydian b6", (0, 2, 4, 5, 7, 8, 10), "melodic minor mode"),
-    ScaleDefinition("Locrian natural 2", (0, 2, 3, 5, 6, 8, 10), "melodic minor mode"),
-    ScaleDefinition("Altered", (0, 1, 3, 4, 6, 8, 10), "melodic minor mode"),
-    ScaleDefinition("Major pentatonic", (0, 2, 4, 7, 9), "pentatonic"),
-    ScaleDefinition("Minor pentatonic", (0, 3, 5, 7, 10), "pentatonic"),
-    ScaleDefinition("Suspended pentatonic", (0, 2, 5, 7, 10), "pentatonic"),
-    ScaleDefinition("Major blues", (0, 2, 3, 4, 7, 9), "blues"),
-    ScaleDefinition("Minor blues", (0, 3, 5, 6, 7, 10), "blues"),
-    ScaleDefinition("Whole tone", (0, 2, 4, 6, 8, 10), "symmetrical"),
-    ScaleDefinition("Diminished half-whole", (0, 1, 3, 4, 6, 7, 9, 10), "symmetrical"),
-    ScaleDefinition("Diminished whole-half", (0, 2, 3, 5, 6, 8, 9, 11), "symmetrical"),
-    ScaleDefinition("Augmented", (0, 3, 4, 7, 8, 11), "symmetrical"),
-    ScaleDefinition("Phrygian dominant", (0, 1, 4, 5, 7, 8, 10), "harmonic minor mode"),
-    ScaleDefinition("Double harmonic major", (0, 1, 4, 5, 7, 8, 11), "world/common"),
-    ScaleDefinition("Hungarian minor", (0, 2, 3, 6, 7, 8, 11), "world/common"),
-    ScaleDefinition("Neapolitan minor", (0, 1, 3, 5, 7, 8, 11), "world/common"),
-    ScaleDefinition("Persian", (0, 1, 4, 5, 6, 8, 11), "world/common"),
-)
+def _scale(
+    name: str,
+    intervals: tuple[int, ...],
+    family: str,
+    aliases: tuple[str, ...] = (),
+) -> ScaleDefinition:
+    return ScaleDefinition(name, intervals, family, aliases)
+
+
+def _modes(
+    parent_intervals: tuple[int, ...],
+    mode_names: tuple[str, ...],
+    family: str,
+    aliases: dict[str, tuple[str, ...]] | None = None,
+) -> list[ScaleDefinition]:
+    aliases = aliases or {}
+    modes = []
+    for index, name in enumerate(mode_names):
+        root = parent_intervals[index]
+        rotated = parent_intervals[index:] + tuple(interval + 12 for interval in parent_intervals[:index])
+        intervals = tuple((interval - root) % 12 for interval in rotated)
+        modes.append(_scale(name, intervals, family, aliases.get(name, ())))
+    return modes
+
+
+def _scale_registry() -> tuple[ScaleDefinition, ...]:
+    major = (0, 2, 4, 5, 7, 9, 11)
+    melodic_minor = (0, 2, 3, 5, 7, 9, 11)
+    harmonic_minor = (0, 2, 3, 5, 7, 8, 11)
+    harmonic_major = (0, 2, 4, 5, 7, 8, 11)
+    double_harmonic = (0, 1, 4, 5, 7, 8, 11)
+
+    scales = [
+        *_modes(
+            major,
+            ("Ionian", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Aeolian", "Locrian"),
+            "diatonic",
+            aliases={"Ionian": ("major",), "Aeolian": ("natural minor",)},
+        ),
+        *_modes(
+            melodic_minor,
+            (
+                "Melodic minor",
+                "Dorian b2",
+                "Lydian augmented",
+                "Lydian dominant",
+                "Mixolydian b6",
+                "Locrian natural 2",
+                "Altered",
+            ),
+            "melodic minor mode",
+            aliases={"Lydian dominant": ("Acoustic",), "Altered": ("Super Locrian",)},
+        ),
+        *_modes(
+            harmonic_minor,
+            (
+                "Harmonic minor",
+                "Locrian natural 6",
+                "Ionian augmented",
+                "Dorian #4",
+                "Phrygian dominant",
+                "Lydian #2",
+                "Altered diminished",
+            ),
+            "harmonic minor mode",
+            aliases={"Dorian #4": ("Ukrainian Dorian",), "Phrygian dominant": ("Spanish gypsy",)},
+        ),
+        *_modes(
+            harmonic_major,
+            (
+                "Harmonic major",
+                "Dorian b5",
+                "Phrygian b4",
+                "Lydian b3",
+                "Mixolydian b2",
+                "Lydian augmented #2",
+                "Locrian bb7",
+            ),
+            "harmonic major mode",
+        ),
+        *_modes(
+            double_harmonic,
+            (
+                "Double harmonic major",
+                "Lydian #2 #6",
+                "Ultraphrygian",
+                "Hungarian minor",
+                "Oriental",
+                "Ionian augmented #2",
+                "Locrian bb3 bb7",
+            ),
+            "double harmonic mode",
+        ),
+        _scale("Major pentatonic", (0, 2, 4, 7, 9), "pentatonic"),
+        _scale("Minor pentatonic", (0, 3, 5, 7, 10), "pentatonic"),
+        _scale("Suspended pentatonic", (0, 2, 5, 7, 10), "pentatonic"),
+        _scale("Egyptian pentatonic", (0, 2, 5, 7, 10), "pentatonic"),
+        _scale("Hirajoshi", (0, 2, 3, 7, 8), "pentatonic"),
+        _scale("In-sen", (0, 1, 5, 7, 10), "pentatonic"),
+        _scale("Iwato", (0, 1, 5, 6, 10), "pentatonic"),
+        _scale("Kumoi", (0, 2, 3, 7, 9), "pentatonic"),
+        _scale("Yo", (0, 2, 5, 7, 9), "pentatonic"),
+        _scale("Pelog", (0, 1, 3, 7, 8), "pentatonic"),
+        _scale("Major blues", (0, 2, 3, 4, 7, 9), "blues"),
+        _scale("Minor blues", (0, 3, 5, 6, 7, 10), "blues"),
+        _scale("Bebop major", (0, 2, 4, 5, 7, 8, 9, 11), "bebop"),
+        _scale("Bebop dominant", (0, 2, 4, 5, 7, 9, 10, 11), "bebop"),
+        _scale("Bebop minor", (0, 2, 3, 5, 7, 8, 9, 10), "bebop"),
+        _scale("Bebop Dorian", (0, 2, 3, 4, 5, 7, 9, 10), "bebop"),
+        _scale("Whole tone", (0, 2, 4, 6, 8, 10), "symmetrical"),
+        _scale("Diminished half-whole", (0, 1, 3, 4, 6, 7, 9, 10), "symmetrical"),
+        _scale("Diminished whole-half", (0, 2, 3, 5, 6, 8, 9, 11), "symmetrical"),
+        _scale("Augmented", (0, 3, 4, 7, 8, 11), "symmetrical"),
+        _scale("Tritone", (0, 1, 4, 6, 7, 10), "symmetrical"),
+        _scale("Major hexatonic", (0, 2, 4, 5, 7, 9), "hexatonic"),
+        _scale("Minor hexatonic", (0, 2, 3, 5, 7, 10), "hexatonic"),
+        _scale("Prometheus", (0, 2, 4, 6, 9, 10), "hexatonic"),
+        _scale("Blues diminished", (0, 3, 5, 6, 7, 9, 10), "blues"),
+        _scale("Neapolitan minor", (0, 1, 3, 5, 7, 8, 11), "world/common"),
+        _scale("Neapolitan major", (0, 1, 3, 5, 7, 9, 11), "world/common"),
+        _scale("Hungarian major", (0, 3, 4, 6, 7, 9, 10), "world/common"),
+        _scale("Romanian minor", (0, 2, 3, 6, 7, 9, 10), "world/common"),
+        _scale("Persian", (0, 1, 4, 5, 6, 8, 11), "world/common"),
+        _scale("Enigmatic", (0, 1, 4, 6, 8, 10, 11), "world/common"),
+        _scale("Leading whole tone", (0, 2, 4, 6, 8, 10, 11), "world/common"),
+        _scale("Raga Bhairav", (0, 1, 4, 5, 7, 8, 11), "raga/common"),
+        _scale("Raga Todi", (0, 1, 3, 6, 7, 8, 11), "raga/common"),
+        _scale("Raga Marwa", (0, 1, 4, 6, 7, 9, 11), "raga/common"),
+        _scale("Raga Purvi", (0, 1, 4, 6, 7, 8, 11), "raga/common"),
+    ]
+    return tuple(scales)
+
+
+SCALE_REGISTRY: tuple[ScaleDefinition, ...] = _scale_registry()
 
 ROMAN_NUMERALS = ("I", "II", "III", "IV", "V", "VI", "VII")
 
@@ -538,7 +641,7 @@ def _scale_candidates(
         ),
         reverse=True,
     )
-    return candidates[:48]
+    return candidates[:96]
 
 
 def _scale_label(root: int, scale: ScaleDefinition) -> str:

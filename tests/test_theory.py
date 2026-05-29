@@ -11,14 +11,30 @@ from pitchstems.theory import (
 def test_scale_registry_includes_common_modal_and_symmetrical_families() -> None:
     names = {scale.name for scale in SCALE_REGISTRY}
 
+    assert len(SCALE_REGISTRY) >= 60
     assert "Ionian" in names
     assert "Dorian" in names
     assert "Harmonic minor" in names
+    assert "Phrygian dominant" in names
+    assert "Harmonic major" in names
     assert "Melodic minor" in names
+    assert "Altered" in names
     assert "Major pentatonic" in names
+    assert "Hirajoshi" in names
     assert "Minor blues" in names
+    assert "Bebop dominant" in names
     assert "Whole tone" in names
     assert "Diminished half-whole" in names
+    assert "Enigmatic" in names
+    assert "Raga Bhairav" in names
+
+
+def test_generated_modes_keep_intervals_relative_to_each_mode_root() -> None:
+    scales = {scale.name: scale for scale in SCALE_REGISTRY}
+
+    assert scales["Dorian"].intervals == (0, 2, 3, 5, 7, 9, 10)
+    assert scales["Phrygian dominant"].intervals == (0, 1, 4, 5, 7, 8, 10)
+    assert scales["Bebop dominant"].intervals == (0, 2, 4, 5, 7, 9, 10, 11)
 
 
 def test_theory_analysis_separates_pitch_collection_from_tonal_centre() -> None:
