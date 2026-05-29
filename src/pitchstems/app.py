@@ -2857,6 +2857,20 @@ def main() -> int:
     app = QApplication([])
     window = MainWindow()
     window.show()
+    if os.environ.get("PITCHSTEMS_GUI_SMOKE") == "startup":
+        from pitchstems.gui_smoke import run_startup_smoke
+
+        def run_smoke_and_exit() -> None:
+            try:
+                run_startup_smoke(window)
+            except Exception:
+                logger.exception("GUI startup smoke failed")
+                app.exit(1)
+                return
+            app.exit(0)
+
+        QTimer.singleShot(0, run_smoke_and_exit)
+        QTimer.singleShot(10000, lambda: app.exit(2))
     return app.exec()
 
 
