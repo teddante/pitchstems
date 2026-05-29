@@ -80,6 +80,47 @@ def serialize_chord_removals(ranges: list[tuple[float, float]]) -> list[dict[str
     return [{"start": start, "end": end} for start, end in ranges]
 
 
+def build_editor_state_snapshot(
+    *,
+    track_visibility_checks: Mapping[str, Any],
+    track_analysis_checks: Mapping[str, Any],
+    track_audio_checks: Mapping[str, Any],
+    track_audio_sliders: Mapping[str, Any],
+    track_midi_checks: Mapping[str, Any],
+    track_midi_sliders: Mapping[str, Any],
+    notation_spelling: str,
+    playhead_seconds: float,
+    manual_chords: list[ChordRegion],
+    removed_chord_ranges: list[tuple[float, float]],
+) -> EditorStateSnapshot:
+    return EditorStateSnapshot(
+        track_visibility=_checked_map(track_visibility_checks),
+        track_analysis_enabled=_checked_map(track_analysis_checks),
+        track_audio_enabled=_checked_map(track_audio_checks),
+        track_audio_volume=_value_map(track_audio_sliders),
+        track_midi_enabled=_checked_map(track_midi_checks),
+        track_midi_volume=_value_map(track_midi_sliders),
+        notation_spelling=notation_spelling,
+        playhead_seconds=playhead_seconds,
+        chord_overrides=serialize_chord_overrides(manual_chords),
+        chord_removals=serialize_chord_removals(removed_chord_ranges),
+    )
+
+
+def _checked_map(widgets: Mapping[str, Any]) -> dict[str, bool]:
+    return {
+        stem_name: bool(widget.isChecked())
+        for stem_name, widget in widgets.items()
+    }
+
+
+def _value_map(widgets: Mapping[str, Any]) -> dict[str, int]:
+    return {
+        stem_name: int(widget.value())
+        for stem_name, widget in widgets.items()
+    }
+
+
 def save_editor_state_snapshot(result: PipelineResult, snapshot: EditorStateSnapshot) -> Path:
     return save_project_manifest(
         result,

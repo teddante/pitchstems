@@ -26,10 +26,8 @@ from pitchstems.editor_project import (
 )
 from pitchstems.editor_loader import EditorLoadResult, apply_chord_edits, build_editor_load_result
 from pitchstems.editor_state import (
-    EditorStateSnapshot,
+    build_editor_state_snapshot,
     save_editor_state_snapshot,
-    serialize_chord_overrides,
-    serialize_chord_removals,
 )
 from pitchstems.midi_preview import render_midi_preview, render_note_preview
 from pitchstems.model_catalog import model_choice
@@ -2591,35 +2589,17 @@ def main() -> int:
                 return False
             if self.editor_save_timer.isActive():
                 self.editor_save_timer.stop()
-            snapshot = EditorStateSnapshot(
-                track_visibility={
-                    stem_name: checkbox.isChecked()
-                    for stem_name, checkbox in self.track_visibility_checks.items()
-                },
-                track_analysis_enabled={
-                    stem_name: checkbox.isChecked()
-                    for stem_name, checkbox in self.track_analysis_checks.items()
-                },
-                track_audio_enabled={
-                    stem_name: checkbox.isChecked()
-                    for stem_name, checkbox in self.track_audio_checks.items()
-                },
-                track_audio_volume={
-                    stem_name: slider.value()
-                    for stem_name, slider in self.track_audio_sliders.items()
-                },
-                track_midi_enabled={
-                    stem_name: checkbox.isChecked()
-                    for stem_name, checkbox in self.track_midi_checks.items()
-                },
-                track_midi_volume={
-                    stem_name: slider.value()
-                    for stem_name, slider in self.track_midi_sliders.items()
-                },
+            snapshot = build_editor_state_snapshot(
+                track_visibility_checks=self.track_visibility_checks,
+                track_analysis_checks=self.track_analysis_checks,
+                track_audio_checks=self.track_audio_checks,
+                track_audio_sliders=self.track_audio_sliders,
+                track_midi_checks=self.track_midi_checks,
+                track_midi_sliders=self.track_midi_sliders,
                 notation_spelling=self.selected_notation_preference(),
                 playhead_seconds=self.timeline.position,
-                chord_overrides=serialize_chord_overrides(self.manual_chords),
-                chord_removals=serialize_chord_removals(self.removed_chord_ranges),
+                manual_chords=self.manual_chords,
+                removed_chord_ranges=self.removed_chord_ranges,
             )
             try:
                 save_editor_state_snapshot(self.current_result, snapshot)

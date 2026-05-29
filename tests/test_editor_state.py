@@ -3,6 +3,7 @@ from pathlib import Path
 from pitchstems.editor_project import ChordRegion
 from pitchstems.editor_state import (
     EditorStateSnapshot,
+    build_editor_state_snapshot,
     load_editor_state,
     parse_chord_overrides,
     parse_chord_removals,
@@ -43,6 +44,31 @@ def test_serialize_editor_chord_state_round_trips() -> None:
     assert serialize_chord_removals(removals) == [{"start": 3.0, "end": 4.5}]
 
 
+def test_build_editor_state_snapshot_reads_control_state() -> None:
+    snapshot = build_editor_state_snapshot(
+        track_visibility_checks={"bass": _Check(True), "piano": _Check(False)},
+        track_analysis_checks={"bass": _Check(True)},
+        track_audio_checks={"bass": _Check(False)},
+        track_audio_sliders={"bass": _Value(61)},
+        track_midi_checks={"bass": _Check(True)},
+        track_midi_sliders={"bass": _Value(72)},
+        notation_spelling="sharp",
+        playhead_seconds=4.25,
+        manual_chords=[ChordRegion(1.0, 2.0, "G", 0.9)],
+        removed_chord_ranges=[(3.0, 4.0)],
+    )
+
+    assert snapshot.track_visibility == {"bass": True, "piano": False}
+    assert snapshot.track_audio_enabled == {"bass": False}
+    assert snapshot.track_audio_volume == {"bass": 61}
+    assert snapshot.track_midi_enabled == {"bass": True}
+    assert snapshot.track_midi_volume == {"bass": 72}
+    assert snapshot.notation_spelling == "sharp"
+    assert snapshot.playhead_seconds == 4.25
+    assert snapshot.chord_overrides == [{"start": 1.0, "end": 2.0, "label": "G", "confidence": 0.9}]
+    assert snapshot.chord_removals == [{"start": 3.0, "end": 4.0}]
+
+
 def test_save_editor_state_snapshot_preserves_pipeline_fields(tmp_path: Path) -> None:
     normalized = tmp_path / "work" / "song.wav"
     normalized.parent.mkdir(parents=True)
@@ -80,3 +106,19 @@ def test_save_editor_state_snapshot_preserves_pipeline_fields(tmp_path: Path) ->
     assert manifest["editor"]["notation_spelling"] == "flat"
     assert manifest["editor"]["playhead_seconds"] == 12.25
     assert load_editor_state(tmp_path)["track_audio_volume"] == {"bass": 67}
+
+
+class _Check:
+    def __init__(self, checked: bool) -> None:
+        self.checked = checked
+
+    def isChecked(self) -> bool:
+        return self.checked
+
+
+class _Value:
+    def __init__(self, value: int) -> None:
+        self._value = value
+
+    def value(self) -> int:
+        return self._value
