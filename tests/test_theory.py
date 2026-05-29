@@ -1,7 +1,9 @@
 from pitchstems.editor_project import ChordRegion, NoteEvent
 from pitchstems.theory import (
     SCALE_REGISTRY,
+    analyze_chord_gap,
     analyze_theory_region,
+    chord_gap_report,
     theory_analysis_report,
 )
 
@@ -97,6 +99,54 @@ def test_theory_report_explains_evidence_and_formula_terms() -> None:
     assert "Score formula:" in report
     assert "Progression" in report
     assert "Core chord tones" in report
+
+
+def test_chord_gap_suggestions_prefer_continuity_when_gap_has_no_notes() -> None:
+    chords = [
+        ChordRegion(0.0, 1.0, "C", 1.0),
+        ChordRegion(2.0, 3.0, "G", 1.0),
+    ]
+
+    analysis = analyze_chord_gap([], chords, 1.0, 2.0)
+
+    labels = [suggestion.label for suggestion in analysis.suggestions[:2]]
+    assert "C" in labels
+    assert "G" in labels
+    assert analysis.suggestions[0].local_evidence == 1.0
+    assert analysis.previous_chord == chords[0]
+    assert analysis.next_chord == chords[1]
+
+
+def test_chord_gap_suggestions_use_local_midi_evidence_inside_gap() -> None:
+    notes = [
+        _note(1.0, 2.0, 62, 112),  # D
+        _note(1.0, 2.0, 65, 100),  # F
+        _note(1.0, 2.0, 69, 96),  # A
+    ]
+    chords = [
+        ChordRegion(0.0, 1.0, "C", 1.0),
+        ChordRegion(2.0, 3.0, "G", 1.0),
+    ]
+
+    analysis = analyze_chord_gap(notes, chords, 1.0, 2.0)
+
+    assert analysis.suggestions[0].label == "Dm"
+    assert analysis.suggestions[0].local_evidence > 0.8
+    assert analysis.suggestions[0].voice_leading > 0
+    assert analysis.suggestions[0].theory_fit > 0
+
+
+def test_chord_gap_report_explains_gap_formula_terms() -> None:
+    chords = [
+        ChordRegion(0.0, 1.0, "C", 1.0),
+        ChordRegion(2.0, 3.0, "G", 1.0),
+    ]
+
+    report = chord_gap_report(analyze_chord_gap([], chords, 1.0, 2.0))
+
+    assert "Chord Gap Suggestions" in report
+    assert "Voice-leading uses minimum pitch-class movement" in report
+    assert "Score formula:" in report
 
 
 def _note(start: float, end: float, pitch: int, velocity: int = 100) -> NoteEvent:

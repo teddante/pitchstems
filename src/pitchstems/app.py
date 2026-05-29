@@ -34,9 +34,12 @@ from pitchstems.project_store import (
 )
 from pitchstems.separation import SeparationOptions, StemResult
 from pitchstems.theory import (
+    ChordGapAnalysis,
     TheoryAnalysis,
+    analyze_chord_gap,
     analyze_theory_at,
     analyze_theory_region,
+    chord_gap_report,
     theory_analysis_report,
 )
 from pitchstems.transcription import MidiOptions
@@ -1202,18 +1205,69 @@ def main() -> int:
             seconds = self._seconds_from_event(event)
             duration = max(0.0, self.project.duration if self.project else original.end)
             minimum = max(0.08, 4 / self.pixels_per_second)
+            previous_chord, next_chord = self._neighbour_chords(original)
+            lower_bound = previous_chord.end if previous_chord else 0.0
+            upper_bound = next_chord.start if next_chord else duration
             if mode == "move":
                 delta = seconds - self._chord_drag["press_seconds"]
-                length = original.duration
-                start = max(0.0, min(original.start + delta, max(0.0, duration - length)))
+                length = min(original.duration, max(minimum, upper_bound - lower_bound))
+                start = max(lower_bound, min(original.start + delta, max(lower_bound, upper_bound - length)))
                 end = start + length
+                if not (event.modifiers() & Qt.AltModifier):
+                    snapped_start, start_delta = self._snap_seconds(start, original)
+                    snapped_end, end_delta = self._snap_seconds(end, original)
+                    if abs(start_delta) <= abs(end_delta):
+                        start = max(lower_bound, min(snapped_start, upper_bound - length))
+                        end = start + length
+                    else:
+                        end = min(upper_bound, max(snapped_end, lower_bound + length))
+                        start = end - length
             elif mode == "resize_start":
                 end = original.end
-                start = max(0.0, min(seconds, end - minimum))
+                start = max(lower_bound, min(seconds, end - minimum))
+                if not (event.modifiers() & Qt.AltModifier):
+                    start = max(lower_bound, min(self._snap_seconds(start, original)[0], end - minimum))
             else:
                 start = original.start
-                end = min(duration, max(seconds, start + minimum))
+                end = min(upper_bound, max(seconds, start + minimum))
+                if not (event.modifiers() & Qt.AltModifier):
+                    end = min(upper_bound, max(self._snap_seconds(end, original)[0], start + minimum))
             return ChordRegion(start=start, end=end, label=original.label, confidence=original.confidence)
+
+        def _neighbour_chords(self, chord: ChordRegion) -> tuple[ChordRegion | None, ChordRegion | None]:
+            if self.project is None:
+                return None, None
+            other_chords = [other for other in self.project.chords if other != chord]
+            previous = max(
+                (other for other in other_chords if other.end <= chord.start),
+                key=lambda item: item.end,
+                default=None,
+            )
+            next_chord = min(
+                (other for other in other_chords if other.start >= chord.end),
+                key=lambda item: item.start,
+                default=None,
+            )
+            return previous, next_chord
+
+        def _snap_seconds(self, seconds: float, ignored_chord: ChordRegion) -> tuple[float, float]:
+            if self.project is None:
+                return seconds, 0.0
+            threshold = max(0.035, 10 / self.pixels_per_second)
+            targets = [0.0, self.project.duration, self.position]
+            if self.selection_start is not None:
+                targets.append(self.selection_start)
+            if self.selection_end is not None:
+                targets.append(self.selection_end)
+            for chord in self.project.chords:
+                if chord == ignored_chord:
+                    continue
+                targets.extend([chord.start, chord.end])
+            nearest = min(targets, key=lambda target: abs(target - seconds), default=seconds)
+            delta = nearest - seconds
+            if abs(delta) <= threshold:
+                return nearest, delta
+            return seconds, 0.0
 
         def _chord_at_event(self, event) -> ChordRegion | None:
             if self.project is None:
@@ -1313,6 +1367,7 @@ def main() -> int:
             self.chord_note_filter_context = None
             self.current_chord_base_weights: dict[int, float] = {}
             self.current_theory_analysis: TheoryAnalysis | None = None
+            self.current_chord_gap_analysis: ChordGapAnalysis | None = None
             self.updating_chord_note_filter = False
 
             self.drop_zone = DropZone()
@@ -1499,6 +1554,13 @@ def main() -> int:
             self.inspect_theory_button.setToolTip(
                 "Open a detailed report of the current scale, key, mode, and progression evidence."
             )
+            self.gap_suggestion_list = QListWidget()
+            self.gap_suggestion_list.setMinimumHeight(105)
+            self.gap_suggestion_list.setAlternatingRowColors(True)
+            self.use_gap_suggestion_button = QPushButton("Use")
+            self.use_gap_suggestion_button.setEnabled(False)
+            self.inspect_gap_suggestion_button = QPushButton("Inspect")
+            self.inspect_gap_suggestion_button.setEnabled(False)
             self.piano_chord_view = PianoChordWidget()
             self.preview_chord_button = QPushButton("Play Chord")
             self.use_chord_button = QPushButton("Use for Selection")
@@ -1715,6 +1777,13 @@ def main() -> int:
             editor_side.addLayout(theory_header)
             editor_side.addWidget(self.theory_context)
             editor_side.addWidget(self.theory_list, 1)
+            gap_header = QHBoxLayout()
+            gap_header.setSpacing(6)
+            gap_header.addWidget(_section_label("Gap Suggestions"))
+            gap_header.addWidget(self.use_gap_suggestion_button)
+            gap_header.addWidget(self.inspect_gap_suggestion_button)
+            editor_side.addLayout(gap_header)
+            editor_side.addWidget(self.gap_suggestion_list, 1)
             editor_side_panel.setLayout(editor_side)
             track_mix_panel = QWidget()
             track_mix_panel.setFixedWidth(292)
@@ -1769,6 +1838,11 @@ def main() -> int:
             self.reset_note_filter_button.clicked.connect(self.reset_chord_note_filter)
             self.inspect_chord_button.clicked.connect(self.inspect_current_chord_analysis)
             self.inspect_theory_button.clicked.connect(self.inspect_current_theory_analysis)
+            self.use_gap_suggestion_button.clicked.connect(self.use_selected_gap_suggestion)
+            self.inspect_gap_suggestion_button.clicked.connect(self.inspect_current_gap_suggestions)
+            self.gap_suggestion_list.currentItemChanged.connect(
+                lambda *_args: self.refresh_gap_suggestion_actions()
+            )
             self.note_filter_list.itemChanged.connect(self.handle_chord_note_filter_changed)
             self.min_note_evidence_slider.valueChanged.connect(self.handle_min_note_evidence_changed)
             self.chord_list.itemDoubleClicked.connect(self.preview_chord_item)
@@ -2978,6 +3052,85 @@ def main() -> int:
                     f"Scale: {' - '.join(analysis.scale_notes) or '-'}"
                 )
 
+        def refresh_current_gap_suggestions(self, source_notes: list[NoteEvent]) -> None:
+            if self.editor_project is None:
+                self.set_gap_analysis(None)
+                return
+            gap = self.current_chord_gap_range()
+            if gap is None:
+                self.set_gap_analysis(None)
+                return
+            start, end = gap
+            analysis = analyze_chord_gap(
+                source_notes,
+                self.editor_project.chords,
+                start,
+                end,
+                scoring_options=self.chord_scoring_options(),
+            )
+            self.set_gap_analysis(analysis)
+
+        def current_chord_gap_range(self) -> tuple[float, float] | None:
+            if self.editor_project is None:
+                return None
+            selection = self.timeline.selection_range()
+            if selection is not None:
+                start, end = selection
+                if end - start >= 0.05:
+                    return start, end
+                return None
+            position = self.timeline.position
+            sorted_chords = sorted(self.editor_project.chords, key=lambda chord: (chord.start, chord.end))
+            for chord in sorted_chords:
+                if chord.start <= position < chord.end:
+                    return None
+            previous = max(
+                (chord for chord in sorted_chords if chord.end <= position),
+                key=lambda chord: chord.end,
+                default=None,
+            )
+            next_chord = min(
+                (chord for chord in sorted_chords if chord.start >= position),
+                key=lambda chord: chord.start,
+                default=None,
+            )
+            start = previous.end if previous is not None else 0.0
+            end = next_chord.start if next_chord is not None else self.editor_project.duration
+            if end - start < 0.05:
+                return None
+            return start, end
+
+        def set_gap_analysis(self, analysis: ChordGapAnalysis | None) -> None:
+            self.current_chord_gap_analysis = analysis
+            self.gap_suggestion_list.clear()
+            if analysis is None or not analysis.suggestions:
+                self.gap_suggestion_list.addItem("No chord-track gap selected or under the playhead.")
+                self.refresh_gap_suggestion_actions()
+                return
+            self.gap_suggestion_list.addItem(
+                f"Gap {_format_time(analysis.start)} - {_format_time(analysis.end)}"
+            )
+            for index, suggestion in enumerate(analysis.suggestions[:8]):
+                item = QListWidgetItem(
+                    f"{suggestion.label}  {suggestion.score:.0%}\n"
+                    f"{suggestion.action.replace('_', ' ')} | local {suggestion.local_evidence:.0%}, "
+                    f"theory {suggestion.theory_fit:.0%}, voice {suggestion.voice_leading:.0%}"
+                )
+                item.setData(Qt.UserRole, index)
+                item.setToolTip("\n".join(suggestion.explanation))
+                self.gap_suggestion_list.addItem(item)
+            self.gap_suggestion_list.setCurrentRow(1)
+            self.refresh_gap_suggestion_actions()
+
+        def refresh_gap_suggestion_actions(self) -> None:
+            item = self.gap_suggestion_list.currentItem()
+            has_suggestion = bool(item and item.data(Qt.UserRole) is not None)
+            self.use_gap_suggestion_button.setEnabled(has_suggestion)
+            self.inspect_gap_suggestion_button.setEnabled(
+                self.current_chord_gap_analysis is not None
+                and bool(self.current_chord_gap_analysis.suggestions)
+            )
+
         def chord_min_note_floor(self) -> float:
             return self.min_note_evidence_slider.value() / 100
 
@@ -2995,6 +3148,7 @@ def main() -> int:
                 self.chord_list.clear()
                 self.refresh_chord_keyboard()
                 self.set_theory_analysis(None)
+                self.set_gap_analysis(None)
                 self.note_filter_list.clear()
                 self.inspect_chord_button.setEnabled(False)
                 return
@@ -3027,6 +3181,7 @@ def main() -> int:
                 )
                 self._set_chord_candidates(analysis)
                 self.refresh_current_theory(source_notes, seconds)
+                self.refresh_current_gap_suggestions(source_notes)
                 self.populate_note_filter_list(self.current_chord_base_weights)
                 if analysis.note_weights:
                     note_text = ", ".join(
@@ -3056,6 +3211,7 @@ def main() -> int:
             self.current_chord.setText(f"Chord: {chord}  ({analysis.confidence:.0%})")
             self._set_chord_candidates(analysis)
             self.refresh_current_theory(source_notes, seconds)
+            self.refresh_current_gap_suggestions(source_notes)
             self.populate_note_filter_list(self.current_chord_base_weights)
             if active_notes:
                 unique_pitches = sorted({note.pitch for note in active_notes})
@@ -3268,6 +3424,47 @@ def main() -> int:
             dialog.setLayout(layout)
             dialog.resize(820, 680)
             dialog.exec()
+
+        def inspect_current_gap_suggestions(self) -> None:
+            if self.current_chord_gap_analysis is None:
+                return
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Chord Gap Suggestions")
+            layout = QVBoxLayout()
+            text = QTextEdit()
+            text.setReadOnly(True)
+            text.setPlainText(chord_gap_report(self.current_chord_gap_analysis))
+            layout.addWidget(text)
+            close_button = QPushButton("Close")
+            close_button.clicked.connect(dialog.accept)
+            button_row = QHBoxLayout()
+            button_row.addStretch(1)
+            button_row.addWidget(close_button)
+            layout.addLayout(button_row)
+            dialog.setLayout(layout)
+            dialog.resize(820, 680)
+            dialog.exec()
+
+        def use_selected_gap_suggestion(self) -> None:
+            if self.current_chord_gap_analysis is None:
+                return
+            item = self.gap_suggestion_list.currentItem()
+            if item is None or item.data(Qt.UserRole) is None:
+                return
+            suggestion = self.current_chord_gap_analysis.suggestions[int(item.data(Qt.UserRole))]
+            chord = ChordRegion(
+                start=suggestion.start,
+                end=suggestion.end,
+                label=suggestion.label,
+                confidence=suggestion.score,
+            )
+            self.insert_manual_chord(chord)
+            self.refresh_editor_project_from_chord_edits(chord)
+            self.statusBar().showMessage(
+                f"Filled gap with {suggestion.label}: "
+                f"{_format_time(suggestion.start)} - {_format_time(suggestion.end)}.",
+                5000,
+            )
 
         def current_chord_analysis_report(self) -> str:
             source_notes = self.chord_analysis_notes()
@@ -3751,6 +3948,7 @@ def main() -> int:
             self.chord_note_filter_context = None
             self.current_chord_base_weights = {}
             self.current_theory_analysis = None
+            self.current_chord_gap_analysis = None
             self.rendering_midi_previews.clear()
             self.clear_transport_players()
             self.track_audio_checks.clear()
@@ -3773,10 +3971,13 @@ def main() -> int:
             self.fit_song_button.setEnabled(False)
             self.inspect_chord_button.setEnabled(False)
             self.inspect_theory_button.setEnabled(False)
+            self.use_gap_suggestion_button.setEnabled(False)
+            self.inspect_gap_suggestion_button.setEnabled(False)
             self.editor_position.setText(_format_time(0))
             self.current_chord.setText("Chord: -")
             self.set_chord_context_text("Notes: -")
             self.set_theory_analysis(None)
+            self.set_gap_analysis(None)
             self.reset_activity("Ready for new audio")
             self.track_list.clear()
             self.note_filter_list.clear()
