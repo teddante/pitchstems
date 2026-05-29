@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import QUrl
@@ -7,6 +8,15 @@ from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 
 from pitchstems.midi_preview import valid_preview_wav
 from pitchstems.pipeline import PipelineResult
+
+
+def safe_qt_multimedia_call(logger, message: str, callback: Callable[[], None]) -> bool:
+    try:
+        callback()
+        return True
+    except RuntimeError:
+        logger.exception(message)
+        return False
 
 
 class TransportController:
@@ -47,14 +57,17 @@ class TransportController:
 
     def clear_players(self) -> None:
         for player in self.players():
-            try:
-                player.pause()
-                player.setSource(QUrl())
-                player.deleteLater()
-            except RuntimeError:
-                self.logger.exception("Transport player cleanup failed")
+            safe_qt_multimedia_call(
+                self.logger,
+                "Transport player cleanup failed",
+                lambda player=player: clear_player_source(player),
+            )
         for output in [*self.track_audio_outputs.values(), *self.midi_audio_outputs.values()]:
-            output.deleteLater()
+            safe_qt_multimedia_call(
+                self.logger,
+                "Transport audio output cleanup failed",
+                lambda output=output: output.deleteLater(),
+            )
         self.track_players.clear()
         self.track_audio_outputs.clear()
         self.midi_players.clear()
@@ -94,10 +107,19 @@ class TransportController:
                 midi_slider.setEnabled(True)
                 midi_slider.setToolTip("MIDI preview audio volume.")
             if self.is_playing and self.midi_track_enabled(stem_name):
-                midi_player.setPosition(int(position_seconds * 1000))
-                midi_player.play()
+                safe_qt_multimedia_call(
+                    self.logger,
+                    "MIDI preview player start failed",
+                    lambda midi_player=midi_player, position_ms=int(position_seconds * 1000): start_player(
+                        midi_player, position_ms
+                    ),
+                )
             else:
-                midi_player.pause()
+                safe_qt_multimedia_call(
+                    self.logger,
+                    "MIDI preview player pause failed",
+                    lambda midi_player=midi_player: midi_player.pause(),
+                )
         self.refresh_mix()
         return attached
 
@@ -107,11 +129,24 @@ class TransportController:
             slider = self.track_audio_sliders.get(stem_name)
             is_enabled = enabled.isChecked() if enabled else True
             volume = slider.value() / 100 if slider else 0.8
-            output.setVolume(volume if is_enabled else 0.0)
+            safe_qt_multimedia_call(
+                self.logger,
+                "Track audio volume update failed",
+                lambda output=output, volume=volume, is_enabled=is_enabled: output.setVolume(
+                    volume if is_enabled else 0.0
+                ),
+            )
         for stem_name, output in self.midi_audio_outputs.items():
             slider = self.track_midi_sliders.get(stem_name)
             volume = slider.value() / 100 if slider else 0.7
-            output.setVolume(volume if self.midi_track_enabled(stem_name) else 0.0)
+            enabled = self.midi_track_enabled(stem_name)
+            safe_qt_multimedia_call(
+                self.logger,
+                "MIDI audio volume update failed",
+                lambda output=output, volume=volume, enabled=enabled: output.setVolume(
+                    volume if enabled else 0.0
+                ),
+            )
 
     def midi_track_enabled(self, stem_name: str) -> bool:
         checkbox = self.track_midi_checks.get(stem_name)
@@ -135,39 +170,57 @@ class TransportController:
     def play(self, start_position: float) -> None:
         position_ms = int(start_position * 1000)
         for player in self.track_players.values():
-            player.setPosition(position_ms)
-            player.play()
+            safe_qt_multimedia_call(
+                self.logger,
+                "Track player start failed",
+                lambda player=player: start_player(player, position_ms),
+            )
         for stem_name, player in self.midi_players.items():
-            player.setPosition(position_ms)
             if self.midi_track_enabled(stem_name):
-                player.play()
+                safe_qt_multimedia_call(
+                    self.logger,
+                    "MIDI player start failed",
+                    lambda player=player: start_player(player, position_ms),
+                )
             else:
-                player.pause()
+                safe_qt_multimedia_call(
+                    self.logger,
+                    "MIDI player pause failed",
+                    lambda player=player: pause_player_at(player, position_ms),
+                )
         self.is_playing = True
 
     def pause(self) -> bool:
         if not self.is_playing:
             return False
         for player in self.players():
-            player.pause()
+            safe_qt_multimedia_call(
+                self.logger,
+                "Transport pause failed",
+                lambda player=player: player.pause(),
+            )
         self.is_playing = False
         return True
 
     def stop(self) -> None:
         self.is_playing = False
         for player in self.players():
-            try:
-                player.pause()
-                player.setPosition(0)
-            except RuntimeError:
-                self.logger.exception("Transport stop failed")
+            safe_qt_multimedia_call(
+                self.logger,
+                "Transport stop failed",
+                lambda player=player: stop_player_at_start(player),
+            )
 
     def seek(self, seconds: float) -> None:
         if not self.track_players:
             return
         position_ms = int(seconds * 1000)
         for player in self.players():
-            player.setPosition(position_ms)
+            safe_qt_multimedia_call(
+                self.logger,
+                "Transport seek failed",
+                lambda player=player: player.setPosition(position_ms),
+            )
 
     def master_player(self) -> QMediaPlayer | None:
         return next(iter(self.track_players.values()), None)
@@ -178,7 +231,11 @@ class TransportController:
         master = master or self.master_player()
         if master is None:
             return
-        master_position = master.position()
+        try:
+            master_position = master.position()
+        except RuntimeError:
+            self.logger.exception("Transport master position read failed")
+            return
         for player in self.players():
             if player is master:
                 continue
@@ -199,6 +256,27 @@ def find_existing_midi_previews(result: PipelineResult) -> dict[str, Path]:
         if valid_preview_wav(preview):
             previews[stem.name] = preview
     return previews
+
+
+def clear_player_source(player: QMediaPlayer) -> None:
+    player.pause()
+    player.setSource(QUrl())
+    player.deleteLater()
+
+
+def start_player(player: QMediaPlayer, position_ms: int) -> None:
+    player.setPosition(position_ms)
+    player.play()
+
+
+def pause_player_at(player: QMediaPlayer, position_ms: int) -> None:
+    player.setPosition(position_ms)
+    player.pause()
+
+
+def stop_player_at_start(player: QMediaPlayer) -> None:
+    player.pause()
+    player.setPosition(0)
 
 
 def loop_playback_start(position: float, selection: tuple[float, float] | None) -> float:

@@ -5,7 +5,11 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from pitchstems.gui_transport import find_existing_midi_previews, loop_playback_start  # noqa: E402
+from pitchstems.gui_transport import (  # noqa: E402
+    find_existing_midi_previews,
+    loop_playback_start,
+    safe_qt_multimedia_call,
+)
 from pitchstems.pipeline import PipelineResult  # noqa: E402
 from pitchstems.separation import StemResult  # noqa: E402
 
@@ -60,9 +64,36 @@ def test_find_existing_midi_previews_ignores_unreadable_wavs(tmp_path: Path) -> 
     assert find_existing_midi_previews(result) == {}
 
 
+def test_safe_qt_multimedia_call_reports_deleted_qt_objects() -> None:
+    logger = _Logger()
+
+    def fail() -> None:
+        raise RuntimeError("wrapped C/C++ object has been deleted")
+
+    assert not safe_qt_multimedia_call(logger, "cleanup failed", fail)
+    assert logger.messages == ["cleanup failed"]
+
+
+def test_safe_qt_multimedia_call_returns_true_when_operation_succeeds() -> None:
+    logger = _Logger()
+    calls = []
+
+    assert safe_qt_multimedia_call(logger, "cleanup failed", lambda: calls.append("ok"))
+    assert calls == ["ok"]
+    assert logger.messages == []
+
+
 def _write_wav(path: Path) -> None:
     with wave.open(str(path), "wb") as wav:
         wav.setnchannels(1)
         wav.setsampwidth(2)
         wav.setframerate(8000)
         wav.writeframes(b"\x00\x00" * 16)
+
+
+class _Logger:
+    def __init__(self) -> None:
+        self.messages: list[str] = []
+
+    def exception(self, message: str) -> None:
+        self.messages.append(message)
