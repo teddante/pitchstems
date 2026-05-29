@@ -24,6 +24,15 @@ from pitchstems.editor_project import (
     midi_velocity_energy,
     midi_note_name,
 )
+from pitchstems.editor_state import (
+    EditorStateSnapshot,
+    load_editor_state,
+    parse_chord_overrides,
+    parse_chord_removals,
+    save_editor_state_snapshot,
+    serialize_chord_overrides,
+    serialize_chord_removals,
+)
 from pitchstems.midi_preview import render_midi_preview, render_note_preview
 from pitchstems.model_catalog import model_choice
 from pitchstems.notation import pitch_class_for_name, pitch_class_name, spelling_preference_from_label
@@ -31,8 +40,6 @@ from pitchstems.pipeline import PipelineResult, process_audio_file, process_midi
 from pitchstems.project_store import (
     PROJECT_FILENAME,
     load_pipeline_result,
-    load_project_manifest,
-    save_project_manifest,
 )
 from pitchstems.separation import SeparationOptions, StemResult
 from pitchstems.theory import (
@@ -1704,6 +1711,13 @@ def main() -> int:
 
             self.transport_timer = QTimer(self)
             self.transport_timer.timeout.connect(self.update_transport_position)
+            self.editor_save_timer = QTimer(self)
+            self.editor_save_timer.setSingleShot(True)
+            self.editor_save_timer.timeout.connect(self.save_editor_state)
+
+        def closeEvent(self, event) -> None:
+            self.save_editor_state()
+            super().closeEvent(event)
 
         def begin_activity(self, message: str, busy: bool = True) -> None:
             self.activity_depth += 1
@@ -2179,30 +2193,10 @@ def main() -> int:
             self.logger.info("Editor project loaded")
 
         def chord_overrides_from_editor_state(self, editor_state: dict) -> list[ChordRegion]:
-            chords: list[ChordRegion] = []
-            for item in editor_state.get("chord_overrides", []):
-                try:
-                    start = float(item.get("start", 0.0))
-                    end = float(item.get("end", 0.0))
-                    label = str(item.get("label", "")).strip()
-                    confidence = float(item.get("confidence", 1.0))
-                except (TypeError, ValueError):
-                    continue
-                if label and end > start:
-                    chords.append(ChordRegion(start=start, end=end, label=label, confidence=confidence))
-            return sorted(chords, key=lambda chord: (chord.start, chord.end, chord.label))
+            return parse_chord_overrides(editor_state)
 
         def chord_removals_from_editor_state(self, editor_state: dict) -> list[tuple[float, float]]:
-            ranges: list[tuple[float, float]] = []
-            for item in editor_state.get("chord_removals", []):
-                try:
-                    start = float(item.get("start", 0.0))
-                    end = float(item.get("end", 0.0))
-                except (TypeError, ValueError):
-                    continue
-                if end > start:
-                    ranges.append((start, end))
-            return sorted(ranges)
+            return parse_chord_removals(editor_state)
 
         def apply_manual_chords(self) -> None:
             if self.editor_project is None or (not self.manual_chords and not self.removed_chord_ranges):
@@ -2242,11 +2236,7 @@ def main() -> int:
             self.save_editor_state()
 
         def load_editor_state(self, result: PipelineResult) -> dict:
-            try:
-                manifest = load_project_manifest(result.project_dir / PROJECT_FILENAME)
-            except Exception:
-                return {}
-            return manifest.get("editor", {})
+            return load_editor_state(result.project_dir)
 
         def refresh_editor_lists(self, track_visibility: dict[str, bool] | None = None) -> None:
             track_visibility = track_visibility or {}
@@ -2824,7 +2814,7 @@ def main() -> int:
             if seek_players:
                 self.seek_audio_players(seconds)
             if save:
-                self.save_editor_state()
+                self.request_editor_state_save()
 
         def set_editor_selection(self, selection: tuple[float, float] | None) -> None:
             self.refresh_current_harmony(self.timeline.position)
@@ -3789,61 +3779,50 @@ def main() -> int:
         def save_editor_state(self) -> bool:
             if self.current_result is None or self.editor_project is None:
                 return False
-            visibility = {}
-            for stem_name, checkbox in self.track_visibility_checks.items():
-                visibility[stem_name] = checkbox.isChecked()
-            analysis_enabled = {
-                stem_name: checkbox.isChecked()
-                for stem_name, checkbox in self.track_analysis_checks.items()
-            }
-            audio_enabled = {
-                stem_name: checkbox.isChecked()
-                for stem_name, checkbox in self.track_audio_checks.items()
-            }
-            audio_volume = {
-                stem_name: slider.value()
-                for stem_name, slider in self.track_audio_sliders.items()
-            }
-            midi_enabled = {
-                stem_name: checkbox.isChecked()
-                for stem_name, checkbox in self.track_midi_checks.items()
-            }
-            midi_volume = {
-                stem_name: slider.value()
-                for stem_name, slider in self.track_midi_sliders.items()
-            }
-            chord_overrides = [
-                {
-                    "start": chord.start,
-                    "end": chord.end,
-                    "label": chord.label,
-                    "confidence": chord.confidence,
-                }
-                for chord in self.manual_chords
-            ]
-            chord_removals = [
-                {"start": start, "end": end}
-                for start, end in self.removed_chord_ranges
-            ]
+            if self.editor_save_timer.isActive():
+                self.editor_save_timer.stop()
+            snapshot = EditorStateSnapshot(
+                track_visibility={
+                    stem_name: checkbox.isChecked()
+                    for stem_name, checkbox in self.track_visibility_checks.items()
+                },
+                track_analysis_enabled={
+                    stem_name: checkbox.isChecked()
+                    for stem_name, checkbox in self.track_analysis_checks.items()
+                },
+                track_audio_enabled={
+                    stem_name: checkbox.isChecked()
+                    for stem_name, checkbox in self.track_audio_checks.items()
+                },
+                track_audio_volume={
+                    stem_name: slider.value()
+                    for stem_name, slider in self.track_audio_sliders.items()
+                },
+                track_midi_enabled={
+                    stem_name: checkbox.isChecked()
+                    for stem_name, checkbox in self.track_midi_checks.items()
+                },
+                track_midi_volume={
+                    stem_name: slider.value()
+                    for stem_name, slider in self.track_midi_sliders.items()
+                },
+                notation_spelling=self.selected_notation_preference(),
+                playhead_seconds=self.timeline.position,
+                chord_overrides=serialize_chord_overrides(self.manual_chords),
+                chord_removals=serialize_chord_removals(self.removed_chord_ranges),
+            )
             try:
-                save_project_manifest(
-                    self.current_result,
-                    track_visibility=visibility,
-                    track_analysis_enabled=analysis_enabled,
-                    track_audio_enabled=audio_enabled,
-                    track_audio_volume=audio_volume,
-                    track_midi_enabled=midi_enabled,
-                    track_midi_volume=midi_volume,
-                    notation_spelling=self.selected_notation_preference(),
-                    playhead_seconds=self.timeline.position,
-                    chord_overrides=chord_overrides,
-                    chord_removals=chord_removals,
-                )
+                save_editor_state_snapshot(self.current_result, snapshot)
             except Exception as exc:
                 self.logger.exception("Could not save editor state")
                 self.statusBar().showMessage(f"Could not save project state: {exc}", 6000)
                 return False
             return True
+
+        def request_editor_state_save(self, delay_ms: int = 750) -> None:
+            if self.current_result is None or self.editor_project is None:
+                return
+            self.editor_save_timer.start(delay_ms)
 
         def reset_stage_state(self, _path: Path | None = None) -> None:
             self.stop_transport()
