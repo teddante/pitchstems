@@ -110,7 +110,7 @@ def build_editor_state_snapshot(
         track_analysis_enabled=_checked_map(track_analysis_checks),
         track_audio_enabled=_checked_map(track_audio_checks),
         track_audio_volume=_value_map(track_audio_sliders),
-        track_midi_enabled=_checked_map(track_midi_checks),
+        track_midi_enabled=_enabled_checked_map(track_midi_checks),
         track_midi_volume=_value_map(track_midi_sliders),
         notation_spelling=notation_spelling,
         playhead_seconds=playhead_seconds,
@@ -122,6 +122,13 @@ def build_editor_state_snapshot(
 def _checked_map(widgets: Mapping[str, Any]) -> dict[str, bool]:
     return {
         stem_name: bool(widget.isChecked())
+        for stem_name, widget in widgets.items()
+    }
+
+
+def _enabled_checked_map(widgets: Mapping[str, Any]) -> dict[str, bool]:
+    return {
+        stem_name: bool(widget.isChecked() and (not hasattr(widget, "isEnabled") or widget.isEnabled()))
         for stem_name, widget in widgets.items()
     }
 

@@ -1461,9 +1461,9 @@ def main() -> int:
                 self.track_audio_sliders[track.name] = audio_slider
                 toggle_row.addWidget(audio_check)
 
-                midi_check = QCheckBox("MIDI")
-                midi_check.setChecked(midi_enabled.get(track.name, False))
                 has_midi_notes = note_count > 0
+                midi_check = QCheckBox("MIDI")
+                midi_check.setChecked(has_midi_notes and midi_enabled.get(track.name, False))
                 midi_check.setEnabled(has_midi_notes)
                 midi_check.setToolTip("Play this stem's generated MIDI preview audio. Missing previews render only when this MIDI track is turned on.")
                 midi_slider = QSlider(Qt.Horizontal)

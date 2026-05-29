@@ -89,6 +89,23 @@ def test_build_editor_state_snapshot_reads_control_state() -> None:
     assert snapshot.chord_removals == [{"start": 3.0, "end": 4.0}]
 
 
+def test_build_editor_state_snapshot_saves_disabled_midi_as_off() -> None:
+    snapshot = build_editor_state_snapshot(
+        track_visibility_checks={},
+        track_analysis_checks={},
+        track_audio_checks={},
+        track_audio_sliders={},
+        track_midi_checks={"piano": _Check(True, enabled=False)},
+        track_midi_sliders={"piano": _Value(72)},
+        notation_spelling="auto",
+        playhead_seconds=0,
+        manual_chords=[],
+        removed_chord_ranges=[],
+    )
+
+    assert snapshot.track_midi_enabled == {"piano": False}
+
+
 def test_save_editor_state_snapshot_preserves_pipeline_fields(tmp_path: Path) -> None:
     normalized = tmp_path / "work" / "song.wav"
     normalized.parent.mkdir(parents=True)
@@ -129,11 +146,15 @@ def test_save_editor_state_snapshot_preserves_pipeline_fields(tmp_path: Path) ->
 
 
 class _Check:
-    def __init__(self, checked: bool) -> None:
+    def __init__(self, checked: bool, enabled: bool = True) -> None:
         self.checked = checked
+        self.enabled = enabled
 
     def isChecked(self) -> bool:
         return self.checked
+
+    def isEnabled(self) -> bool:
+        return self.enabled
 
 
 class _Value:
