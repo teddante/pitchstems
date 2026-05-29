@@ -179,7 +179,7 @@ def main() -> int:
             self.editor_load_token = 0
             self.editor_load_activity_tokens: set[int] = set()
             self.midi_preview_token = 0
-            self.midi_preview_workers: dict[tuple[Path, str], threading.Thread] = {}
+            self.midi_preview_workers: dict[tuple[Path, str], tuple[int, threading.Thread]] = {}
             self.latest_output_dir: Path | None = None
             self.current_result: PipelineResult | None = None
             self.current_stems: list[StemResult] = []
@@ -1102,7 +1102,7 @@ def main() -> int:
                 elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEWS":
                     _kind, token, project_dir, requested_stems, previews = message
                     for stem_name in requested_stems:
-                        self.midi_preview_workers.pop((project_dir, stem_name.lower()), None)
+                        self.clear_midi_preview_worker(project_dir, stem_name, int(token))
                     if (
                         token == self.midi_preview_token
                         and self.current_result is not None
@@ -1115,7 +1115,7 @@ def main() -> int:
                 elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEW_FAILED":
                     _kind, token, project_dir, requested_stems, error = message
                     for stem_name in requested_stems:
-                        self.midi_preview_workers.pop((project_dir, stem_name.lower()), None)
+                        self.clear_midi_preview_worker(project_dir, stem_name, int(token))
                     if (
                         token == self.midi_preview_token
                         and self.current_result is not None
@@ -1160,6 +1160,7 @@ def main() -> int:
             self.editor_load_token += 1
             self.current_result = result
             self.midi_preview_token += 1
+            self.midi_preview_workers.clear()
             self.current_stems = result.stems
             self.current_input_stem = (result.source_audio or result.normalized_audio).stem
             self.latest_output_dir = result.project_dir
@@ -1670,12 +1671,25 @@ def main() -> int:
 
             worker_thread = threading.Thread(target=worker, daemon=True)
             for stem_name in missing:
-                self.midi_preview_workers[(result.project_dir, stem_name.lower())] = worker_thread
+                self.midi_preview_workers[(result.project_dir, stem_name.lower())] = (token, worker_thread)
             worker_thread.start()
 
         def _midi_preview_worker_running(self, project_dir: Path, stem_name: str) -> bool:
-            worker = self.midi_preview_workers.get((project_dir, stem_name.lower()))
-            return bool(worker and worker.is_alive())
+            key = (project_dir, stem_name.lower())
+            entry = self.midi_preview_workers.get(key)
+            if entry is None:
+                return False
+            token, worker = entry
+            if token != self.midi_preview_token or not worker.is_alive():
+                self.midi_preview_workers.pop(key, None)
+                return False
+            return True
+
+        def clear_midi_preview_worker(self, project_dir: Path, stem_name: str, token: int) -> None:
+            key = (project_dir, stem_name.lower())
+            entry = self.midi_preview_workers.get(key)
+            if entry is not None and entry[0] == token:
+                self.midi_preview_workers.pop(key, None)
 
         def attach_midi_preview_players(self, previews: dict[str, Path], finish_activity: bool = True) -> None:
             if not previews:
@@ -2717,6 +2731,7 @@ def main() -> int:
             self.editor_load_token += 1
             self.editor_load_activity_tokens.clear()
             self.midi_preview_token += 1
+            self.midi_preview_workers.clear()
             if _path is None:
                 self.drop_zone.reset_prompt()
             self.current_result = None
