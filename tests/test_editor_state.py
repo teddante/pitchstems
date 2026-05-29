@@ -21,17 +21,37 @@ def test_parse_editor_chord_state_ignores_invalid_entries() -> None:
             {"start": 2, "end": 3, "label": "G", "confidence": 0.8},
             {"start": 5, "end": 4, "label": "bad"},
             {"start": "x", "end": 6, "label": "bad"},
+            {"start": -1, "end": 1, "label": "bad"},
+            {"start": 1, "end": float("inf"), "label": "bad"},
             "bad",
         ],
         "chord_removals": [
             {"start": 0.5, "end": 1.0},
             {"start": 3.0, "end": 2.0},
+            {"start": -1.0, "end": 2.0},
+            {"start": 2.0, "end": float("nan")},
             None,
         ],
     }
 
     assert parse_chord_overrides(state) == [ChordRegion(2.0, 3.0, "G", 0.8)]
     assert parse_chord_removals(state) == [(0.5, 1.0)]
+
+
+def test_parse_chord_overrides_clamps_invalid_confidence() -> None:
+    state = {
+        "chord_overrides": [
+            {"start": 0, "end": 1, "label": "C", "confidence": 1.4},
+            {"start": 1, "end": 2, "label": "G", "confidence": -0.2},
+            {"start": 2, "end": 3, "label": "F", "confidence": float("nan")},
+        ]
+    }
+
+    assert parse_chord_overrides(state) == [
+        ChordRegion(0.0, 1.0, "C", 1.0),
+        ChordRegion(1.0, 2.0, "G", 0.0),
+        ChordRegion(2.0, 3.0, "F", 1.0),
+    ]
 
 
 def test_serialize_editor_chord_state_round_trips() -> None:

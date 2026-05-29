@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -44,7 +45,8 @@ def parse_chord_overrides(editor_state: Mapping[str, Any]) -> list[ChordRegion]:
             confidence = float(item.get("confidence", 1.0))
         except (TypeError, ValueError):
             continue
-        if label and end > start:
+        if label and _valid_time_range(start, end):
+            confidence = _clamp_confidence(confidence)
             chords.append(ChordRegion(start=start, end=end, label=label, confidence=confidence))
     return sorted(chords, key=lambda chord: (chord.start, chord.end, chord.label))
 
@@ -59,7 +61,7 @@ def parse_chord_removals(editor_state: Mapping[str, Any]) -> list[tuple[float, f
             end = float(item.get("end", 0.0))
         except (TypeError, ValueError):
             continue
-        if end > start:
+        if _valid_time_range(start, end):
             ranges.append((start, end))
     return sorted(ranges)
 
@@ -78,6 +80,16 @@ def serialize_chord_overrides(chords: list[ChordRegion]) -> list[dict[str, Any]]
 
 def serialize_chord_removals(ranges: list[tuple[float, float]]) -> list[dict[str, float]]:
     return [{"start": start, "end": end} for start, end in ranges]
+
+
+def _valid_time_range(start: float, end: float) -> bool:
+    return isfinite(start) and isfinite(end) and start >= 0.0 and end > start
+
+
+def _clamp_confidence(confidence: float) -> float:
+    if not isfinite(confidence):
+        return 1.0
+    return max(0.0, min(1.0, confidence))
 
 
 def build_editor_state_snapshot(
