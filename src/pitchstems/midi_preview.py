@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import math
 import os
 import wave
@@ -23,7 +24,9 @@ def render_midi_preview(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{stem}_midi_preview.wav"
-    if _valid_wav(output_path):
+    metadata = _preview_metadata(stem, stem_notes, duration, sample_rate)
+    metadata_path = _metadata_path(output_path)
+    if _valid_wav(output_path) and _valid_metadata(metadata_path, metadata):
         return output_path
     sample_count = max(1, int((duration + 0.25) * sample_rate))
     samples = array("f", [0.0]) * sample_count
@@ -38,6 +41,7 @@ def render_midi_preview(
     pcm = array("h", (int(max(-1.0, min(1.0, sample * scale)) * 32767) for sample in samples))
 
     _write_wav_atomic(output_path, pcm, sample_rate)
+    _write_metadata_atomic(metadata_path, metadata)
     return output_path
 
 
@@ -85,6 +89,17 @@ def _write_wav_atomic(output_path: Path, pcm: array, sample_rate: int) -> None:
                 temporary.unlink()
 
 
+def _write_metadata_atomic(path: Path, metadata: dict) -> None:
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        temporary.write_text(json.dumps(metadata, sort_keys=True), encoding="utf-8")
+        temporary.replace(path)
+    finally:
+        with contextlib.suppress(OSError):
+            if temporary.exists():
+                temporary.unlink()
+
+
 def _valid_wav(path: Path) -> bool:
     if not path.exists():
         return False
@@ -92,6 +107,40 @@ def _valid_wav(path: Path) -> bool:
         with wave.open(str(path), "rb") as wav:
             return wav.getnframes() > 0 and wav.getframerate() > 0
     return False
+
+
+def _metadata_path(output_path: Path) -> Path:
+    return output_path.with_suffix(f"{output_path.suffix}.json")
+
+
+def _valid_metadata(path: Path, expected: dict) -> bool:
+    with contextlib.suppress(OSError, json.JSONDecodeError):
+        return json.loads(path.read_text(encoding="utf-8")) == expected
+    return False
+
+
+def _preview_metadata(
+    stem: str,
+    notes: list[NoteEvent],
+    duration: float,
+    sample_rate: int,
+) -> dict:
+    return {
+        "format": "pitchstems-midi-preview",
+        "version": 1,
+        "stem": stem,
+        "duration": round(duration, 6),
+        "sample_rate": sample_rate,
+        "notes": [
+            {
+                "start": round(note.start, 6),
+                "end": round(note.end, 6),
+                "pitch": note.pitch,
+                "velocity": note.velocity,
+            }
+            for note in notes
+        ],
+    }
 
 
 def _add_note(samples: array, note: NoteEvent, sample_rate: int) -> None:

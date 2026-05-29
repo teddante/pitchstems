@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import wave
 
 from pitchstems.editor_project import NoteEvent
@@ -27,15 +28,30 @@ def test_render_midi_preview_skips_stems_without_notes(tmp_path: Path) -> None:
 
 
 def test_render_midi_preview_reuses_existing_preview(tmp_path: Path) -> None:
-    preview = tmp_path / "piano_midi_preview.wav"
-    _write_silent_wav(preview, sample_rate=8000)
     notes = [NoteEvent(stem="piano", start=0.0, end=0.2, pitch=60, velocity=90)]
+    preview = render_midi_preview("piano", notes, tmp_path, duration=0.4, sample_rate=8000)
+    assert preview is not None
+    original_mtime = preview.stat().st_mtime_ns
 
     output = render_midi_preview("piano", notes, tmp_path, duration=0.4, sample_rate=8000)
 
     assert output == preview
-    with wave.open(str(preview), "rb") as wav:
+    assert preview.stat().st_mtime_ns == original_mtime
+    with wave.open(str(output), "rb") as wav:
         assert wav.getframerate() == 8000
+
+
+def test_render_midi_preview_replaces_stale_preview_metadata(tmp_path: Path) -> None:
+    notes = [NoteEvent(stem="piano", start=0.0, end=0.2, pitch=60, velocity=90)]
+    preview = render_midi_preview("piano", notes, tmp_path, duration=0.4, sample_rate=8000)
+    assert preview is not None
+    metadata = preview.with_suffix(".wav.json")
+    metadata.write_text(json.dumps({"stale": True}), encoding="utf-8")
+
+    output = render_midi_preview("piano", notes, tmp_path, duration=0.4, sample_rate=8000)
+
+    assert output == preview
+    assert json.loads(metadata.read_text(encoding="utf-8"))["format"] == "pitchstems-midi-preview"
 
 
 def test_render_midi_preview_replaces_invalid_existing_preview(tmp_path: Path) -> None:

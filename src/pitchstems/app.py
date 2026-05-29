@@ -4,7 +4,7 @@ import os
 import queue
 import threading
 from bisect import bisect_left, bisect_right
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 
 from pitchstems.acceleration import onnxruntime_status, torch_status
@@ -18,17 +18,14 @@ from pitchstems.editor_project import (
     active_notes_at,
     analyze_chord_at,
     analyze_chord_region,
-    build_editor_project,
     chord_tones_for_label,
     display_chord_label,
     midi_velocity_energy,
     midi_note_name,
 )
+from pitchstems.editor_loader import EditorLoadResult, apply_chord_edits, build_editor_load_result
 from pitchstems.editor_state import (
     EditorStateSnapshot,
-    load_editor_state,
-    parse_chord_overrides,
-    parse_chord_removals,
     save_editor_state_snapshot,
     serialize_chord_overrides,
     serialize_chord_removals,
@@ -1176,6 +1173,8 @@ def main() -> int:
             self.logger = logger
             self.messages: queue.Queue[object] = queue.Queue()
             self.worker: threading.Thread | None = None
+            self.editor_load_worker: threading.Thread | None = None
+            self.editor_load_token = 0
             self.midi_preview_workers: dict[tuple[Path, str], threading.Thread] = {}
             self.latest_output_dir: Path | None = None
             self.current_result: PipelineResult | None = None
@@ -2087,6 +2086,12 @@ def main() -> int:
                     return
                 if isinstance(message, tuple) and message[0] == "RESULT":
                     self.set_current_result(message[1])
+                elif isinstance(message, tuple) and message[0] == "EDITOR_LOADED":
+                    _kind, token, loaded = message
+                    self.finish_editor_project_load(int(token), loaded)
+                elif isinstance(message, tuple) and message[0] == "EDITOR_LOAD_FAILED":
+                    _kind, token, project_dir, error = message
+                    self.finish_editor_project_load_failed(int(token), project_dir, error)
                 elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEWS":
                     _kind, project_dir, requested_stems, previews = message
                     for stem_name in requested_stems:
@@ -2128,30 +2133,64 @@ def main() -> int:
         def set_current_result(self, result: PipelineResult, open_output: bool = True) -> None:
             self.logger.info("Setting current result: %s", result.project_dir)
             self.set_activity_message("Loading result...")
+            self.editor_load_token += 1
             self.current_result = result
             self.current_stems = result.stems
             self.current_input_stem = (result.source_audio or result.normalized_audio).stem
             self.latest_output_dir = result.project_dir
+            self.base_editor_project = None
+            self.editor_project = None
+            self.manual_chords = []
+            self.removed_chord_ranges = []
             self.rendering_midi_previews.clear()
             self.run_midi.setEnabled(True)
             self.separation_status.setText(f"Ready: {len(result.stems)} stems saved in {result.project_dir / 'stems'}")
             self.midi_status.setText(
                 f"Ready: {len(result.midi_files)} MIDI files. Change Basic Pitch settings or MIDI stem ticks, then use Rerun MIDI only."
             )
-            self.load_editor_project(result)
+            self.editor_summary.setText("Building editor timeline...")
+            self.timeline_slider.setEnabled(False)
+            self.fit_song_button.setEnabled(False)
+            self.clear_transport_players()
             self.remember_recent_project(result.project_dir)
             if open_output and self.open_when_done.isChecked():
                 self.open_latest_output()
+            self.start_editor_project_load(result, self.editor_load_token)
 
-        def load_editor_project(self, result: PipelineResult) -> None:
-            self.logger.info("Building editor project model")
-            self.set_activity_message("Building editor project...")
-            self.base_editor_project = build_editor_project(result)
-            self.editor_project = self.base_editor_project
-            editor_state = self.load_editor_state(result)
-            self.manual_chords = self.chord_overrides_from_editor_state(editor_state)
-            self.removed_chord_ranges = self.chord_removals_from_editor_state(editor_state)
-            self.apply_manual_chords()
+        def start_editor_project_load(self, result: PipelineResult, token: int) -> None:
+            self.logger.info("Starting editor project load: %s", result.project_dir)
+            self.begin_activity("Building editor project...")
+
+            def worker() -> None:
+                try:
+                    loaded = build_editor_load_result(result)
+                    self.messages.put(("EDITOR_LOADED", token, loaded))
+                except Exception as exc:
+                    self.logger.exception("Editor project load failed")
+                    self.messages.put(("EDITOR_LOAD_FAILED", token, result.project_dir, f"{exc}"))
+
+            self.editor_load_worker = threading.Thread(
+                target=worker,
+                name="PitchStemsEditorLoad",
+                daemon=True,
+            )
+            self.editor_load_worker.start()
+
+        def finish_editor_project_load(self, token: int, loaded: EditorLoadResult) -> None:
+            if token != self.editor_load_token or self.current_result is None:
+                self.logger.info("Ignored stale editor load for %s", loaded.pipeline_result.project_dir)
+                self.end_activity("Ignored stale editor load")
+                return
+            if self.current_result.project_dir != loaded.pipeline_result.project_dir:
+                self.logger.info("Ignored editor load for inactive project: %s", loaded.pipeline_result.project_dir)
+                self.end_activity("Ignored stale editor load")
+                return
+
+            self.base_editor_project = loaded.base_project
+            self.editor_project = loaded.editor_project
+            editor_state = loaded.editor_state
+            self.manual_chords = loaded.manual_chords
+            self.removed_chord_ranges = loaded.removed_chord_ranges
             self.logger.info(
                 "Editor model built: tracks=%d notes=%d chords=%d",
                 len(self.editor_project.tracks),
@@ -2191,25 +2230,26 @@ def main() -> int:
             self.set_editor_position_seconds(playhead_seconds)
             self.main_tabs.setCurrentIndex(1)
             self.logger.info("Editor project loaded")
+            self.end_activity("Editor project loaded")
 
-        def chord_overrides_from_editor_state(self, editor_state: dict) -> list[ChordRegion]:
-            return parse_chord_overrides(editor_state)
-
-        def chord_removals_from_editor_state(self, editor_state: dict) -> list[tuple[float, float]]:
-            return parse_chord_removals(editor_state)
+        def finish_editor_project_load_failed(self, token: int, project_dir: Path, error: str) -> None:
+            if token != self.editor_load_token:
+                self.logger.info("Ignored stale editor load failure for %s: %s", project_dir, error)
+                return
+            self.logger.error("Could not open project editor for %s: %s", project_dir, error)
+            self.append_log(f"Could not open project editor: {error}")
+            self.append_log(f"Log file: {self.log_path}")
+            self.editor_summary.setText("Could not build editor timeline.")
+            self.timeline.set_project(None)
+            self.end_activity("Could not open project editor")
 
         def apply_manual_chords(self) -> None:
             if self.editor_project is None or (not self.manual_chords and not self.removed_chord_ranges):
                 return
-            chords = list(self.editor_project.chords)
-            for start, end in self.removed_chord_ranges:
-                chords = [chord for chord in chords if chord.end <= start or chord.start >= end]
-            for manual in self.manual_chords:
-                chords = [chord for chord in chords if chord.end <= manual.start or chord.start >= manual.end]
-                chords.append(manual)
-            self.editor_project = replace(
+            self.editor_project = apply_chord_edits(
                 self.editor_project,
-                chords=sorted(chords, key=lambda chord: (chord.start, chord.end, chord.label)),
+                self.manual_chords,
+                self.removed_chord_ranges,
             )
 
         def refresh_editor_project_from_chord_edits(self, selected_chord: ChordRegion | None = None) -> None:
@@ -2234,9 +2274,6 @@ def main() -> int:
             self.timeline.redraw()
             self.refresh_detected_chord_list()
             self.save_editor_state()
-
-        def load_editor_state(self, result: PipelineResult) -> dict:
-            return load_editor_state(result.project_dir)
 
         def refresh_editor_lists(self, track_visibility: dict[str, bool] | None = None) -> None:
             track_visibility = track_visibility or {}
@@ -3826,6 +3863,7 @@ def main() -> int:
 
         def reset_stage_state(self, _path: Path | None = None) -> None:
             self.stop_transport()
+            self.editor_load_token += 1
             if _path is None:
                 self.drop_zone.reset_prompt()
             self.current_result = None
