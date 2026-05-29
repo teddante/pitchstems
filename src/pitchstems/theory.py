@@ -377,6 +377,7 @@ def chord_gap_report(analysis: ChordGapAnalysis) -> str:
         "Theory fit checks formal chord tones against the current scale/key/mode candidate.",
         "Voice-leading uses minimum pitch-class movement on the 12-tone circle.",
         "Common-tone support counts shared pitch classes with neighbouring chord regions.",
+        "Suggestions are ordered by evidence-first ranking rules, not blended policy weights.",
         "",
         "Suggestions",
         "-----------",
@@ -458,12 +459,7 @@ def _gap_suggestions(
         theory_fit = _candidate_theory_fit(tones, theory_analysis)
         voice_leading = _candidate_voice_leading(tones, previous_chord, next_chord)
         common_tone_support = _candidate_common_tones(tones, previous_chord, next_chord)
-        score = (
-            0.40 * local_evidence
-            + 0.25 * theory_fit
-            + 0.20 * voice_leading
-            + 0.15 * common_tone_support
-        )
+        score = _gap_display_strength(action, local_evidence, theory_fit, no_local_evidence)
         suggestions.append(
             ChordGapSuggestion(
                 label=label,
@@ -478,13 +474,54 @@ def _gap_suggestions(
                 explanation=[
                     f"{label} is ranked from local MIDI evidence, formal scale/key fit, "
                     "pitch-class voice-leading, and common tones with neighbour chords.",
-                    "Score formula: 0.40*local_evidence + 0.25*theory_fit "
-                    "+ 0.20*voice_leading + 0.15*common_tone_support.",
+                    "Ranking rule: if the gap has MIDI evidence, local chord evidence is primary; "
+                    "if it has no MIDI evidence, continuity actions are primary. Formal theory fit, "
+                    "voice-leading, and common tones are deterministic tie-breakers.",
                 ],
             )
         )
-    suggestions.sort(key=lambda suggestion: suggestion.score, reverse=True)
+    suggestions.sort(
+        key=lambda suggestion: _gap_suggestion_sort_key(suggestion, no_local_evidence > 0),
+        reverse=True,
+    )
     return suggestions[:10]
+
+
+def _gap_display_strength(
+    action: str,
+    local_evidence: float,
+    theory_fit: float,
+    no_local_evidence: float,
+) -> float:
+    if action in {"extend_previous", "start_next"} and no_local_evidence:
+        return 1.0
+    if local_evidence > 0:
+        return local_evidence
+    return theory_fit
+
+
+def _gap_suggestion_sort_key(
+    suggestion: ChordGapSuggestion,
+    gap_has_no_local_evidence: bool,
+) -> tuple[float, ...]:
+    is_continuity = suggestion.action in {"extend_previous", "start_next"}
+    has_local_chord_evidence = suggestion.local_evidence > 0 and not (
+        is_continuity and gap_has_no_local_evidence
+    )
+    if gap_has_no_local_evidence:
+        return (
+            float(is_continuity),
+            suggestion.theory_fit,
+            suggestion.voice_leading,
+            suggestion.common_tone_support,
+        )
+    return (
+        float(has_local_chord_evidence),
+        suggestion.local_evidence,
+        suggestion.theory_fit,
+        suggestion.voice_leading,
+        suggestion.common_tone_support,
+    )
 
 
 def _diatonic_chord_labels(analysis: TheoryAnalysis) -> list[str]:
@@ -600,6 +637,7 @@ def _scale_candidates(
     chords: list[ChordRegion],
 ) -> list[ScaleCandidate]:
     total_energy = sum(totals.values())
+    observed_pitch_classes = set(totals)
     candidates: list[ScaleCandidate] = []
     for root in range(12):
         for scale in SCALE_REGISTRY:
@@ -609,7 +647,6 @@ def _scale_candidates(
             outside_energy = 1.0 - pitch_fit
             center_strength = _center_strength(root, totals, bass_totals, chord_root_totals)
             chord_support = _chord_support(pitch_classes, chords)
-            score = pitch_fit * (0.5 + 0.5 * center_strength) * (0.75 + 0.25 * chord_support)
             if pitch_fit < 0.72 and scale.name != "Chromatic":
                 continue
             notes = [PITCH_NAMES[(root + interval) % 12] for interval in scale.intervals]
@@ -620,28 +657,46 @@ def _scale_candidates(
                     root=root,
                     scale=scale,
                     notes=notes,
-                    score=score,
+                    score=fit_clamp(pitch_fit),
                     pitch_fit=fit_clamp(pitch_fit),
                     outside_energy=fit_clamp(outside_energy),
                     center_strength=fit_clamp(center_strength),
                     chord_support=fit_clamp(chord_support),
                     explanation=[
-                        f"{label} is scored from formal scale membership plus tonal-centre evidence.",
-                        "Score formula: pitch_fit * (0.5 + 0.5 * center_strength) "
-                        "* (0.75 + 0.25 * chord_support).",
+                        f"{label} is ranked as a formal explanation of the observed pitch evidence.",
+                        "Ranking rule: reject strong contradictions, then prefer higher explained "
+                        "energy, fewer unobserved scale tones, stronger tonal-centre evidence, "
+                        "and stronger chord-track support.",
                     ],
                 )
             )
     candidates.sort(
-        key=lambda candidate: (
-            candidate.score,
-            candidate.pitch_fit,
-            candidate.center_strength,
-            -len(candidate.scale.intervals),
+        key=lambda candidate: _scale_candidate_sort_key(
+            candidate,
+            observed_pitch_classes,
         ),
         reverse=True,
     )
     return candidates[:96]
+
+
+def _scale_candidate_sort_key(
+    candidate: ScaleCandidate,
+    observed_pitch_classes: set[int],
+) -> tuple[float, ...]:
+    scale_tones = {
+        (candidate.root + interval) % 12
+        for interval in candidate.scale.intervals
+    }
+    unobserved_scale_tones = len(scale_tones - observed_pitch_classes)
+    return (
+        -candidate.outside_energy,
+        candidate.pitch_fit,
+        -float(unobserved_scale_tones),
+        candidate.center_strength,
+        candidate.chord_support,
+        -float(len(scale_tones)),
+    )
 
 
 def _scale_label(root: int, scale: ScaleDefinition) -> str:

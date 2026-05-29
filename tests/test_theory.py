@@ -112,7 +112,7 @@ def test_theory_report_explains_evidence_and_formula_terms() -> None:
 
     assert "MIDI energy model" in report
     assert "Scale / Key / Mode Candidates" in report
-    assert "Score formula:" in report
+    assert "Ranking rule:" in report
     assert "Progression" in report
     assert "Core chord tones" in report
 
@@ -162,7 +162,7 @@ def test_chord_gap_report_explains_gap_formula_terms() -> None:
 
     assert "Chord Gap Suggestions" in report
     assert "Voice-leading uses minimum pitch-class movement" in report
-    assert "Score formula:" in report
+    assert "Ranking rule:" in report
 
 
 def _note(start: float, end: float, pitch: int, velocity: int = 100) -> NoteEvent:
