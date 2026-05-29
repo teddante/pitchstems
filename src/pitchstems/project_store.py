@@ -191,7 +191,13 @@ def _validate_manifest(path: Path, manifest: dict[str, Any]) -> None:
         if value is not None and not isinstance(value, str):
             raise ValueError(f"{path} has an invalid project path field: {field_name}")
         if value:
-            _validate_project_path_value(path, project_dir, value, field_name)
+            _validate_project_path_value(
+                path,
+                project_dir,
+                value,
+                field_name,
+                allow_external_absolute=field_name == "source_audio",
+            )
 
 
 def _validate_project_path_value(
@@ -199,12 +205,18 @@ def _validate_project_path_value(
     project_dir: Path,
     value: str,
     field_name: str,
+    *,
+    allow_external_absolute: bool = False,
 ) -> None:
     value_path = Path(value)
     if value_path.is_absolute():
-        return
+        if allow_external_absolute:
+            return
+        resolved = value_path.resolve()
+    else:
+        resolved = (project_dir / value_path).resolve()
     try:
-        (project_dir / value_path).resolve().relative_to(project_dir)
+        resolved.relative_to(project_dir)
     except ValueError as exc:
         raise ValueError(
             f"{manifest_path} has a project path outside the project folder: {field_name}"
