@@ -161,6 +161,8 @@ def load_project_manifest(path: Path) -> dict[str, Any]:
 
 def _validate_manifest(path: Path, manifest: dict[str, Any]) -> None:
     project_dir = path.parent.resolve()
+    if not isinstance(manifest, dict):
+        raise ValueError(f"{path} is not a PitchStems project")
     if manifest.get("format") != "pitchstems-project":
         raise ValueError(f"{path} is not a PitchStems project")
     try:

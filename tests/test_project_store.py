@@ -99,6 +99,18 @@ def test_load_project_manifest_rejects_incomplete_project(tmp_path: Path) -> Non
         raise AssertionError("Expected incomplete project to be rejected")
 
 
+def test_load_project_manifest_rejects_non_object_json_root(tmp_path: Path) -> None:
+    manifest_path = tmp_path / PROJECT_FILENAME
+    manifest_path.write_text(json.dumps(["not", "a", "manifest"]), encoding="utf-8")
+
+    try:
+        load_project_manifest(manifest_path)
+    except ValueError as exc:
+        assert "is not a PitchStems project" in str(exc)
+    else:
+        raise AssertionError("Expected non-object project JSON to be rejected")
+
+
 def test_load_project_manifest_rejects_bad_format_version(tmp_path: Path) -> None:
     manifest_path = tmp_path / PROJECT_FILENAME
     manifest_path.write_text(
