@@ -27,6 +27,16 @@ def test_render_midi_preview_skips_stems_without_notes(tmp_path: Path) -> None:
     assert render_midi_preview("piano", notes, tmp_path, duration=0.4, sample_rate=8000) is None
 
 
+def test_render_midi_preview_sanitizes_stem_preview_filename(tmp_path: Path) -> None:
+    notes = [NoteEvent(stem="../bad/stem", start=0.0, end=0.2, pitch=60, velocity=90)]
+
+    output = render_midi_preview("../bad/stem", notes, tmp_path, duration=0.4, sample_rate=8000)
+
+    assert output == tmp_path / "bad_stem_midi_preview.wav"
+    assert output.exists()
+    assert output.parent == tmp_path
+
+
 def test_render_midi_preview_reuses_existing_preview(tmp_path: Path) -> None:
     notes = [NoteEvent(stem="piano", start=0.0, end=0.2, pitch=60, velocity=90)]
     preview = render_midi_preview("piano", notes, tmp_path, duration=0.4, sample_rate=8000)
@@ -108,6 +118,18 @@ def test_render_note_preview_writes_named_wav(tmp_path: Path) -> None:
         assert wav.getnchannels() == 1
         assert wav.getframerate() == 8000
         assert wav.getnframes() > 0
+
+
+def test_render_note_preview_uses_safe_fallback_names(tmp_path: Path) -> None:
+    notes = [NoteEvent(stem="official-chord", start=0.0, end=0.5, pitch=60, velocity=90)]
+
+    empty_output = render_note_preview("...", notes, tmp_path, duration=0.5, sample_rate=8000)
+    reserved_output = render_note_preview("CON", notes, tmp_path, duration=0.5, sample_rate=8000)
+
+    assert empty_output == tmp_path / "preview.wav"
+    assert reserved_output == tmp_path / "preview_CON.wav"
+    assert empty_output.exists()
+    assert reserved_output.exists()
 
 
 def test_valid_preview_wav_rejects_missing_or_invalid_files(tmp_path: Path) -> None:

@@ -12,6 +12,17 @@ from pathlib import Path
 from pitchstems.editor_project import NoteEvent
 
 
+_WINDOWS_RESERVED_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "CLOCK$",
+    *(f"COM{index}" for index in range(1, 10)),
+    *(f"LPT{index}" for index in range(1, 10)),
+}
+
+
 def render_midi_preview(
     stem: str,
     notes: list[NoteEvent],
@@ -24,7 +35,7 @@ def render_midi_preview(
         return None
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / f"{stem}_midi_preview.wav"
+    output_path = output_dir / f"{_safe_preview_name(stem, fallback='stem')}_midi_preview.wav"
     metadata = _preview_metadata(stem, stem_notes, duration, sample_rate)
     metadata_path = _metadata_path(output_path)
     if valid_preview_wav(output_path) and _valid_metadata(metadata_path, metadata):
@@ -57,7 +68,7 @@ def render_note_preview(
         return None
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    safe_name = "".join(character if character.isalnum() or character in "-_" else "_" for character in name)
+    safe_name = _safe_preview_name(name)
     output_path = output_dir / f"{safe_name}.wav"
     sample_count = max(1, int((duration + 0.15) * sample_rate))
     samples = array("f", [0.0]) * sample_count
@@ -118,6 +129,16 @@ def _valid_metadata(path: Path, expected: dict) -> bool:
     with contextlib.suppress(OSError, json.JSONDecodeError):
         return json.loads(path.read_text(encoding="utf-8")) == expected
     return False
+
+
+def _safe_preview_name(name: str, fallback: str = "preview", max_length: int = 80) -> str:
+    safe = "".join(character if character.isalnum() or character in "-_" else "_" for character in name)
+    safe = safe.strip("._-")[:max_length].rstrip("._-")
+    if not safe:
+        safe = fallback
+    if safe.upper() in _WINDOWS_RESERVED_NAMES:
+        safe = f"{fallback}_{safe}"
+    return safe
 
 
 def _preview_metadata(
