@@ -11,7 +11,7 @@ from pitchstems.separation import StemResult
 from pitchstems.transcription import MidiResult
 
 
-def test_apply_chord_edits_replaces_overlapping_detected_chords() -> None:
+def test_apply_chord_edits_replaces_only_overlapping_time_ranges() -> None:
     project = EditorProject(
         project_dir=Path("."),
         source_audio=Path("song.wav"),
@@ -31,8 +31,30 @@ def test_apply_chord_edits_replaces_overlapping_detected_chords() -> None:
         [(2.8, 4.2)],
     )
 
-    assert edited.chords == [ChordRegion(0.5, 1.5, "Am", 1.0)]
+    assert edited.chords == [
+        ChordRegion(0.0, 0.5, "C", 0.8),
+        ChordRegion(0.5, 1.5, "Am", 1.0),
+        ChordRegion(1.5, 2.0, "G", 0.8),
+    ]
     assert project.chords[0].label == "C"
+
+
+def test_apply_chord_edits_splits_removed_middle_ranges() -> None:
+    project = EditorProject(
+        project_dir=Path("."),
+        source_audio=Path("song.wav"),
+        duration=4.0,
+        tracks=[],
+        notes=[],
+        chords=[ChordRegion(0.0, 4.0, "C", 0.8)],
+    )
+
+    edited = apply_chord_edits(project, [], [(1.0, 2.0)])
+
+    assert edited.chords == [
+        ChordRegion(0.0, 1.0, "C", 0.8),
+        ChordRegion(2.0, 4.0, "C", 0.8),
+    ]
 
 
 def test_build_editor_load_result_applies_manifest_editor_state(tmp_path: Path) -> None:

@@ -43,11 +43,44 @@ def apply_chord_edits(
         return project
     chords = list(project.chords)
     for start, end in removed_chord_ranges:
-        chords = [chord for chord in chords if chord.end <= start or chord.start >= end]
+        chords = _subtract_chord_range(chords, start, end)
     for manual in manual_chords:
-        chords = [chord for chord in chords if chord.end <= manual.start or chord.start >= manual.end]
+        chords = _subtract_chord_range(chords, manual.start, manual.end)
         chords.append(manual)
     return replace(
         project,
         chords=sorted(chords, key=lambda chord: (chord.start, chord.end, chord.label)),
     )
+
+
+def _subtract_chord_range(
+    chords: list[ChordRegion],
+    start: float,
+    end: float,
+) -> list[ChordRegion]:
+    if end <= start:
+        return chords
+    edited: list[ChordRegion] = []
+    for chord in chords:
+        if chord.end <= start or chord.start >= end:
+            edited.append(chord)
+            continue
+        if chord.start < start:
+            edited.append(
+                ChordRegion(
+                    start=chord.start,
+                    end=start,
+                    label=chord.label,
+                    confidence=chord.confidence,
+                )
+            )
+        if chord.end > end:
+            edited.append(
+                ChordRegion(
+                    start=end,
+                    end=chord.end,
+                    label=chord.label,
+                    confidence=chord.confidence,
+                )
+            )
+    return edited
