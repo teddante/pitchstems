@@ -41,7 +41,7 @@ if ($GuiSmoke) {
     $previousQtPlatform = $env:QT_QPA_PLATFORM
     $previousGuiSmoke = $env:PITCHSTEMS_GUI_SMOKE
     $env:QT_QPA_PLATFORM = "offscreen"
-    $env:PITCHSTEMS_GUI_SMOKE = "startup"
+    $env:PITCHSTEMS_GUI_SMOKE = "project"
     try {
         @'
 from pitchstems.app import main

@@ -2857,12 +2857,15 @@ def main() -> int:
     app = QApplication([])
     window = MainWindow()
     window.show()
-    if os.environ.get("PITCHSTEMS_GUI_SMOKE") == "startup":
-        from pitchstems.gui_smoke import run_startup_smoke
+    smoke_mode = os.environ.get("PITCHSTEMS_GUI_SMOKE")
+    if smoke_mode in {"startup", "project"}:
+        from pitchstems.gui_smoke import run_project_smoke, run_startup_smoke
 
         def run_smoke_and_exit() -> None:
             try:
                 run_startup_smoke(window)
+                if smoke_mode == "project":
+                    run_project_smoke(window)
             except Exception:
                 logger.exception("GUI startup smoke failed")
                 app.exit(1)
