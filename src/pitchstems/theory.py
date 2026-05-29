@@ -381,7 +381,7 @@ def chord_gap_report(analysis: ChordGapAnalysis) -> str:
         "--------------",
         "Local MIDI evidence uses the same overlap_seconds * (velocity / 127)^2 energy model.",
         "Theory fit checks formal chord tones against the current scale/key/mode candidate.",
-        "Voice-leading uses minimum pitch-class movement on the 12-tone circle.",
+        "Pitch-class movement uses minimum distance on the 12-tone circle; it is not register-aware voice-leading.",
         "Common-tone support counts shared pitch classes with neighbouring chord regions.",
         "Suggestions are ordered by evidence-first ranking rules, not blended policy weights.",
         "",
@@ -398,7 +398,7 @@ def chord_gap_report(analysis: ChordGapAnalysis) -> str:
                 f"Action: {suggestion.action}",
                 f"Local MIDI evidence: {suggestion.local_evidence:.0%}",
                 f"Theory fit: {suggestion.theory_fit:.0%}",
-                f"Voice-leading: {suggestion.voice_leading:.0%}",
+                f"Pitch-class movement: {suggestion.voice_leading:.0%}",
                 f"Common-tone support: {suggestion.common_tone_support:.0%}",
                 *suggestion.explanation,
             ]
@@ -479,10 +479,10 @@ def _gap_suggestions(
                 common_tone_support=fit_clamp(common_tone_support),
                 explanation=[
                     f"{label} is ranked from local MIDI evidence, formal scale/key fit, "
-                    "pitch-class voice-leading, and common tones with neighbour chords.",
+                    "pitch-class movement, and common tones with neighbour chords.",
                     "Ranking rule: if the gap has MIDI evidence, local chord evidence is primary; "
                     "if it has no MIDI evidence, continuity actions are primary. Formal theory fit, "
-                    "voice-leading, and common tones are deterministic tie-breakers.",
+                    "pitch-class movement, and common tones are deterministic tie-breakers.",
                 ],
             )
         )

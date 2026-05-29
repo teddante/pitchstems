@@ -14,7 +14,7 @@ from pitchstems.transcription import MidiOptions, MidiResult
 
 
 PROJECT_FILENAME = "pitchstems.project.json"
-PROJECT_FORMAT_VERSION = 1
+PROJECT_FORMAT_VERSION = 2
 _MANIFEST_LOCK = threading.Lock()
 
 
@@ -49,6 +49,7 @@ def save_project_manifest(
     track_audio_volume: dict[str, int] | None = None,
     track_midi_enabled: dict[str, bool] | None = None,
     track_midi_volume: dict[str, int] | None = None,
+    notation_spelling: str | None = None,
     playhead_seconds: float | None = None,
     chord_overrides: list[dict[str, Any]] | None = None,
     chord_removals: list[dict[str, Any]] | None = None,
@@ -57,7 +58,7 @@ def save_project_manifest(
     project_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = project_manifest_path(project_dir)
     with _MANIFEST_LOCK:
-        existing = _read_json(manifest_path) if manifest_path.exists() else {}
+        existing = _migrate_manifest(_read_json(manifest_path)) if manifest_path.exists() else {}
         created_at = existing.get("created_at") or _now()
         source_audio = result.source_audio or _path_from_manifest(project_dir, existing.get("source_audio"))
 
@@ -107,6 +108,9 @@ def save_project_manifest(
                 "track_midi_volume": track_midi_volume
                 if track_midi_volume is not None
                 else existing.get("editor", {}).get("track_midi_volume", {}),
+                "notation_spelling": notation_spelling
+                if notation_spelling is not None
+                else existing.get("editor", {}).get("notation_spelling", "auto"),
                 "playhead_seconds": playhead_seconds
                 if playhead_seconds is not None
                 else existing.get("editor", {}).get("playhead_seconds", 0.0),
@@ -126,7 +130,7 @@ def save_project_manifest(
 def load_pipeline_result(path: Path):
     manifest_path = find_project_manifest(path)
     project_dir = manifest_path.parent
-    manifest = _read_json(manifest_path)
+    manifest = _migrate_manifest(_read_json(manifest_path))
     _validate_manifest(manifest_path, manifest)
 
     from pitchstems.pipeline import PipelineResult
@@ -150,7 +154,7 @@ def load_pipeline_result(path: Path):
 
 def load_project_manifest(path: Path) -> dict[str, Any]:
     manifest_path = find_project_manifest(path)
-    manifest = _read_json(manifest_path)
+    manifest = _migrate_manifest(_read_json(manifest_path))
     _validate_manifest(manifest_path, manifest)
     return manifest
 
@@ -172,6 +176,43 @@ def _validate_manifest(path: Path, manifest: dict[str, Any]) -> None:
     for field_name, expected_type in required_fields.items():
         if not isinstance(manifest.get(field_name), expected_type):
             raise ValueError(f"{path} is missing required project field: {field_name}")
+
+
+def _migrate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(manifest, dict):
+        return manifest
+    if manifest.get("format") != "pitchstems-project":
+        return manifest
+    try:
+        format_version = int(manifest.get("format_version", 0))
+    except (TypeError, ValueError):
+        return manifest
+    if format_version > PROJECT_FORMAT_VERSION:
+        return manifest
+
+    migrated = dict(manifest)
+    settings = migrated.get("settings")
+    if not isinstance(settings, dict):
+        settings = {}
+    migrated["settings"] = settings
+
+    editor = migrated.get("editor")
+    if not isinstance(editor, dict):
+        editor = {}
+    editor.setdefault("track_visibility", {})
+    editor.setdefault("track_analysis_enabled", {})
+    editor.setdefault("track_audio_enabled", {})
+    editor.setdefault("track_audio_volume", {})
+    editor.setdefault("track_midi_enabled", {})
+    editor.setdefault("track_midi_volume", {})
+    editor.setdefault("notation_spelling", "auto")
+    editor.setdefault("playhead_seconds", 0.0)
+    editor.setdefault("chord_overrides", [])
+    editor.setdefault("chord_removals", [])
+    editor.setdefault("note_edits", [])
+    migrated["editor"] = editor
+    migrated["format_version"] = PROJECT_FORMAT_VERSION
+    return migrated
 
 
 def _dataclass_dict(value) -> dict[str, Any]:

@@ -118,202 +118,13 @@ def main() -> int:
         print("PySide6 is not installed. Install with `pip install -e .[gui]`.")
         return 1
 
-    class DropZone(QLabel):
-        def __init__(self) -> None:
-            super().__init__("Drop an audio file here")
-            self.setAcceptDrops(True)
-            self.setFocusPolicy(Qt.StrongFocus)
-            self.setAlignment(Qt.AlignCenter)
-            self.setWordWrap(True)
-            self.setMinimumHeight(105)
-            self.setMaximumHeight(130)
-            self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
-            self.setStyleSheet(
-                """
-                QLabel {
-                    border: 2px dashed #4c7aaf;
-                    border-radius: 8px;
-                    color: #1f2937;
-                    font-size: 19px;
-                    background: #f8fafc;
-                }
-                """
-            )
-            self.path: Path | None = None
-            self.on_path_changed = None
-
-        def set_audio_file(self, path: Path) -> None:
-            self.path = path
-            self.setText(f"Audio\n{path.name}\n{self._short_path(path.parent)}")
-            self.setToolTip(str(path))
-
-        def set_project_file(self, project_dir: Path, source_audio: Path | None) -> None:
-            self.path = source_audio
-            if source_audio:
-                self.setText(
-                    f"Project\n{project_dir.name}\nSource: {source_audio.name}"
-                )
-                self.setToolTip(f"Project: {project_dir}\nSource: {source_audio}")
-            else:
-                self.setText(f"Project\n{project_dir.name}")
-                self.setToolTip(str(project_dir))
-
-        def reset_prompt(self) -> None:
-            self.path = None
-            self.setText("Drop an audio file here")
-            self.setToolTip("")
-
-        def _short_path(self, path: Path, max_length: int = 72) -> str:
-            text = str(path)
-            if len(text) <= max_length:
-                return text
-            parts = path.parts
-            tail = str(Path(*parts[-2:])) if len(parts) >= 2 else path.name
-            return f"...\\{tail}"
-
-        def dragEnterEvent(self, event) -> None:
-            if event.mimeData().hasUrls():
-                event.acceptProposedAction()
-
-        def dropEvent(self, event) -> None:
-            urls = event.mimeData().urls()
-            if urls:
-                self.set_audio_file(Path(urls[0].toLocalFile()))
-                if self.on_path_changed:
-                    self.on_path_changed(self.path)
-
-    class NoWheelComboBox(QComboBox):
-        def wheelEvent(self, event) -> None:
-            event.ignore()
-
-    class NoWheelDoubleSpinBox(QDoubleSpinBox):
-        def wheelEvent(self, event) -> None:
-            event.ignore()
-
-    class NoWheelSpinBox(QSpinBox):
-        def wheelEvent(self, event) -> None:
-            event.ignore()
-
-    class PianoChordWidget(QWidget):
-        white_keys = [
-            ("C", 0),
-            ("D", 2),
-            ("E", 4),
-            ("F", 5),
-            ("G", 7),
-            ("A", 9),
-            ("B", 11),
-            ("C", 0),
-        ]
-        black_keys = [
-            ("C#", 1, 0.72),
-            ("Eb", 3, 1.72),
-            ("F#", 6, 3.72),
-            ("Ab", 8, 4.72),
-            ("Bb", 10, 5.72),
-        ]
-
-        def __init__(self) -> None:
-            super().__init__()
-            self.chord_label = ""
-            self.source_label = "Selected chord"
-            self.pitch_classes: set[int] = set()
-            self.setMinimumHeight(94)
-            self.setMaximumHeight(112)
-            self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            self.setToolTip("Select a chord candidate to see its tones on one octave of piano keys.")
-
-        def set_chord(
-            self,
-            label: str | None,
-            note_names: list[str],
-            source_label: str = "Selected chord",
-        ) -> None:
-            self.chord_label = label or ""
-            self.source_label = source_label
-            self.pitch_classes = {
-                pitch_class
-                for note_name in note_names
-                for pitch_class in [pitch_class_for_name(note_name)]
-                if pitch_class is not None
-            }
-            if self.chord_label and self.pitch_classes:
-                tones = " - ".join(note_names)
-                self.setToolTip(f"{self.source_label}: {self.chord_label}\n{tones}")
-            else:
-                self.setToolTip("Select a chord candidate to see its tones on one octave of piano keys.")
-            self.update()
-
-        def paintEvent(self, event) -> None:
-            painter = QPainter(self)
-            painter.setRenderHint(QPainter.Antialiasing)
-            bounds = self.rect().adjusted(4, 4, -4, -4)
-            painter.fillRect(bounds, QColor("#f8fafc"))
-            painter.setPen(QPen(QColor("#cbd5e1"), 1))
-            painter.drawRect(bounds)
-
-            title_height = 18
-            title = f"{self.source_label}: {self.chord_label}" if self.chord_label else "Selected chord"
-            title = QFontMetrics(painter.font()).elidedText(
-                title,
-                Qt.ElideRight,
-                max(0, bounds.width() - 12),
-            )
-            painter.setPen(QColor("#334155"))
-            painter.drawText(
-                bounds.left() + 6,
-                bounds.top() + 1,
-                max(0, bounds.width() - 12),
-                title_height,
-                Qt.AlignLeft | Qt.AlignVCenter,
-                title,
-            )
-
-            keyboard_top = bounds.top() + title_height + 2
-            keyboard_height = max(34, bounds.height() - title_height - 4)
-            key_count = len(self.white_keys)
-            white_width = max(1, bounds.width() / key_count)
-
-            for index, (name, pitch_class) in enumerate(self.white_keys):
-                x = round(bounds.left() + index * white_width)
-                next_x = round(bounds.left() + (index + 1) * white_width)
-                width = max(1, next_x - x)
-                highlighted = pitch_class in self.pitch_classes
-                painter.setBrush(QBrush(QColor("#fde68a" if highlighted else "#ffffff")))
-                painter.setPen(QPen(QColor("#94a3b8"), 1))
-                painter.drawRect(x, keyboard_top, width, keyboard_height)
-                painter.setPen(QColor("#1f2937" if highlighted else "#64748b"))
-                painter.drawText(
-                    x,
-                    keyboard_top + keyboard_height - 18,
-                    width,
-                    16,
-                    Qt.AlignCenter,
-                    name,
-                )
-
-            black_width = max(8, round(white_width * 0.56))
-            black_height = round(keyboard_height * 0.62)
-            for name, pitch_class, center_position in self.black_keys:
-                center_x = bounds.left() + center_position * white_width
-                x = round(center_x - black_width / 2)
-                highlighted = pitch_class in self.pitch_classes
-                painter.setBrush(QBrush(QColor("#fbbf24" if highlighted else "#111827")))
-                painter.setPen(QPen(QColor("#475569" if highlighted else "#020617"), 1))
-                painter.drawRect(x, keyboard_top, black_width, black_height)
-                painter.setPen(QColor("#111827" if highlighted else "#f8fafc"))
-                painter.drawText(x, keyboard_top + black_height - 16, black_width, 14, Qt.AlignCenter, name)
-
-            if not self.pitch_classes:
-                painter.setPen(QColor("#64748b"))
-                painter.drawText(
-                    bounds.left(),
-                    keyboard_top,
-                    bounds.width(),
-                    keyboard_height,
-                    Qt.AlignCenter,
-                    "No chord selected",
-                )
+    from pitchstems.gui_widgets import (
+        DropZone,
+        NoWheelComboBox,
+        NoWheelDoubleSpinBox,
+        NoWheelSpinBox,
+        PianoChordWidget,
+    )
 
     class TimelineView(QGraphicsView):
         def __init__(self) -> None:
@@ -333,6 +144,7 @@ def main() -> int:
             self.note_starts_by_track: dict[str, list[float]] = {}
             self.max_note_duration_by_track: dict[str, float] = {}
             self.pitch_ranges: dict[str, tuple[int, int]] = {}
+            self.note_name_formatter = midi_note_name
             self.last_redraw_stats = ""
             self.sticky_x_items = []
             self.sticky_y_items = []
@@ -417,6 +229,10 @@ def main() -> int:
 
         def set_visible_tracks(self, tracks: set[str]) -> None:
             self.visible_tracks = {track.lower() for track in tracks}
+            self.redraw()
+
+        def set_note_name_formatter(self, formatter) -> None:
+            self.note_name_formatter = formatter
             self.redraw()
 
         def zoom_horizontal(self, factor: float) -> None:
@@ -804,13 +620,13 @@ def main() -> int:
             )
             if enable_tooltips:
                 rect.setToolTip(
-                    f"{note.stem}: {note.name}\n"
+                    f"{note.stem}: {self.note_name_formatter(note.pitch)}\n"
                     f"{_format_time(note.start)} - {_format_time(note.end)}"
                     f"  duration {note.duration:.2f}s\n"
                     f"Velocity: {velocity}/127 ({velocity_ratio:.0%})"
                 )
             if draw_note_labels and width >= 36:
-                label = self.scene.addText(note.name)
+                label = self.scene.addText(self.note_name_formatter(note.pitch))
                 label.setDefaultTextColor(QColor("#0f172a"))
                 label.setPos(x + 3, pitch_y - 3)
 
@@ -979,7 +795,7 @@ def main() -> int:
                     pitch_y + note_height / 2,
                     QPen(QColor("#e2e8f0"), 1),
                 )
-                label = self.scene.addText(midi_note_name(pitch))
+                label = self.scene.addText(self.note_name_formatter(pitch))
                 label.setDefaultTextColor(QColor("#64748b"))
                 label_x = 12
                 label.setPos(label_x, pitch_y - 5)
@@ -1525,6 +1341,7 @@ def main() -> int:
                 "Controls enharmonic spelling for displayed notes and chords. Auto follows the current key/chord context where possible."
             )
             self.timeline = TimelineView()
+            self.timeline.set_note_name_formatter(self.display_note_name)
             self.timeline.on_position_changed = self.set_editor_position_seconds
             self.timeline.on_selection_changed = self.set_editor_selection
             self.timeline.on_chord_edited = self.edit_timeline_chord
@@ -1866,9 +1683,7 @@ def main() -> int:
             self.gap_suggestion_list.currentItemChanged.connect(
                 lambda *_args: self.refresh_gap_suggestion_actions()
             )
-            self.notation_spelling.currentIndexChanged.connect(
-                lambda *_args: self.refresh_current_harmony(self.timeline.position)
-            )
+            self.notation_spelling.currentIndexChanged.connect(self.handle_notation_spelling_changed)
             self.note_filter_list.itemChanged.connect(self.handle_chord_note_filter_changed)
             self.min_note_evidence_slider.valueChanged.connect(self.handle_min_note_evidence_changed)
             self.chord_list.itemDoubleClicked.connect(self.preview_chord_item)
@@ -2331,6 +2146,12 @@ def main() -> int:
             )
             project = self.editor_project
             track_visibility = editor_state.get("track_visibility", {})
+            notation_spelling = editor_state.get("notation_spelling", "auto")
+            notation_index = self.notation_spelling.findData(notation_spelling)
+            if notation_index >= 0:
+                self.notation_spelling.blockSignals(True)
+                self.notation_spelling.setCurrentIndex(notation_index)
+                self.notation_spelling.blockSignals(False)
             playhead_seconds = float(editor_state.get("playhead_seconds", 0.0) or 0.0)
             self.editor_summary.setText(
                 f"Editor project: {len(project.tracks)} tracks, {len(project.notes)} notes, "
@@ -3203,6 +3024,10 @@ def main() -> int:
             self.min_note_evidence_label.setText(f"Min note evidence: {value}%")
             self.refresh_current_harmony(self.timeline.position)
 
+        def handle_notation_spelling_changed(self, *_args) -> None:
+            self.timeline.redraw()
+            self.refresh_current_harmony(self.timeline.position)
+
         def refresh_current_harmony(self, seconds: float) -> None:
             if self.editor_project is None:
                 self.current_chord.setText("Harmony: -")
@@ -4009,6 +3834,7 @@ def main() -> int:
                     track_audio_volume=audio_volume,
                     track_midi_enabled=midi_enabled,
                     track_midi_volume=midi_volume,
+                    notation_spelling=self.selected_notation_preference(),
                     playhead_seconds=self.timeline.position,
                     chord_overrides=chord_overrides,
                     chord_removals=chord_removals,
@@ -4036,6 +3862,9 @@ def main() -> int:
             self.current_harmony_context = None
             self.current_theory_analysis = None
             self.current_chord_gap_analysis = None
+            self.notation_spelling.blockSignals(True)
+            self.notation_spelling.setCurrentIndex(0)
+            self.notation_spelling.blockSignals(False)
             self.rendering_midi_previews.clear()
             self.clear_transport_players()
             self.track_audio_checks.clear()

@@ -161,7 +161,7 @@ def test_chord_gap_report_explains_gap_formula_terms() -> None:
     report = chord_gap_report(analyze_chord_gap([], chords, 1.0, 2.0))
 
     assert "Chord Gap Suggestions" in report
-    assert "Voice-leading uses minimum pitch-class movement" in report
+    assert "Pitch-class movement uses minimum distance" in report
     assert "Ranking rule:" in report
 
 

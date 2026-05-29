@@ -48,6 +48,7 @@ def test_save_and_load_project_manifest_round_trip(tmp_path: Path) -> None:
         track_audio_volume={"bass": 80},
         track_midi_enabled={"bass": False},
         track_midi_volume={"bass": 70},
+        notation_spelling="flat",
         playhead_seconds=12.5,
         chord_overrides=[
             {"start": 10.0, "end": 12.0, "label": "Gmaj9", "confidence": 0.93}
@@ -70,6 +71,7 @@ def test_save_and_load_project_manifest_round_trip(tmp_path: Path) -> None:
     ]
     assert manifest["editor"]["chord_removals"] == [{"start": 8.0, "end": 9.5}]
     assert manifest["editor"]["track_analysis_enabled"] == {"bass": True}
+    assert manifest["editor"]["notation_spelling"] == "flat"
 
 
 def test_write_json_atomic_replaces_existing_manifest_without_temp_file(tmp_path: Path) -> None:
@@ -118,3 +120,27 @@ def test_load_project_manifest_rejects_bad_format_version(tmp_path: Path) -> Non
         assert "invalid PitchStems project format version" in str(exc)
     else:
         raise AssertionError("Expected bad project format version to be rejected")
+
+
+def test_load_project_manifest_migrates_v1_editor_defaults(tmp_path: Path) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    manifest_path = project_dir / PROJECT_FILENAME
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "format": "pitchstems-project",
+                "format_version": 1,
+                "normalized_audio": "work/source.wav",
+                "stems": [],
+                "midi_files": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manifest = load_project_manifest(manifest_path)
+
+    assert manifest["format_version"] == 2
+    assert manifest["editor"]["notation_spelling"] == "auto"
+    assert manifest["editor"]["chord_overrides"] == []
