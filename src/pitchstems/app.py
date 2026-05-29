@@ -163,6 +163,7 @@ def main() -> int:
             self.worker: threading.Thread | None = None
             self.editor_load_worker: threading.Thread | None = None
             self.editor_load_token = 0
+            self.editor_load_activity_tokens: set[int] = set()
             self.midi_preview_workers: dict[tuple[Path, str], threading.Thread] = {}
             self.latest_output_dir: Path | None = None
             self.current_result: PipelineResult | None = None
@@ -1123,6 +1124,7 @@ def main() -> int:
 
         def start_editor_project_load(self, result: PipelineResult, token: int) -> None:
             self.logger.info("Starting editor project load: %s", result.project_dir)
+            self.editor_load_activity_tokens.add(token)
             self.begin_activity("Building editor project...")
 
             def worker() -> None:
@@ -1143,11 +1145,11 @@ def main() -> int:
         def finish_editor_project_load(self, token: int, loaded: EditorLoadResult) -> None:
             if token != self.editor_load_token or self.current_result is None:
                 self.logger.info("Ignored stale editor load for %s", loaded.pipeline_result.project_dir)
-                self.end_activity("Ignored stale editor load")
+                self.finish_editor_load_activity(token, "Ready")
                 return
             if self.current_result.project_dir != loaded.pipeline_result.project_dir:
                 self.logger.info("Ignored editor load for inactive project: %s", loaded.pipeline_result.project_dir)
-                self.end_activity("Ignored stale editor load")
+                self.finish_editor_load_activity(token, "Ready")
                 return
 
             self.base_editor_project = loaded.base_project
@@ -1194,18 +1196,25 @@ def main() -> int:
             self.set_editor_position_seconds(playhead_seconds)
             self.main_tabs.setCurrentIndex(1)
             self.logger.info("Editor project loaded")
-            self.end_activity("Editor project loaded")
+            self.finish_editor_load_activity(token, "Editor project loaded")
 
         def finish_editor_project_load_failed(self, token: int, project_dir: Path, error: str) -> None:
             if token != self.editor_load_token:
                 self.logger.info("Ignored stale editor load failure for %s: %s", project_dir, error)
+                self.finish_editor_load_activity(token, "Ready")
                 return
             self.logger.error("Could not open project editor for %s: %s", project_dir, error)
             self.append_log(f"Could not open project editor: {error}")
             self.append_log(f"Log file: {self.log_path}")
             self.editor_summary.setText("Could not build editor timeline.")
             self.timeline.set_project(None)
-            self.end_activity("Could not open project editor")
+            self.finish_editor_load_activity(token, "Could not open project editor")
+
+        def finish_editor_load_activity(self, token: int, message: str) -> None:
+            if token not in self.editor_load_activity_tokens:
+                return
+            self.editor_load_activity_tokens.discard(token)
+            self.end_activity(message)
 
         def apply_manual_chords(self) -> None:
             if self.editor_project is None or (not self.manual_chords and not self.removed_chord_ranges):
@@ -2617,6 +2626,7 @@ def main() -> int:
         def reset_stage_state(self, _path: Path | None = None) -> None:
             self.stop_transport()
             self.editor_load_token += 1
+            self.editor_load_activity_tokens.clear()
             if _path is None:
                 self.drop_zone.reset_prompt()
             self.current_result = None

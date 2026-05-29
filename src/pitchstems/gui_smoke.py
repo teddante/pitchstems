@@ -8,6 +8,7 @@ from pathlib import Path
 from mido import Message, MetaMessage, MidiFile, MidiTrack
 from PySide6.QtWidgets import QApplication
 
+from pitchstems.editor_loader import EditorLoadResult
 from pitchstems.pipeline import PipelineResult
 from pitchstems.project_store import save_project_manifest
 from pitchstems.separation import StemResult
@@ -88,6 +89,17 @@ def run_project_smoke(window) -> None:
     _assert("bass" not in window.track_analysis_checks, "old project track controls cleared")
     _assert(set(window.timeline.visible_tracks) == {"piano"}, "timeline visible tracks switched")
     _assert(window.timeline.selection_range() is None, "timeline selection reset on project switch")
+    stale_loaded = EditorLoadResult(
+        pipeline_result=window.current_result,
+        base_project=window.base_editor_project,
+        editor_project=window.editor_project,
+        editor_state={},
+        manual_chords=[],
+        removed_chord_ranges=[],
+    )
+    activity_label = window.activity_label.text()
+    window.finish_editor_project_load(window.editor_load_token - 1, stale_loaded)
+    _assert(window.activity_label.text() == activity_label, "stale editor load leaves activity label alone")
 
     window.reset_stage_state()
     _assert(window.current_result is None, "reset clears current result")
