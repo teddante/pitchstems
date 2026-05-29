@@ -95,7 +95,7 @@ def test_selection_weights_sum_overlap_times_velocity_energy() -> None:
     assert weights[11] == pytest.approx(b_energy / g_energy)
 
 
-def test_point_weights_use_loudest_active_octave_per_pitch_class() -> None:
+def test_point_weights_sum_active_events_per_pitch_class() -> None:
     notes = [
         NoteEvent("bass", 0.0, 2.0, 43, 20),
         NoteEvent("piano", 0.0, 2.0, 55, 80),
@@ -105,4 +105,5 @@ def test_point_weights_use_loudest_active_octave_per_pitch_class() -> None:
     weights = chord_base_pitch_weights(notes, ("point", 1.0))
 
     assert weights[7] == pytest.approx(1.0)
-    assert weights[11] == pytest.approx(midi_velocity_energy(64) / midi_velocity_energy(80))
+    g_energy = midi_velocity_energy(20) + midi_velocity_energy(80)
+    assert weights[11] == pytest.approx(midi_velocity_energy(64) / g_energy)

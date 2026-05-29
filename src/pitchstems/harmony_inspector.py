@@ -104,9 +104,9 @@ def chord_base_pitch_weights(
         _kind, seconds = context
         for note in notes:
             if note.start <= seconds < note.end:
-                weights[note.pitch % 12] = max(
-                    weights.get(note.pitch % 12, 0.0),
-                    midi_velocity_energy(note.velocity),
+                weights[note.pitch % 12] = (
+                    weights.get(note.pitch % 12, 0.0)
+                    + midi_velocity_energy(note.velocity)
                 )
     if not weights:
         return {}

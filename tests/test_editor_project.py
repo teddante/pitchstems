@@ -2,6 +2,7 @@ from pathlib import Path
 import wave
 
 from mido import Message, MetaMessage, MidiFile, MidiTrack
+import pytest
 
 from pitchstems.editor_project import (
     ChordScoringOptions,
@@ -181,6 +182,21 @@ def test_analyze_chord_at_uses_notes_active_at_playhead() -> None:
     assert analysis.label == "C"
     assert analysis.active_note_names == ["C4", "E4", "G4"]
     assert analyze_chord_at(notes, 1.4).label is None
+
+
+def test_analyze_chord_at_sums_duplicate_pitch_class_energy() -> None:
+    notes = [
+        _note(0.0, 1.0, 43, velocity=20),  # G
+        _note(0.0, 1.0, 55, velocity=80),  # G
+        _note(0.0, 1.0, 47, velocity=64),  # B
+    ]
+
+    analysis = analyze_chord_at(notes, 0.5)
+
+    weights = dict(analysis.note_weights)
+    expected_g_energy = midi_velocity_energy(20) + midi_velocity_energy(80)
+    assert weights["G"] == 1.0
+    assert weights["B"] == pytest.approx(midi_velocity_energy(64) / expected_g_energy)
 
 
 def test_analyze_chord_region_weights_overlap_and_velocity() -> None:

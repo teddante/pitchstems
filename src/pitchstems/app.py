@@ -2335,7 +2335,7 @@ def main() -> int:
             totals: dict[int, float] = {}
             for note in sorted(active_notes_at(notes, seconds), key=lambda item: (item.stem, item.pitch, item.start)):
                 weight = midi_velocity_energy(note.velocity)
-                totals[note.pitch % 12] = max(totals.get(note.pitch % 12, 0.0), weight)
+                totals[note.pitch % 12] = totals.get(note.pitch % 12, 0.0) + weight
                 rows.append(
                     f"{note.stem:12} {self.display_note_name(note.pitch):4} pitch {note.pitch:3} "
                     f"start {format_time(note.start)} end {format_time(note.end)} "

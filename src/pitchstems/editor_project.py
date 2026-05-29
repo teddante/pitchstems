@@ -279,13 +279,14 @@ def analyze_chord_at(
 ) -> ChordAnalysis:
     options = scoring_options or ChordScoringOptions()
     active = active_notes_at(notes, seconds)
-    if active and options.weak_note_floor > 0:
-        pitch_weights: dict[int, float] = {}
-        for note in active:
-            pitch_weights[note.pitch % 12] = max(
-                pitch_weights.get(note.pitch % 12, 0.0),
-                midi_velocity_energy(note.velocity),
-            )
+    pitch_weights: dict[int, float] = {}
+    exact_pitch_weights: dict[int, float] = {}
+    for note in active:
+        weight = midi_velocity_energy(note.velocity)
+        pitch_weights[note.pitch % 12] = pitch_weights.get(note.pitch % 12, 0.0) + weight
+        exact_pitch_weights[note.pitch] = exact_pitch_weights.get(note.pitch, 0.0) + weight
+
+    if pitch_weights and options.weak_note_floor > 0:
         max_weight = max(pitch_weights.values())
         kept_pitch_classes = {
             pitch_class
@@ -294,13 +295,51 @@ def analyze_chord_at(
         }
         if required_pitch_classes:
             kept_pitch_classes |= required_pitch_classes
-        active = [
-            note
-            for note in active
-            if note.pitch % 12 in kept_pitch_classes
-        ]
-    return analyze_chord(
-        [note.pitch for note in active],
+        pitch_weights = {
+            pitch_class: weight
+            for pitch_class, weight in pitch_weights.items()
+            if pitch_class in kept_pitch_classes
+        }
+        exact_pitch_weights = {
+            pitch: weight
+            for pitch, weight in exact_pitch_weights.items()
+            if pitch % 12 in kept_pitch_classes
+        }
+
+    active_note_names = [midi_note_name(pitch) for pitch in sorted(exact_pitch_weights)]
+    if not pitch_weights:
+        return ChordAnalysis(None, 0.0, active_note_names, [])
+
+    max_exact_weight = max(exact_pitch_weights.values())
+    bass_pitch = min(
+        pitch
+        for pitch, weight in exact_pitch_weights.items()
+        if weight >= max_exact_weight * 0.12
+    )
+    note_weights = _normalized_note_weights(pitch_weights)
+    effective_pitch_classes = set(pitch_weights)
+    if required_pitch_classes:
+        effective_pitch_classes |= required_pitch_classes
+    if len(effective_pitch_classes) < 3:
+        return ChordAnalysis(
+            None,
+            0.0,
+            active_note_names,
+            sorted(pitch_weights),
+            bass=bass_pitch % 12,
+            note_weights=note_weights,
+            partial_hints=partial_harmony_hints(
+                set(pitch_weights),
+                bass_pitch % 12,
+                required_pitch_classes=required_pitch_classes,
+                excluded_pitch_classes=excluded_pitch_classes,
+            ),
+        )
+    return _analyze_weighted_pitch_classes(
+        pitch_weights,
+        bass_pitch % 12,
+        active_note_names,
+        note_weights,
         required_pitch_classes=required_pitch_classes,
         excluded_pitch_classes=excluded_pitch_classes,
         scoring_options=options,
