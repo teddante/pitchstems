@@ -1,4 +1,9 @@
-from pitchstems.editor_project import chord_pitch_classes_for_label, chord_tones_for_label, display_chord_label
+from pitchstems.editor_project import (
+    chord_bass_name_for_label,
+    chord_pitch_classes_for_label,
+    chord_tones_for_label,
+    display_chord_label,
+)
 from pitchstems.notation import scale_label, spell_scale
 
 
@@ -12,6 +17,12 @@ def test_chord_labels_can_be_respelt_for_display_without_changing_pitch_classes(
     assert chord_pitch_classes_for_label("F#") == chord_pitch_classes_for_label("Gb")
     assert display_chord_label("F#/C#", "flat") == "Gb/Db"
     assert display_chord_label("Bb/D", "sharp") == "A#/D"
+
+
+def test_chord_bass_name_for_label_uses_parsed_slash_bass() -> None:
+    assert chord_bass_name_for_label("F#/C#", "flat") == "Db"
+    assert chord_bass_name_for_label("Bb/D", "sharp") == "D"
+    assert chord_bass_name_for_label("Cmaj7") is None
 
 
 def test_heptatonic_scale_spelling_uses_one_letter_per_degree() -> None:

@@ -13,8 +13,10 @@ from pitchstems.notation import (
     DEFAULT_PITCH_NAMES,
     midi_note_name as spell_midi_note_name,
     pitch_class_for_name,
+    pitch_class_name,
     respell_chord_label,
     spell_chord_tones,
+    split_chord_label,
 )
 from pitchstems.pipeline import PipelineResult
 
@@ -684,6 +686,13 @@ def midi_note_name(pitch: int, spelling_preference: str | None = "auto") -> str:
 
 def display_chord_label(label: str, spelling_preference: str | None = "auto") -> str:
     return respell_chord_label(label, spelling_preference)
+
+
+def chord_bass_name_for_label(label: str, spelling_preference: str | None = "auto") -> str | None:
+    parts = split_chord_label(label)
+    if parts is None or parts.bass_pitch_class is None:
+        return None
+    return pitch_class_name(parts.bass_pitch_class, spelling_preference)
 
 
 def chord_tones_for_label(label: str, spelling_preference: str | None = "auto") -> list[str]:

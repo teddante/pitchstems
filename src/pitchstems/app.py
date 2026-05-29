@@ -19,6 +19,7 @@ from pitchstems.editor_project import (
     active_notes_at,
     analyze_chord_at,
     analyze_chord_region,
+    chord_bass_name_for_label,
     chord_tones_for_label,
     display_chord_label,
     midi_velocity_energy,
@@ -1964,6 +1965,9 @@ def main() -> int:
         def display_chord_tones(self, label: str) -> list[str]:
             return chord_tones_for_label(label, self.resolved_notation_preference(label))
 
+        def display_chord_bass(self, label: str) -> str | None:
+            return chord_bass_name_for_label(label, self.resolved_notation_preference(label))
+
         def display_note_name(self, pitch: int) -> str:
             return midi_note_name(pitch, self.resolved_notation_preference())
 
@@ -2536,8 +2540,9 @@ def main() -> int:
             if not notes:
                 return "-"
             text = " - ".join(notes)
-            if "/" in label:
-                text += f"  bass {self.display_chord(label).split('/', 1)[1]}"
+            bass_name = self.display_chord_bass(label)
+            if bass_name is not None:
+                text += f"  bass {bass_name}"
             return text
 
         def _partial_candidate_notes_text(self, analysis, label: str) -> str:
@@ -2545,8 +2550,9 @@ def main() -> int:
             if not notes:
                 return "-"
             text = " - ".join(notes)
-            if "/" in label:
-                text += f"  bass {self.display_chord(label).split('/', 1)[1]}"
+            bass_name = self.display_chord_bass(label)
+            if bass_name is not None:
+                text += f"  bass {bass_name}"
             return text
 
         def refresh_chord_actions(self) -> None:
