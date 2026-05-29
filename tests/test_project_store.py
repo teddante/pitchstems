@@ -169,6 +169,51 @@ def test_load_project_manifest_rejects_malformed_optional_paths(tmp_path: Path) 
         raise AssertionError("Expected malformed optional path to be rejected")
 
 
+def test_load_project_manifest_rejects_relative_paths_outside_project(tmp_path: Path) -> None:
+    manifest_path = tmp_path / PROJECT_FILENAME
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "format": "pitchstems-project",
+                "format_version": 2,
+                "normalized_audio": "../outside.wav",
+                "stems": [],
+                "midi_files": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        load_project_manifest(manifest_path)
+    except ValueError as exc:
+        assert "outside the project folder: normalized_audio" in str(exc)
+    else:
+        raise AssertionError("Expected escaping relative project path to be rejected")
+
+
+def test_load_project_manifest_allows_absolute_external_source_audio(tmp_path: Path) -> None:
+    manifest_path = tmp_path / PROJECT_FILENAME
+    external_source = tmp_path.parent / "source.mp3"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "format": "pitchstems-project",
+                "format_version": 2,
+                "source_audio": str(external_source),
+                "normalized_audio": "work/source.wav",
+                "stems": [],
+                "midi_files": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manifest = load_project_manifest(manifest_path)
+
+    assert manifest["source_audio"] == str(external_source)
+
+
 def test_load_project_manifest_migrates_v1_editor_defaults(tmp_path: Path) -> None:
     project_dir = tmp_path / "song.pitchstems"
     manifest_path = project_dir / PROJECT_FILENAME

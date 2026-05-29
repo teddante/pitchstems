@@ -160,6 +160,7 @@ def load_project_manifest(path: Path) -> dict[str, Any]:
 
 
 def _validate_manifest(path: Path, manifest: dict[str, Any]) -> None:
+    project_dir = path.parent.resolve()
     if manifest.get("format") != "pitchstems-project":
         raise ValueError(f"{path} is not a PitchStems project")
     try:
@@ -179,13 +180,35 @@ def _validate_manifest(path: Path, manifest: dict[str, Any]) -> None:
     for index, item in enumerate(manifest.get("stems", [])):
         if not isinstance(item, dict) or not isinstance(item.get("name"), str) or not isinstance(item.get("path"), str):
             raise ValueError(f"{path} has an invalid stem entry at index {index}")
+        _validate_project_path_value(path, project_dir, item["path"], f"stems[{index}].path")
     for index, item in enumerate(manifest.get("midi_files", [])):
         if not isinstance(item, dict) or not isinstance(item.get("stem"), str) or not isinstance(item.get("path"), str):
             raise ValueError(f"{path} has an invalid MIDI entry at index {index}")
+        _validate_project_path_value(path, project_dir, item["path"], f"midi_files[{index}].path")
+    _validate_project_path_value(path, project_dir, manifest["normalized_audio"], "normalized_audio")
     for field_name in ("source_audio", "combined_midi", "zip_path"):
         value = manifest.get(field_name)
         if value is not None and not isinstance(value, str):
             raise ValueError(f"{path} has an invalid project path field: {field_name}")
+        if value:
+            _validate_project_path_value(path, project_dir, value, field_name)
+
+
+def _validate_project_path_value(
+    manifest_path: Path,
+    project_dir: Path,
+    value: str,
+    field_name: str,
+) -> None:
+    value_path = Path(value)
+    if value_path.is_absolute():
+        return
+    try:
+        (project_dir / value_path).resolve().relative_to(project_dir)
+    except ValueError as exc:
+        raise ValueError(
+            f"{manifest_path} has a project path outside the project folder: {field_name}"
+        ) from exc
 
 
 def _migrate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
