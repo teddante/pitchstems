@@ -7,13 +7,7 @@ from PySide6.QtGui import QColor, QBrush, QFontMetrics, QImage, QPainter, QPen, 
 from PySide6.QtWidgets import QApplication, QGraphicsScene, QGraphicsView
 
 from pitchstems.editor_project import ChordRegion, EditorProject, midi_note_name
-
-
-def _format_time(seconds: float) -> str:
-    seconds = max(0.0, seconds)
-    minutes = int(seconds // 60)
-    remainder = seconds - (minutes * 60)
-    return f"{minutes:02d}:{remainder:06.3f}"
+from pitchstems.time_format import format_time
 
 
 def _track_color(stem_name: str) -> QColor:
@@ -334,7 +328,7 @@ class TimelineView(QGraphicsView):
             color = QColor("#cbd5e1") if is_major else QColor("#e5e7eb")
             self.scene.addLine(x, 0, x, height, QPen(color, 1))
             if is_major:
-                text = self.scene.addText(_format_time(tick))
+                text = self.scene.addText(format_time(tick))
                 text.setDefaultTextColor(QColor("#475569"))
                 text.setPos(x + 4, 3)
                 self._make_sticky_y(text, 32)
@@ -412,7 +406,7 @@ class TimelineView(QGraphicsView):
             self._make_sticky_y(rect, 28)
             rect.setData(0, chord)
             rect.setToolTip(
-                f"{chord.label}  {_format_time(chord.start)} - {_format_time(chord.end)}\n"
+                f"{chord.label}  {format_time(chord.start)} - {format_time(chord.end)}\n"
                 f"Ranking score: {chord.confidence:.0%}\n"
                 "Drag the middle to move, drag an edge to resize, Delete removes the selected chord."
             )
@@ -524,7 +518,7 @@ class TimelineView(QGraphicsView):
         if enable_tooltips:
             rect.setToolTip(
                 f"{note.stem}: {self.note_name_formatter(note.pitch)}\n"
-                f"{_format_time(note.start)} - {_format_time(note.end)}"
+                f"{format_time(note.start)} - {format_time(note.end)}"
                 f"  duration {note.duration:.2f}s\n"
                 f"Velocity: {velocity}/127 ({velocity_ratio:.0%})"
             )

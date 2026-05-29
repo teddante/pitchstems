@@ -9,6 +9,7 @@ from pathlib import Path
 from pitchstems.acceleration import onnxruntime_status, torch_status
 from pitchstems.app_logging import app_logger, logs_dir, setup_app_logging
 from pitchstems.chord_preview import chord_preview_pitches
+from pitchstems.chord_regions import merge_chord_ranges
 from pitchstems.editor_project import (
     ChordAnalysis,
     ChordRegion,
@@ -65,6 +66,7 @@ from pitchstems.theory import (
     chord_gap_report,
     theory_analysis_report,
 )
+from pitchstems.time_format import format_time
 from pitchstems.transcription import MidiOptions
 
 
@@ -1177,7 +1179,7 @@ def main() -> int:
             self.timeline_slider.setEnabled(maximum > 0)
             self.timeline_slider.blockSignals(False)
             self.fit_song_button.setEnabled(maximum > 0)
-            self.editor_position.setText(_format_time(playhead_seconds))
+            self.editor_position.setText(format_time(playhead_seconds))
             self.refresh_editor_lists(track_visibility)
             self.refresh_playback_controls(editor_state)
             self.clear_transport_players()
@@ -1253,7 +1255,7 @@ def main() -> int:
                 return
             for chord in self.editor_project.chords[:200]:
                 self.chord_list.addItem(
-                    f"{_format_time(chord.start)}  {self.display_chord(chord.label)}  ({chord.confidence:.0%})"
+                    f"{format_time(chord.start)}  {self.display_chord(chord.label)}  ({chord.confidence:.0%})"
                 )
             if len(self.editor_project.chords) > 200:
                 self.chord_list.addItem(f"... {len(self.editor_project.chords) - 200} more")
@@ -1691,7 +1693,7 @@ def main() -> int:
             self.timeline_slider.blockSignals(True)
             self.timeline_slider.setValue(value)
             self.timeline_slider.blockSignals(False)
-            self.editor_position.setText(_format_time(seconds))
+            self.editor_position.setText(format_time(seconds))
             self.timeline.set_position(seconds)
             self.refresh_current_harmony(seconds)
             if seek_players:
@@ -1707,7 +1709,7 @@ def main() -> int:
                 return
             start, end = selection
             self.statusBar().showMessage(
-                f"Loop selection active: {_format_time(start)} - {_format_time(end)}. Press Play to loop this range.",
+                f"Loop selection active: {format_time(start)} - {format_time(end)}. Press Play to loop this range.",
                 5000,
             )
 
@@ -1828,7 +1830,7 @@ def main() -> int:
                 self.refresh_gap_suggestion_actions()
                 return
             self.gap_suggestion_list.addItem(
-                f"Gap {_format_time(analysis.start)} - {_format_time(analysis.end)}"
+                f"Gap {format_time(analysis.start)} - {format_time(analysis.end)}"
             )
             for index, suggestion in enumerate(analysis.suggestions[:8]):
                 item = QListWidgetItem(
@@ -1933,7 +1935,7 @@ def main() -> int:
                 chord = self.display_chord(analysis.label)
                 self.current_chord.setText(
                     f"Selection: {chord}  (score {analysis.confidence:.0%})  "
-                    f"{_format_time(start)} - {_format_time(end)}"
+                    f"{format_time(start)} - {format_time(end)}"
                 )
                 self._set_chord_candidates(analysis)
                 self.refresh_current_gap_suggestions(source_notes)
@@ -2172,7 +2174,7 @@ def main() -> int:
             self.refresh_editor_project_from_chord_edits(chord)
             self.statusBar().showMessage(
                 f"Filled gap with {self.display_chord(suggestion.label)}: "
-                f"{_format_time(suggestion.start)} - {_format_time(suggestion.end)}.",
+                f"{format_time(suggestion.start)} - {format_time(suggestion.end)}.",
                 5000,
             )
 
@@ -2194,7 +2196,7 @@ def main() -> int:
                     excluded_pitch_classes=excluded,
                     scoring_options=scoring_options,
                 )
-                mode = f"Selection {_format_time(start)} - {_format_time(end)} ({end - start:.3f} sec)"
+                mode = f"Selection {format_time(start)} - {format_time(end)} ({end - start:.3f} sec)"
                 evidence_rows, totals = self.chord_selection_evidence_rows(analysis_notes, start, end)
             else:
                 seconds = self.timeline.position
@@ -2205,7 +2207,7 @@ def main() -> int:
                     excluded_pitch_classes=excluded,
                     scoring_options=scoring_options,
                 )
-                mode = f"Playhead {_format_time(seconds)}"
+                mode = f"Playhead {format_time(seconds)}"
                 evidence_rows, totals = self.chord_point_evidence_rows(analysis_notes, seconds)
 
             lines = [
@@ -2318,7 +2320,7 @@ def main() -> int:
                 totals[note.pitch % 12] = totals.get(note.pitch % 12, 0.0) + weight
                 rows.append(
                     f"{note.stem:12} {self.display_note_name(note.pitch):4} pitch {note.pitch:3} "
-                    f"start {_format_time(note.start)} end {_format_time(note.end)} "
+                    f"start {format_time(note.start)} end {format_time(note.end)} "
                     f"overlap {overlap:.3f}s velocity {note.velocity:3} "
                     f"velocity energy {velocity_energy:.4f} note energy {weight:.4f}"
                 )
@@ -2336,7 +2338,7 @@ def main() -> int:
                 totals[note.pitch % 12] = max(totals.get(note.pitch % 12, 0.0), weight)
                 rows.append(
                     f"{note.stem:12} {self.display_note_name(note.pitch):4} pitch {note.pitch:3} "
-                    f"start {_format_time(note.start)} end {_format_time(note.end)} "
+                    f"start {format_time(note.start)} end {format_time(note.end)} "
                     f"active at playhead velocity {note.velocity:3} velocity energy {weight:.4f}"
                 )
             return rows, totals
@@ -2516,7 +2518,7 @@ def main() -> int:
             self.insert_manual_chord(manual)
             self.refresh_editor_project_from_chord_edits(manual)
             self.statusBar().showMessage(
-                f"Assigned {self.display_chord(label)} to {_format_time(start)} - {_format_time(end)}.",
+                f"Assigned {self.display_chord(label)} to {format_time(start)} - {format_time(end)}.",
                 5000,
             )
 
@@ -2526,26 +2528,26 @@ def main() -> int:
                 for existing in self.manual_chords
                 if existing.end <= chord.start or existing.start >= chord.end
             ]
-            self.removed_chord_ranges = self._merge_chord_ranges(
+            self.removed_chord_ranges = merge_chord_ranges(
                 [*self.removed_chord_ranges, (chord.start, chord.end)]
             )
             self.manual_chords.append(chord)
             self.manual_chords.sort(key=lambda item: (item.start, item.end, item.label))
 
         def edit_timeline_chord(self, original: ChordRegion, edited: ChordRegion) -> None:
-            self.removed_chord_ranges = self._merge_chord_ranges(
+            self.removed_chord_ranges = merge_chord_ranges(
                 [*self.removed_chord_ranges, (original.start, original.end), (edited.start, edited.end)]
             )
             self.manual_chords = [chord for chord in self.manual_chords if chord != original]
             self.insert_manual_chord(edited)
             self.refresh_editor_project_from_chord_edits(edited)
             self.statusBar().showMessage(
-                f"Moved {self.display_chord(edited.label)} to {_format_time(edited.start)} - {_format_time(edited.end)}.",
+                f"Moved {self.display_chord(edited.label)} to {format_time(edited.start)} - {format_time(edited.end)}.",
                 5000,
             )
 
         def delete_timeline_chord(self, chord: ChordRegion) -> None:
-            self.removed_chord_ranges = self._merge_chord_ranges(
+            self.removed_chord_ranges = merge_chord_ranges(
                 [*self.removed_chord_ranges, (chord.start, chord.end)]
             )
             self.manual_chords = [manual for manual in self.manual_chords if manual != chord]
@@ -2561,16 +2563,6 @@ def main() -> int:
                 f"Selected {self.display_chord(chord.label)}: drag middle to move, drag edges to resize, Delete removes it.",
                 6000,
             )
-
-        def _merge_chord_ranges(self, ranges: list[tuple[float, float]]) -> list[tuple[float, float]]:
-            valid = sorted((start, end) for start, end in ranges if end > start)
-            merged: list[tuple[float, float]] = []
-            for start, end in valid:
-                if not merged or start > merged[-1][1]:
-                    merged.append((start, end))
-                else:
-                    merged[-1] = (merged[-1][0], max(merged[-1][1], end))
-            return merged
 
         def refresh_visible_tracks(self) -> None:
             visible = {
@@ -2682,7 +2674,7 @@ def main() -> int:
             self.inspect_theory_button.setEnabled(False)
             self.use_gap_suggestion_button.setEnabled(False)
             self.inspect_gap_suggestion_button.setEnabled(False)
-            self.editor_position.setText(_format_time(0))
+            self.editor_position.setText(format_time(0))
             self.current_chord.setText("Harmony: -")
             self.set_chord_context_text("Sample: -")
             self.set_theory_analysis(None)
@@ -2861,12 +2853,6 @@ def main() -> int:
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
-
-    def _format_time(seconds: float) -> str:
-        seconds = max(0.0, seconds)
-        minutes = int(seconds // 60)
-        remainder = seconds - (minutes * 60)
-        return f"{minutes:02d}:{remainder:06.3f}"
 
     app = QApplication([])
     window = MainWindow()
