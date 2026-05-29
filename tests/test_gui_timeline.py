@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from pitchstems.editor_project import ChordRegion, EditorProject, EditorTrack, NoteEvent  # noqa: E402
 from pitchstems.gui_track_controls import TRACK_CONTROL_MIN_HEIGHT  # noqa: E402
-from pitchstems.gui_timeline import TimelineView  # noqa: E402
+from pitchstems.gui_timeline import TimelineView, compact_chord_label  # noqa: E402
 
 
 def _app() -> QApplication:
@@ -79,3 +79,12 @@ def test_timeline_fit_song_to_view_keeps_zoom_within_supported_bounds(tmp_path: 
     assert min(height for _y, height, _low, _high in view.track_geometries.values()) >= TRACK_CONTROL_MIN_HEIGHT
     assert view.horizontalScrollBar().value() == 0
     assert view.verticalScrollBar().value() == 0
+
+
+def test_tiny_chord_labels_fall_back_to_root_name(tmp_path: Path) -> None:
+    _app()
+    view = TimelineView()
+
+    assert compact_chord_label("Gmaj9(no3)") == "G"
+    assert compact_chord_label("Bb7/D") == "Bb"
+    assert view._chord_label_for_width("F#m7b5", 10) == "F#"

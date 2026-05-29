@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
+import re
 
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QColor, QBrush, QFontMetrics, QImage, QPainter, QPen, QPixmap
@@ -22,6 +23,11 @@ def _track_color(stem_name: str) -> QColor:
         "instrumental": "#14b8a6",
     }
     return QColor(palette.get(stem_name.lower(), "#475569"))
+
+
+def compact_chord_label(label: str) -> str:
+    match = re.match(r"\s*([A-G](?:#|b)?)", label)
+    return match.group(1) if match else label.strip()[:2]
 
 
 class TimelineView(QGraphicsView):
@@ -412,11 +418,7 @@ class TimelineView(QGraphicsView):
                 "Drag the middle to move, drag an edge to resize, Delete removes the selected chord."
             )
             label_width = max(8, int(width) - 8)
-            shown_label = QFontMetrics(QApplication.font()).elidedText(
-                chord.label,
-                Qt.ElideRight,
-                label_width,
-            )
+            shown_label = self._chord_label_for_width(chord.label, label_width)
             text = self.scene.addText(shown_label)
             text.setDefaultTextColor(QColor("#4c1d95"))
             text.setPos(x + 5, self.ruler_height + 5)
@@ -424,6 +426,15 @@ class TimelineView(QGraphicsView):
             text.setToolTip(rect.toolTip())
             text.setZValue(8)
             self._make_sticky_y(text, 34)
+
+    def _chord_label_for_width(self, label: str, label_width: int) -> str:
+        if label_width < 24:
+            return compact_chord_label(label)
+        return QFontMetrics(QApplication.font()).elidedText(
+            label,
+            Qt.ElideRight,
+            label_width,
+        ) or compact_chord_label(label)
 
     def _draw_tracks(
         self,
