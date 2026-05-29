@@ -22,6 +22,7 @@ from pitchstems.editor_project import (
 )
 from pitchstems.pipeline import PipelineResult
 from pitchstems.separation import StemResult
+from pitchstems.transcription import MidiResult
 
 
 def test_read_midi_notes_returns_absolute_seconds(tmp_path: Path) -> None:
@@ -61,6 +62,33 @@ def test_build_editor_project_uses_audio_duration_when_midi_is_empty(tmp_path: P
 
     assert project.duration == 2.25
     assert project.tracks[0].audio_path == stem_path
+    assert project.notes == []
+
+
+def test_build_editor_project_skips_missing_or_corrupt_midi(tmp_path: Path) -> None:
+    normalized = tmp_path / "work" / "song.wav"
+    stem_path = tmp_path / "stems" / "song_bass.wav"
+    corrupt_midi = tmp_path / "midi" / "corrupt.mid"
+    _write_wav(normalized, duration_seconds=1.0)
+    _write_wav(stem_path, duration_seconds=1.5)
+    corrupt_midi.parent.mkdir(parents=True)
+    corrupt_midi.write_text("not midi", encoding="utf-8")
+    result = PipelineResult(
+        project_dir=tmp_path,
+        normalized_audio=normalized,
+        stems=[StemResult("bass", stem_path)],
+        midi_files=[
+            MidiResult("bass", tmp_path / "midi" / "missing.mid"),
+            MidiResult("bass", corrupt_midi),
+        ],
+        combined_midi=None,
+        zip_path=None,
+    )
+
+    project = build_editor_project(result)
+
+    assert project.duration == 1.5
+    assert project.tracks[0].name == "bass"
     assert project.notes == []
 
 

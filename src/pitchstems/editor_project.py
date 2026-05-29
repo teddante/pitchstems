@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import wave
 from bisect import bisect_right
 from dataclasses import dataclass, field
@@ -20,6 +21,7 @@ from pitchstems.pipeline import PipelineResult
 
 DEFAULT_TEMPO = 500000
 PITCH_NAMES = DEFAULT_PITCH_NAMES
+LOGGER = logging.getLogger(__name__)
 PLAIN_CHORD_THRESHOLD = 0.70
 WEIGHTED_CHORD_THRESHOLD = 0.30
 PLAIN_CANDIDATE_MARGIN = 0.18
@@ -115,7 +117,7 @@ def build_editor_project(result: PipelineResult) -> EditorProject:
     tracks = [EditorTrack(name=stem.name, audio_path=stem.path) for stem in result.stems]
     notes: list[NoteEvent] = []
     for midi in result.midi_files:
-        notes.extend(read_midi_notes(midi.path, midi.stem))
+        notes.extend(_read_midi_notes_for_project(midi.path, midi.stem))
     notes.sort(key=lambda note: (note.start, note.stem, note.pitch, note.end))
     duration = max(
         [note.end for note in notes]
@@ -131,6 +133,14 @@ def build_editor_project(result: PipelineResult) -> EditorProject:
         chords=chords,
         duration=duration,
     )
+
+
+def _read_midi_notes_for_project(path: Path, stem: str) -> list[NoteEvent]:
+    try:
+        return read_midi_notes(path, stem)
+    except Exception as exc:
+        LOGGER.warning("Skipping unreadable MIDI file for %s: %s (%s)", stem, path, exc)
+        return []
 
 
 def _audio_duration_seconds(path: Path) -> float:
