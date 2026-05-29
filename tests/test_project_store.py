@@ -157,6 +157,52 @@ def test_load_project_manifest_rejects_malformed_asset_entries(tmp_path: Path) -
         raise AssertionError("Expected malformed stem entry to be rejected")
 
 
+def test_load_project_manifest_rejects_empty_required_asset_paths(tmp_path: Path) -> None:
+    manifest_path = tmp_path / PROJECT_FILENAME
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "format": "pitchstems-project",
+                "format_version": 2,
+                "normalized_audio": "",
+                "stems": [],
+                "midi_files": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        load_project_manifest(manifest_path)
+    except ValueError as exc:
+        assert "empty project path field: normalized_audio" in str(exc)
+    else:
+        raise AssertionError("Expected empty required project path to be rejected")
+
+
+def test_load_project_manifest_rejects_blank_stem_and_midi_names(tmp_path: Path) -> None:
+    manifest_path = tmp_path / PROJECT_FILENAME
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "format": "pitchstems-project",
+                "format_version": 2,
+                "normalized_audio": "work/source.wav",
+                "stems": [{"name": " ", "path": "stems/bass.wav"}],
+                "midi_files": [{"stem": "", "path": "midi/bass.mid"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        load_project_manifest(manifest_path)
+    except ValueError as exc:
+        assert "invalid stem entry at index 0" in str(exc)
+    else:
+        raise AssertionError("Expected blank generated asset name to be rejected")
+
+
 def test_load_project_manifest_rejects_malformed_optional_paths(tmp_path: Path) -> None:
     manifest_path = tmp_path / PROJECT_FILENAME
     manifest_path.write_text(

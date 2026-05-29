@@ -180,11 +180,19 @@ def _validate_manifest(path: Path, manifest: dict[str, Any]) -> None:
         if not isinstance(manifest.get(field_name), expected_type):
             raise ValueError(f"{path} is missing required project field: {field_name}")
     for index, item in enumerate(manifest.get("stems", [])):
-        if not isinstance(item, dict) or not isinstance(item.get("name"), str) or not isinstance(item.get("path"), str):
+        if (
+            not isinstance(item, dict)
+            or not _non_empty_string(item.get("name"))
+            or not _non_empty_string(item.get("path"))
+        ):
             raise ValueError(f"{path} has an invalid stem entry at index {index}")
         _validate_project_path_value(path, project_dir, item["path"], f"stems[{index}].path")
     for index, item in enumerate(manifest.get("midi_files", [])):
-        if not isinstance(item, dict) or not isinstance(item.get("stem"), str) or not isinstance(item.get("path"), str):
+        if (
+            not isinstance(item, dict)
+            or not _non_empty_string(item.get("stem"))
+            or not _non_empty_string(item.get("path"))
+        ):
             raise ValueError(f"{path} has an invalid MIDI entry at index {index}")
         _validate_project_path_value(path, project_dir, item["path"], f"midi_files[{index}].path")
     _validate_project_path_value(path, project_dir, manifest["normalized_audio"], "normalized_audio")
@@ -210,6 +218,8 @@ def _validate_project_path_value(
     *,
     allow_external_absolute: bool = False,
 ) -> None:
+    if not value.strip():
+        raise ValueError(f"{manifest_path} has an empty project path field: {field_name}")
     value_path = Path(value)
     if value_path.is_absolute():
         if allow_external_absolute:
@@ -223,6 +233,10 @@ def _validate_project_path_value(
         raise ValueError(
             f"{manifest_path} has a project path outside the project folder: {field_name}"
         ) from exc
+
+
+def _non_empty_string(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
 
 
 def _migrate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
