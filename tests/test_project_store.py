@@ -122,6 +122,53 @@ def test_load_project_manifest_rejects_bad_format_version(tmp_path: Path) -> Non
         raise AssertionError("Expected bad project format version to be rejected")
 
 
+def test_load_project_manifest_rejects_malformed_asset_entries(tmp_path: Path) -> None:
+    manifest_path = tmp_path / PROJECT_FILENAME
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "format": "pitchstems-project",
+                "format_version": 2,
+                "normalized_audio": "work/source.wav",
+                "stems": [{"name": "bass"}],
+                "midi_files": [{"stem": "bass", "path": "midi/bass.mid"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        load_pipeline_result(manifest_path)
+    except ValueError as exc:
+        assert "invalid stem entry" in str(exc)
+    else:
+        raise AssertionError("Expected malformed stem entry to be rejected")
+
+
+def test_load_project_manifest_rejects_malformed_optional_paths(tmp_path: Path) -> None:
+    manifest_path = tmp_path / PROJECT_FILENAME
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "format": "pitchstems-project",
+                "format_version": 2,
+                "source_audio": ["not", "a", "path"],
+                "normalized_audio": "work/source.wav",
+                "stems": [],
+                "midi_files": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        load_project_manifest(manifest_path)
+    except ValueError as exc:
+        assert "invalid project path field: source_audio" in str(exc)
+    else:
+        raise AssertionError("Expected malformed optional path to be rejected")
+
+
 def test_load_project_manifest_migrates_v1_editor_defaults(tmp_path: Path) -> None:
     project_dir = tmp_path / "song.pitchstems"
     manifest_path = project_dir / PROJECT_FILENAME

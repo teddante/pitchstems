@@ -176,6 +176,16 @@ def _validate_manifest(path: Path, manifest: dict[str, Any]) -> None:
     for field_name, expected_type in required_fields.items():
         if not isinstance(manifest.get(field_name), expected_type):
             raise ValueError(f"{path} is missing required project field: {field_name}")
+    for index, item in enumerate(manifest.get("stems", [])):
+        if not isinstance(item, dict) or not isinstance(item.get("name"), str) or not isinstance(item.get("path"), str):
+            raise ValueError(f"{path} has an invalid stem entry at index {index}")
+    for index, item in enumerate(manifest.get("midi_files", [])):
+        if not isinstance(item, dict) or not isinstance(item.get("stem"), str) or not isinstance(item.get("path"), str):
+            raise ValueError(f"{path} has an invalid MIDI entry at index {index}")
+    for field_name in ("source_audio", "combined_midi", "zip_path"):
+        value = manifest.get(field_name)
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"{path} has an invalid project path field: {field_name}")
 
 
 def _migrate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
