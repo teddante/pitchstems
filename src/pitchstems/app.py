@@ -24,10 +24,9 @@ from pitchstems.editor_project import (
     display_chord_label,
     midi_note_name,
 )
-from pitchstems.editor_loader import EditorLoadResult, apply_chord_edits, build_editor_load_result
+from pitchstems.editor_loader import EditorLoadResult, apply_chord_edits
 from pitchstems.editor_state import (
     build_editor_state_snapshot,
-    editor_float,
     save_editor_state_snapshot,
 )
 from pitchstems.file_opening import open_folder
@@ -52,6 +51,7 @@ from pitchstems.harmony_inspector import (
 from pitchstems import harmony_panel
 from pitchstems import gui_processing
 from pitchstems.harmony_report import current_chord_analysis_report as build_chord_analysis_report
+from pitchstems import gui_editor_load
 from pitchstems.gui_options import default_midi_checked, device_label, optional_frequency
 from pitchstems.gui_track_controls import rebuild_track_controls, sync_track_control_panel as sync_track_controls
 from pitchstems.recent_projects import (
@@ -756,128 +756,19 @@ def main() -> int:
             self.log.append(message)
 
         def set_current_result(self, result: PipelineResult, open_output: bool = True) -> None:
-            self.logger.info("Setting current result: %s", result.project_dir)
-            self.stop_transport()
-            self.set_activity_message("Loading result...")
-            self.editor_load_token += 1
-            self.current_result = result
-            self.midi_preview_token += 1
-            self.midi_preview_workers.clear()
-            self.current_stems = result.stems
-            self.current_input_stem = (result.source_audio or result.normalized_audio).stem
-            self.latest_output_dir = result.project_dir
-            self.base_editor_project = None
-            self.editor_project = None
-            self.manual_chords = []
-            self.removed_chord_ranges = []
-            self.rendering_midi_previews.clear()
-            self.run_midi.setEnabled(True)
-            self.separation_status.setText(f"Ready: {len(result.stems)} stems saved in {result.project_dir / 'stems'}")
-            self.midi_status.setText(
-                f"Ready: {len(result.midi_files)} MIDI files. Change Basic Pitch settings or MIDI stem ticks, then use Rerun MIDI only."
-            )
-            self.editor_summary.setText("Building editor timeline...")
-            self.timeline_slider.setEnabled(False)
-            self.fit_song_button.setEnabled(False)
-            self.clear_transport_players()
-            self.remember_recent_project(result.project_dir)
-            if open_output and self.open_when_done.isChecked():
-                self.open_latest_output()
-            self.start_editor_project_load(result, self.editor_load_token)
+            gui_editor_load.set_current_result(self, result, open_output)
 
         def start_editor_project_load(self, result: PipelineResult, token: int) -> None:
-            self.logger.info("Starting editor project load: %s", result.project_dir)
-            self.editor_load_activity_tokens.add(token)
-            self.begin_activity("Building editor project...")
-
-            def worker() -> None:
-                try:
-                    loaded = build_editor_load_result(result)
-                    self.messages.put(("EDITOR_LOADED", token, loaded))
-                except Exception as exc:
-                    self.logger.exception("Editor project load failed")
-                    self.messages.put(("EDITOR_LOAD_FAILED", token, result.project_dir, f"{exc}"))
-
-            self.editor_load_worker = threading.Thread(
-                target=worker,
-                name="PitchStemsEditorLoad",
-                daemon=True,
-            )
-            self.editor_load_worker.start()
+            gui_editor_load.start_editor_project_load(self, result, token)
 
         def finish_editor_project_load(self, token: int, loaded: EditorLoadResult) -> None:
-            if token != self.editor_load_token or self.current_result is None:
-                self.logger.info("Ignored stale editor load for %s", loaded.pipeline_result.project_dir)
-                self.finish_editor_load_activity(token, "Ready")
-                return
-            if self.current_result.project_dir != loaded.pipeline_result.project_dir:
-                self.logger.info("Ignored editor load for inactive project: %s", loaded.pipeline_result.project_dir)
-                self.finish_editor_load_activity(token, "Ready")
-                return
-
-            self.base_editor_project = loaded.base_project
-            self.editor_project = loaded.editor_project
-            editor_state = loaded.editor_state
-            self.manual_chords = loaded.manual_chords
-            self.removed_chord_ranges = loaded.removed_chord_ranges
-            self.logger.info(
-                "Editor model built: tracks=%d notes=%d chords=%d",
-                len(self.editor_project.tracks),
-                len(self.editor_project.notes),
-                len(self.editor_project.chords),
-            )
-            project = self.editor_project
-            track_visibility = editor_state.get("track_visibility", {})
-            notation_spelling = editor_state.get("notation_spelling", "auto")
-            notation_index = self.notation_spelling.findData(notation_spelling)
-            if notation_index >= 0:
-                self.notation_spelling.blockSignals(True)
-                self.notation_spelling.setCurrentIndex(notation_index)
-                self.notation_spelling.blockSignals(False)
-            playhead_seconds = editor_float(editor_state.get("playhead_seconds"), 0.0, low=0.0)
-            self.editor_summary.setText(
-                f"Editor project: {len(project.tracks)} tracks, {len(project.notes)} notes, "
-                f"{len(project.chords)} chord regions."
-            )
-            maximum = max(0, int(project.duration * 1000))
-            self.timeline_slider.blockSignals(True)
-            self.timeline_slider.setRange(0, maximum)
-            self.timeline_slider.setValue(0)
-            self.timeline_slider.setEnabled(maximum > 0)
-            self.timeline_slider.blockSignals(False)
-            self.fit_song_button.setEnabled(maximum > 0)
-            self.editor_position.setText(format_time(playhead_seconds))
-            self.refresh_editor_lists(track_visibility)
-            self.refresh_playback_controls(editor_state)
-            self.clear_transport_players()
-            self.logger.info("Drawing editor timeline")
-            self.set_activity_message("Drawing editor timeline...")
-            self.timeline.set_project(project)
-            self.timeline.set_visible_tracks(
-                {track.name for track in project.tracks if track_visibility.get(track.name, True)}
-            )
-            self.set_editor_position_seconds(playhead_seconds)
-            self.main_tabs.setCurrentIndex(1)
-            self.logger.info("Editor project loaded")
-            self.finish_editor_load_activity(token, "Editor project loaded")
+            gui_editor_load.finish_editor_project_load(self, token, loaded)
 
         def finish_editor_project_load_failed(self, token: int, project_dir: Path, error: str) -> None:
-            if token != self.editor_load_token:
-                self.logger.info("Ignored stale editor load failure for %s: %s", project_dir, error)
-                self.finish_editor_load_activity(token, "Ready")
-                return
-            self.logger.error("Could not open project editor for %s: %s", project_dir, error)
-            self.append_log(f"Could not open project editor: {error}")
-            self.append_log(f"Log file: {self.log_path}")
-            self.editor_summary.setText("Could not build editor timeline.")
-            self.timeline.set_project(None)
-            self.finish_editor_load_activity(token, "Could not open project editor")
+            gui_editor_load.finish_editor_project_load_failed(self, token, project_dir, error)
 
         def finish_editor_load_activity(self, token: int, message: str) -> None:
-            if token not in self.editor_load_activity_tokens:
-                return
-            self.editor_load_activity_tokens.discard(token)
-            self.end_activity(message)
+            gui_editor_load.finish_editor_load_activity(self, token, message)
 
         def apply_manual_chords(self) -> None:
             if self.editor_project is None or (not self.manual_chords and not self.removed_chord_ranges):
@@ -912,29 +803,10 @@ def main() -> int:
             self.save_editor_state()
 
         def refresh_editor_lists(self, track_visibility: dict[str, bool] | None = None) -> None:
-            track_visibility = track_visibility or {}
-            self.editor_track_visibility = track_visibility
-            self.track_note_counts = {}
-            self.chord_list.clear()
-            self.refresh_chord_keyboard()
-            if self.editor_project is None:
-                return
-            for note in self.editor_project.notes:
-                self.track_note_counts[note.stem] = self.track_note_counts.get(note.stem, 0) + 1
-            self.refresh_detected_chord_list()
+            gui_editor_load.refresh_editor_lists(self, track_visibility)
 
         def refresh_detected_chord_list(self) -> None:
-            self.chord_list.clear()
-            if self.editor_project is None:
-                return
-            for chord in self.editor_project.chords[:200]:
-                self.chord_list.addItem(
-                    f"{format_time(chord.start)}  {self.display_chord(chord.label)}  ({chord.confidence:.0%})"
-                )
-            if len(self.editor_project.chords) > 200:
-                self.chord_list.addItem(f"... {len(self.editor_project.chords) - 200} more")
-            self.refresh_chord_actions()
-            self.refresh_chord_keyboard()
+            gui_editor_load.refresh_detected_chord_list(self)
 
         def set_editor_position(self, value: int) -> None:
             self.set_editor_position_seconds(value / 1000)
