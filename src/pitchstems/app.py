@@ -30,7 +30,7 @@ from pitchstems.editor_state import (
     save_editor_state_snapshot,
 )
 from pitchstems.file_opening import open_folder
-from pitchstems.midi_preview import render_midi_preview, render_note_preview
+from pitchstems.midi_preview import render_note_preview
 from pitchstems.model_catalog import model_choice
 from pitchstems.notation import pitch_class_for_name, pitch_class_name
 from pitchstems.pipeline import PipelineResult
@@ -52,6 +52,7 @@ from pitchstems import harmony_panel
 from pitchstems import gui_processing
 from pitchstems.harmony_report import current_chord_analysis_report as build_chord_analysis_report
 from pitchstems import gui_editor_load
+from pitchstems import gui_transport_flow
 from pitchstems.gui_options import default_midi_checked, device_label, optional_frequency
 from pitchstems.gui_track_controls import rebuild_track_controls, sync_track_control_panel as sync_track_controls
 from pitchstems.recent_projects import (
@@ -132,8 +133,6 @@ def main() -> int:
     from pitchstems.gui_timeline import TimelineView
     from pitchstems.gui_transport import (
         TransportController,
-        find_existing_midi_previews,
-        loop_playback_start,
         reset_player_source,
         safe_qt_multimedia_call,
         start_player_source,
@@ -838,192 +837,68 @@ def main() -> int:
                 scrollbar.setValue(value)
 
         def prepare_transport_players(self, result: PipelineResult) -> None:
-            self.set_activity_message("Preparing audio players...")
-            self.pause_transport()
-            self.transport.prepare_players(result)
-            self.attach_midi_preview_players(dict(self.transport.midi_preview_paths), finish_activity=False)
-            requested_midi = {
-                stem_name
-                for stem_name, checkbox in self.track_midi_checks.items()
-                if checkbox.isChecked() and stem_name not in self.transport.midi_preview_paths
-            }
-            if requested_midi:
-                self.start_midi_preview_render(result, requested_midi)
-            self.refresh_playback_mix()
+            gui_transport_flow.prepare_transport_players(self, result)
 
         def clear_transport_players(self) -> None:
-            self.transport.clear_players()
+            gui_transport_flow.clear_transport_players(self)
 
         def transport_players(self) -> list[QMediaPlayer]:
-            return self.transport.players()
+            return gui_transport_flow.transport_players(self)
 
         def find_existing_midi_previews(self, result: PipelineResult) -> dict[str, Path]:
-            return find_existing_midi_previews(result)
+            return gui_transport_flow.existing_midi_previews(result)
 
         def start_midi_preview_render(
             self,
             result: PipelineResult,
             requested_stems: set[str] | None = None,
         ) -> None:
-            if self.editor_project is None or not self.editor_project.notes:
-                return
-            requested_keys = {stem.lower() for stem in (requested_stems or set())}
-            missing = [
-                track.name
-                for track in self.editor_project.tracks
-                if (not requested_keys or track.name.lower() in requested_keys)
-                if track.name not in self.transport.midi_preview_paths
-                and any(note.stem.lower() == track.name.lower() for note in self.editor_project.notes)
-                and not self._midi_preview_worker_running(result.project_dir, track.name)
-            ]
-            if not missing:
-                return
-            project = self.editor_project
-            preview_dir = result.project_dir / "editor" / "midi-preview"
-            token = self.midi_preview_token
-            self.rendering_midi_previews.update(missing)
-            self.refresh_timeline_track_summaries()
-            self.append_log(f"Rendering MIDI preview audio for {', '.join(missing)} in the background...")
-            self.begin_activity("Rendering MIDI preview audio...")
-
-            def worker() -> None:
-                previews: dict[str, Path] = {}
-                try:
-                    for stem_name in missing:
-                        preview = render_midi_preview(
-                            stem_name,
-                            project.notes,
-                            preview_dir,
-                            project.duration,
-                        )
-                        if preview:
-                            previews[stem_name] = preview
-                    self.messages.put(("MIDI_PREVIEWS", token, result.project_dir, set(missing), previews))
-                except Exception as exc:
-                    self.logger.exception("MIDI preview render failed")
-                    self.messages.put(
-                        (
-                            "MIDI_PREVIEW_FAILED",
-                            token,
-                            result.project_dir,
-                            set(missing),
-                            f"Could not render MIDI previews: {exc}",
-                        )
-                    )
-
-            worker_thread = threading.Thread(target=worker, daemon=True)
-            for stem_name in missing:
-                self.midi_preview_workers[(result.project_dir, stem_name.lower())] = (token, worker_thread)
-            worker_thread.start()
+            gui_transport_flow.start_midi_preview_render(self, result, requested_stems)
 
         def _midi_preview_worker_running(self, project_dir: Path, stem_name: str) -> bool:
-            key = (project_dir, stem_name.lower())
-            entry = self.midi_preview_workers.get(key)
-            if entry is None:
-                return False
-            token, worker = entry
-            if token != self.midi_preview_token or not worker.is_alive():
-                self.midi_preview_workers.pop(key, None)
-                return False
-            return True
+            return gui_transport_flow.midi_preview_worker_running(self, project_dir, stem_name)
 
         def clear_midi_preview_worker(self, project_dir: Path, stem_name: str, token: int) -> None:
-            key = (project_dir, stem_name.lower())
-            entry = self.midi_preview_workers.get(key)
-            if entry is not None and entry[0] == token:
-                self.midi_preview_workers.pop(key, None)
+            gui_transport_flow.clear_midi_preview_worker(self, project_dir, stem_name, token)
 
         def attach_midi_preview_players(self, previews: dict[str, Path], finish_activity: bool = True) -> None:
-            if not previews:
-                self.refresh_timeline_track_summaries()
-                if finish_activity:
-                    self.end_activity("No MIDI preview audio rendered")
-                return
-            for stem_name in previews:
-                self.rendering_midi_previews.discard(stem_name)
-            self.transport.attach_midi_preview_players(previews, self.timeline.position)
-            self.refresh_playback_mix()
-            self.refresh_timeline_track_summaries()
-            if finish_activity:
-                self.append_log(f"MIDI preview audio ready: {len(previews)} tracks.")
-                self.end_activity("MIDI preview audio ready")
+            gui_transport_flow.attach_midi_preview_players(self, previews, finish_activity)
 
         def refresh_playback_mix(self) -> None:
-            self.transport.refresh_mix()
-            self.apply_midi_transport_state()
+            gui_transport_flow.refresh_playback_mix(self)
 
         def midi_track_enabled(self, stem_name: str) -> bool:
-            return self.transport.midi_track_enabled(stem_name)
+            return gui_transport_flow.midi_track_enabled(self, stem_name)
 
         def apply_midi_transport_state(self) -> None:
-            self.transport.apply_midi_transport_state(self.timeline.position)
+            gui_transport_flow.apply_midi_transport_state(self)
 
         def toggle_playback(self) -> None:
-            if self.transport.is_playing:
-                self.pause_transport()
-            else:
-                self.play_transport()
+            gui_transport_flow.toggle_playback(self)
 
         def play_transport(self) -> None:
-            if self.editor_project is None or self.current_result is None:
-                self.append_log("Open or run a project before playback.")
-                return
-            if not self.transport.track_players:
-                self.append_log("Preparing playback...")
-                self.begin_activity("Preparing playback...")
-                self.prepare_transport_players(self.current_result)
-                self.end_activity("Playback ready")
-            self.refresh_playback_mix()
-            start_position = self.loop_playback_start_seconds()
-            if start_position != self.timeline.position:
-                self.set_editor_position_seconds(start_position, save=False, seek_players=False)
-            self.transport.play(start_position)
-            self.play_button.setText("Pause")
-            self.stop_button.setEnabled(True)
-            self.transport_timer.start(80)
-            QTimer.singleShot(250, self.resync_transport_players)
+            gui_transport_flow.play_transport(self)
 
         def pause_transport(self) -> None:
-            if not self.transport.pause():
-                return
-            self.play_button.setText("Play")
-            self.transport_timer.stop()
-            self.save_editor_state()
+            gui_transport_flow.pause_transport(self)
 
         def stop_transport(self) -> None:
-            self.transport.stop()
-            self.play_button.setText("Play")
-            self.stop_button.setEnabled(False)
-            self.transport_timer.stop()
-            if self.editor_project is not None:
-                self.set_editor_position_seconds(0.0, seek_players=False)
+            gui_transport_flow.stop_transport(self)
 
         def seek_audio_players(self, seconds: float) -> None:
-            self.transport.seek(seconds)
+            gui_transport_flow.seek_audio_players(self, seconds)
 
         def update_transport_position(self) -> None:
-            master = self.transport_master_player()
-            if master is None:
-                return
-            seconds = master.position() / 1000
-            self.resync_transport_players(master)
-            selection = self.timeline.selection_range()
-            if selection is not None:
-                start, end = selection
-                if seconds >= end:
-                    self.seek_audio_players(start)
-                    self.set_editor_position_seconds(start, save=False, seek_players=False)
-                    return
-            self.set_editor_position_seconds(seconds, save=False, seek_players=False)
+            gui_transport_flow.update_transport_position(self)
 
         def transport_master_player(self) -> QMediaPlayer | None:
-            return self.transport.master_player()
+            return gui_transport_flow.transport_master_player(self)
 
         def resync_transport_players(self, master: QMediaPlayer | None = None) -> None:
-            self.transport.resync(master)
+            gui_transport_flow.resync_transport_players(self, master)
 
         def loop_playback_start_seconds(self) -> float:
-            return loop_playback_start(self.timeline.position, self.timeline.selection_range())
+            return gui_transport_flow.loop_playback_start_seconds(self)
 
         def set_editor_position_seconds(
             self,
