@@ -387,7 +387,7 @@ def chord_gap_report(analysis: ChordGapAnalysis) -> str:
         "--------------",
         "Local MIDI evidence uses the same overlap_seconds * (velocity / 127)^2 energy model.",
         "Theory fit checks formal chord tones against the current scale/key/mode candidate.",
-        "Pitch-class movement uses minimum distance on the 12-tone circle; it is not register-aware voice-leading.",
+        "Pitch-class movement uses minimum distance on the 12-tone circle; it does not model register-aware part-writing.",
         "Common-tone support counts shared pitch classes with neighbouring chord regions.",
         "Suggestions are ordered by evidence-first ranking rules, not blended policy weights.",
         "",
