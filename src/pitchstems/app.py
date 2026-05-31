@@ -9,7 +9,6 @@ from pathlib import Path
 from pitchstems.acceleration import onnxruntime_status, torch_status
 from pitchstems.app_logging import app_logger, logs_dir, setup_app_logging
 from pitchstems.chord_preview import chord_preview_pitches
-from pitchstems.chord_regions import merge_chord_ranges
 from pitchstems.editor_project import (
     ChordAnalysis,
     ChordRegion,
@@ -24,11 +23,7 @@ from pitchstems.editor_project import (
     display_chord_label,
     midi_note_name,
 )
-from pitchstems.editor_loader import EditorLoadResult, apply_chord_edits
-from pitchstems.editor_state import (
-    build_editor_state_snapshot,
-    save_editor_state_snapshot,
-)
+from pitchstems.editor_loader import EditorLoadResult
 from pitchstems.file_opening import open_folder
 from pitchstems.midi_preview import render_note_preview
 from pitchstems.model_catalog import model_choice
@@ -52,6 +47,7 @@ from pitchstems import harmony_panel
 from pitchstems import gui_processing
 from pitchstems.harmony_report import current_chord_analysis_report as build_chord_analysis_report
 from pitchstems import gui_editor_load
+from pitchstems import gui_editor_state
 from pitchstems import gui_transport_flow
 from pitchstems.gui_options import default_midi_checked, device_label, optional_frequency
 from pitchstems.gui_track_controls import rebuild_track_controls, sync_track_control_panel as sync_track_controls
@@ -769,36 +765,10 @@ def main() -> int:
             gui_editor_load.finish_editor_load_activity(self, token, message)
 
         def apply_manual_chords(self) -> None:
-            if self.editor_project is None or (not self.manual_chords and not self.removed_chord_ranges):
-                return
-            self.editor_project = apply_chord_edits(
-                self.editor_project,
-                self.manual_chords,
-                self.removed_chord_ranges,
-            )
+            gui_editor_state.apply_manual_chords(self)
 
         def refresh_editor_project_from_chord_edits(self, selected_chord: ChordRegion | None = None) -> None:
-            if self.current_result is None or self.base_editor_project is None:
-                return
-            position = self.timeline.position
-            selection_start = self.timeline.selection_start
-            selection_end = self.timeline.selection_end
-            self.editor_project = self.base_editor_project
-            self.apply_manual_chords()
-            self.timeline.project = self.editor_project
-            self.timeline._index_project()
-            self.timeline.visible_tracks = {
-                stem_name.lower()
-                for stem_name, checkbox in self.track_visibility_checks.items()
-                if checkbox.isChecked()
-            }
-            self.timeline.position = position
-            self.timeline.selection_start = selection_start
-            self.timeline.selection_end = selection_end
-            self.timeline.selected_chord = selected_chord
-            self.timeline.redraw()
-            self.refresh_detected_chord_list()
-            self.save_editor_state()
+            gui_editor_state.refresh_editor_project_from_chord_edits(self, selected_chord)
 
         def refresh_editor_lists(self, track_visibility: dict[str, bool] | None = None) -> None:
             gui_editor_load.refresh_editor_lists(self, track_visibility)
@@ -1411,113 +1381,31 @@ def main() -> int:
             ]
 
         def assign_selected_chord_to_selection(self) -> None:
-            if self.editor_project is None or self.current_result is None:
-                return
-            selection = self.timeline.selection_range()
-            item = self.chord_list.currentItem()
-            if selection is None or item is None:
-                return
-            label = item.data(Qt.UserRole)
-            confidence = float(item.data(Qt.UserRole + 1) or 1.0)
-            if not label:
-                return
-            start, end = selection
-            manual = ChordRegion(start=start, end=end, label=label, confidence=confidence)
-            self.insert_manual_chord(manual)
-            self.refresh_editor_project_from_chord_edits(manual)
-            self.statusBar().showMessage(
-                f"Assigned {self.display_chord(label)} to {format_time(start)} - {format_time(end)}.",
-                5000,
-            )
+            gui_editor_state.assign_selected_chord_to_selection(self)
 
         def insert_manual_chord(self, chord: ChordRegion) -> None:
-            self.manual_chords = [
-                existing
-                for existing in self.manual_chords
-                if existing.end <= chord.start or existing.start >= chord.end
-            ]
-            self.removed_chord_ranges = merge_chord_ranges(
-                [*self.removed_chord_ranges, (chord.start, chord.end)]
-            )
-            self.manual_chords.append(chord)
-            self.manual_chords.sort(key=lambda item: (item.start, item.end, item.label))
+            gui_editor_state.insert_manual_chord(self, chord)
 
         def edit_timeline_chord(self, original: ChordRegion, edited: ChordRegion) -> None:
-            self.removed_chord_ranges = merge_chord_ranges(
-                [*self.removed_chord_ranges, (original.start, original.end), (edited.start, edited.end)]
-            )
-            self.manual_chords = [chord for chord in self.manual_chords if chord != original]
-            self.insert_manual_chord(edited)
-            self.refresh_editor_project_from_chord_edits(edited)
-            self.statusBar().showMessage(
-                f"Moved {self.display_chord(edited.label)} to {format_time(edited.start)} - {format_time(edited.end)}.",
-                5000,
-            )
+            gui_editor_state.edit_timeline_chord(self, original, edited)
 
         def delete_timeline_chord(self, chord: ChordRegion) -> None:
-            self.removed_chord_ranges = merge_chord_ranges(
-                [*self.removed_chord_ranges, (chord.start, chord.end)]
-            )
-            self.manual_chords = [manual for manual in self.manual_chords if manual != chord]
-            self.refresh_editor_project_from_chord_edits(None)
-            self.statusBar().showMessage(f"Deleted {self.display_chord(chord.label)}.", 4000)
+            gui_editor_state.delete_timeline_chord(self, chord)
 
         def show_timeline_chord_status(self, chord: ChordRegion | None) -> None:
-            if chord is None:
-                self.refresh_chord_keyboard()
-                return
-            self.refresh_chord_keyboard()
-            self.statusBar().showMessage(
-                f"Selected {self.display_chord(chord.label)}: drag middle to move, drag edges to resize, Delete removes it.",
-                6000,
-            )
+            gui_editor_state.show_timeline_chord_status(self, chord)
 
         def refresh_visible_tracks(self) -> None:
-            visible = {
-                stem_name
-                for stem_name, checkbox in self.track_visibility_checks.items()
-                if checkbox.isChecked()
-            }
-            self.timeline.set_visible_tracks(visible)
-            self.refresh_current_harmony(self.timeline.position)
-            self.save_editor_state()
+            gui_editor_state.refresh_visible_tracks(self)
 
         def show_all_timeline_tracks(self) -> None:
-            for checkbox in self.track_visibility_checks.values():
-                checkbox.blockSignals(True)
-                checkbox.setChecked(True)
-                checkbox.blockSignals(False)
-            self.refresh_visible_tracks()
+            gui_editor_state.show_all_timeline_tracks(self)
 
         def save_editor_state(self) -> bool:
-            if self.current_result is None or self.editor_project is None:
-                return False
-            if self.editor_save_timer.isActive():
-                self.editor_save_timer.stop()
-            snapshot = build_editor_state_snapshot(
-                track_visibility_checks=self.track_visibility_checks,
-                track_analysis_checks=self.track_analysis_checks,
-                track_audio_checks=self.track_audio_checks,
-                track_audio_sliders=self.track_audio_sliders,
-                track_midi_checks=self.track_midi_checks,
-                track_midi_sliders=self.track_midi_sliders,
-                notation_spelling=self.selected_notation_preference(),
-                playhead_seconds=self.timeline.position,
-                manual_chords=self.manual_chords,
-                removed_chord_ranges=self.removed_chord_ranges,
-            )
-            try:
-                save_editor_state_snapshot(self.current_result, snapshot)
-            except Exception as exc:
-                self.logger.exception("Could not save editor state")
-                self.statusBar().showMessage(f"Could not save project state: {exc}", 6000)
-                return False
-            return True
+            return gui_editor_state.save_editor_state(self)
 
         def request_editor_state_save(self, delay_ms: int = 750) -> None:
-            if self.current_result is None or self.editor_project is None:
-                return
-            self.editor_save_timer.start(delay_ms)
+            gui_editor_state.request_editor_state_save(self, delay_ms)
 
         def reset_stage_state(self, _path: Path | None = None) -> None:
             self.stop_transport()
