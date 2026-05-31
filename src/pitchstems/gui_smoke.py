@@ -79,6 +79,9 @@ def run_project_smoke(window) -> None:
     window.chord_list.setCurrentRow(0)
     window.assign_selected_chord_to_selection()
     _assert(bool(window.manual_chords), "assign chord from inspector to timeline selection")
+    report = window.current_chord_analysis_report()
+    _assert("Harmony Inspector Calculation" in report, "harmony report title")
+    _assert("MIDI Energy Evidence" in report, "harmony report evidence section")
 
     window.fit_editor_song_to_view()
     _assert(window.timeline.horizontalScrollBar().value() == 0, "fit song horizontal start")
