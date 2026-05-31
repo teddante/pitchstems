@@ -34,7 +34,7 @@ from pitchstems.file_opening import open_folder
 from pitchstems.midi_preview import render_midi_preview, render_note_preview
 from pitchstems.model_catalog import model_choice
 from pitchstems.notation import pitch_class_for_name, pitch_class_name
-from pitchstems.pipeline import PipelineResult, process_audio_file, process_midi_from_stems
+from pitchstems.pipeline import PipelineResult
 from pitchstems.project_store import (
     PROJECT_FILENAME,
     load_pipeline_result,
@@ -50,6 +50,7 @@ from pitchstems.harmony_inspector import (
     selected_chord_analysis_notes,
 )
 from pitchstems import harmony_panel
+from pitchstems import gui_processing
 from pitchstems.harmony_report import current_chord_analysis_report as build_chord_analysis_report
 from pitchstems.gui_options import default_midi_checked, device_label, optional_frequency
 from pitchstems.gui_track_controls import rebuild_track_controls, sync_track_control_panel as sync_track_controls
@@ -71,28 +72,6 @@ from pitchstems.theory import (
 )
 from pitchstems.time_format import format_time
 from pitchstems.transcription import MidiOptions
-
-
-@dataclass(frozen=True)
-class FullRunRequest:
-    input_path: Path
-    output_root: Path
-    separation_options: SeparationOptions
-    generate_midi: bool
-    midi_options: MidiOptions
-    midi_stems: set[str]
-    create_zip: bool
-
-
-@dataclass(frozen=True)
-class MidiRunRequest:
-    result: PipelineResult
-    input_stem: str
-    stems: list[StemResult]
-    midi_options: MidiOptions
-    midi_stems: set[str]
-    create_zip: bool
-
 
 @dataclass(frozen=True)
 class HarmonyContext:
@@ -755,179 +734,19 @@ def main() -> int:
             self.end_activity("Project loaded")
 
         def start_full_processing(self) -> None:
-            if self.worker and self.worker.is_alive():
-                return
-            if not self.drop_zone.path:
-                self.append_log("Drop an audio file first.")
-                return
-            midi_stems = self.selected_midi_stems()
-            request = FullRunRequest(
-                input_path=self.drop_zone.path,
-                output_root=Path(self.output_dir.text()),
-                separation_options=self.selected_separation_options(),
-                generate_midi=self.generate_midi.isChecked() and bool(midi_stems),
-                midi_options=self.selected_midi_options(),
-                midi_stems=midi_stems,
-                create_zip=self.create_zip.isChecked(),
-            )
-
-            self.set_processing_state(True)
-            self.begin_activity("Running separation + MIDI...")
-            self.append_log("Starting separation + MIDI pipeline...")
-            token = self.start_worker_token()
-            self.worker = threading.Thread(target=self.run_full_pipeline, args=(token, request), daemon=True)
-            self.worker.start()
+            gui_processing.start_full_processing(self)
 
         def start_midi_processing(self) -> None:
-            if self.worker and self.worker.is_alive():
-                return
-            if not self.current_result or not self.current_stems or not self.current_input_stem:
-                self.append_log("Run separation first. Then MIDI can be rerun from those stems.")
-                return
-            request = MidiRunRequest(
-                result=self.current_result,
-                input_stem=self.current_input_stem,
-                stems=list(self.current_stems),
-                midi_options=self.selected_midi_options(),
-                midi_stems=self.selected_midi_stems(),
-                create_zip=self.create_zip.isChecked(),
-            )
-
-            self.set_processing_state(True)
-            self.begin_activity("Rerunning MIDI...")
-            self.append_log("Rerunning MIDI from existing stems...")
-            token = self.start_worker_token()
-            self.worker = threading.Thread(target=self.run_midi_stage, args=(token, request), daemon=True)
-            self.worker.start()
+            gui_processing.start_midi_processing(self)
 
         def start_worker_token(self) -> int:
-            self.worker_token += 1
-            self.active_worker_token = self.worker_token
-            return self.worker_token
+            return gui_processing.start_worker_token(self)
 
         def invalidate_worker_token(self) -> None:
-            had_active_worker = self.active_worker_token is not None
-            self.worker_token += 1
-            self.active_worker_token = None
-            if had_active_worker:
-                self.set_processing_state(False)
-
-        def run_full_pipeline(self, token: int, request: FullRunRequest) -> None:
-            try:
-                self.logger.info("Starting full pipeline for %s", request.input_path)
-                result = process_audio_file(
-                    request.input_path,
-                    request.output_root,
-                    separation_options=request.separation_options,
-                    generate_midi=request.generate_midi,
-                    midi_policy="all",
-                    midi_options=request.midi_options,
-                    midi_stems=request.midi_stems,
-                    create_zip=request.create_zip,
-                    log=lambda message: self.messages.put(("WORKER_LOG", token, message)),
-                )
-                self.messages.put(("RESULT", token, result))
-                self.messages.put(("WORKER_LOG", token, f"Project ready: {result.project_dir}"))
-            except Exception as exc:
-                self.logger.exception("Full pipeline failed")
-                self.messages.put(("WORKER_LOG", token, f"Error: {exc}"))
-            finally:
-                self.messages.put(("ENABLE_PROCESS", token))
-
-        def run_midi_stage(self, token: int, request: MidiRunRequest) -> None:
-            try:
-                self.logger.info("Starting MIDI rerun for %s", request.result.project_dir)
-                result = process_midi_from_stems(
-                    project_dir=request.result.project_dir,
-                    input_stem=request.input_stem,
-                    normalized_audio=request.result.normalized_audio,
-                    stems=request.stems,
-                    midi_policy="all",
-                    midi_options=request.midi_options,
-                    midi_stems=request.midi_stems,
-                    create_zip=request.create_zip,
-                    log=lambda message: self.messages.put(("WORKER_LOG", token, message)),
-                )
-                self.messages.put(("RESULT", token, result))
-                self.messages.put(("WORKER_LOG", token, f"Updated project MIDI: {result.project_dir}"))
-            except Exception as exc:
-                self.logger.exception("MIDI rerun failed")
-                self.messages.put(("WORKER_LOG", token, f"Error: {exc}"))
-            finally:
-                self.messages.put(("ENABLE_PROCESS", token))
+            gui_processing.invalidate_worker_token(self)
 
         def flush_messages(self) -> None:
-            while True:
-                try:
-                    message = self.messages.get_nowait()
-                except queue.Empty:
-                    return
-                if isinstance(message, tuple) and message[0] == "RESULT":
-                    _kind, token, result = message
-                    if self.is_active_worker_token(int(token)):
-                        self.set_current_result(result)
-                    else:
-                        self.logger.info("Ignored stale worker result for %s", result.project_dir)
-                elif isinstance(message, tuple) and message[0] == "WORKER_LOG":
-                    _kind, token, text = message
-                    if self.is_active_worker_token(int(token)):
-                        self.append_log(str(text))
-                        if text and not str(text).startswith("Tracks:"):
-                            self.set_activity_message(str(text)[:120])
-                    else:
-                        self.logger.info("Ignored stale worker log: %s", text)
-                elif isinstance(message, tuple) and message[0] == "EDITOR_LOADED":
-                    _kind, token, loaded = message
-                    self.finish_editor_project_load(int(token), loaded)
-                elif isinstance(message, tuple) and message[0] == "EDITOR_LOAD_FAILED":
-                    _kind, token, project_dir, error = message
-                    self.finish_editor_project_load_failed(int(token), project_dir, error)
-                elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEWS":
-                    _kind, token, project_dir, requested_stems, previews = message
-                    for stem_name in requested_stems:
-                        self.clear_midi_preview_worker(project_dir, stem_name, int(token))
-                    if (
-                        token == self.midi_preview_token
-                        and self.current_result is not None
-                        and self.current_result.project_dir == project_dir
-                    ):
-                        self.rendering_midi_previews.difference_update(requested_stems)
-                        self.attach_midi_preview_players(previews)
-                    else:
-                        self.logger.info("Ignored stale MIDI preview render for %s", project_dir)
-                elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEW_FAILED":
-                    _kind, token, project_dir, requested_stems, error = message
-                    for stem_name in requested_stems:
-                        self.clear_midi_preview_worker(project_dir, stem_name, int(token))
-                    if (
-                        token == self.midi_preview_token
-                        and self.current_result is not None
-                        and self.current_result.project_dir == project_dir
-                    ):
-                        self.rendering_midi_previews.difference_update(requested_stems)
-                        self.refresh_timeline_track_summaries()
-                        self.append_log(error)
-                        self.end_activity("MIDI preview audio failed")
-                    else:
-                        self.logger.info("Ignored stale MIDI preview failure for %s: %s", project_dir, error)
-                elif isinstance(message, tuple) and message[0] == "ENABLE_PROCESS":
-                    _kind, token = message
-                    if self.is_active_worker_token(int(token)):
-                        self.active_worker_token = None
-                        self.set_processing_state(False)
-                        self.end_activity("Processing complete")
-                    else:
-                        self.logger.info("Ignored stale worker completion for token %s", token)
-                elif isinstance(message, str) and message.startswith("__OUTPUT_DIR__"):
-                    self.latest_output_dir = Path(message.removeprefix("__OUTPUT_DIR__"))
-                    if self.open_when_done.isChecked():
-                        self.open_latest_output()
-                elif isinstance(message, str):
-                    self.append_log(message)
-                    if message and not message.startswith("Tracks:"):
-                        self.set_activity_message(message[:120])
-                else:
-                    self.logger.warning("Ignored unknown worker message: %r", message)
+            gui_processing.flush_messages(self)
 
         def is_active_worker_token(self, token: int) -> bool:
             return self.active_worker_token == token

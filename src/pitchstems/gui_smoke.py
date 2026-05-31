@@ -40,6 +40,10 @@ def run_startup_smoke(window) -> None:
     _assert(window.processing_tabs.tabText(1) == "Runtime", "runtime tab")
     _assert("drums" in window.midi_stem_checks, "MIDI stem checks populated")
     _assert(not window.midi_stem_checks["drums"].isChecked(), "drums MIDI default off")
+    window.start_full_processing()
+    _assert("Drop an audio file first." in window.log.toPlainText(), "empty full run guidance")
+    window.start_midi_processing()
+    _assert("Run separation first." in window.log.toPlainText(), "empty MIDI rerun guidance")
 
     menu_titles = {action.text() for action in window.menuBar().actions()}
     _assert("&File" in menu_titles, "file menu")
