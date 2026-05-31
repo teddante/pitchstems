@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pitchstems.acceleration import onnxruntime_status, torch_status
-from pitchstems.app_logging import app_logger, logs_dir, setup_app_logging
+from pitchstems.app_logging import app_logger, setup_app_logging
 from pitchstems.chord_preview import chord_preview_pitches
 from pitchstems.editor_project import (
     ChordAnalysis,
@@ -24,15 +24,10 @@ from pitchstems.editor_project import (
     midi_note_name,
 )
 from pitchstems.editor_loader import EditorLoadResult
-from pitchstems.file_opening import open_folder
 from pitchstems.midi_preview import render_note_preview
 from pitchstems.model_catalog import model_choice
 from pitchstems.notation import pitch_class_for_name, pitch_class_name
 from pitchstems.pipeline import PipelineResult
-from pitchstems.project_store import (
-    PROJECT_FILENAME,
-    load_pipeline_result,
-)
 from pitchstems.harmony_inspector import (
     chord_analysis_track_names as inspector_chord_analysis_track_names,
     chord_base_pitch_weights as inspector_chord_base_pitch_weights,
@@ -48,15 +43,10 @@ from pitchstems import gui_processing
 from pitchstems.harmony_report import current_chord_analysis_report as build_chord_analysis_report
 from pitchstems import gui_editor_load
 from pitchstems import gui_editor_state
+from pitchstems import gui_project_flow
 from pitchstems import gui_transport_flow
 from pitchstems.gui_options import default_midi_checked, device_label, optional_frequency
 from pitchstems.gui_track_controls import rebuild_track_controls, sync_track_control_panel as sync_track_controls
-from pitchstems.recent_projects import (
-    normalize_recent_project_paths,
-    recent_project_label,
-    remember_recent_project,
-    remove_recent_project,
-)
 from pitchstems.separation import SeparationOptions, StemResult
 from pitchstems.theory import (
     ChordGapAnalysis,
@@ -94,7 +84,6 @@ def main() -> int:
             QComboBox,
             QDialog,
             QDoubleSpinBox,
-            QFileDialog,
             QGridLayout,
             QHBoxLayout,
             QLabel,
@@ -587,51 +576,25 @@ def main() -> int:
             return action
 
         def refresh_recent_projects_menu(self) -> None:
-            if self.recent_projects_menu is None:
-                return
-            self.recent_projects_menu.clear()
-            recent = self.recent_project_paths()
-            if not recent:
-                action = QAction("No recent projects", self)
-                action.setEnabled(False)
-                self.recent_projects_menu.addAction(action)
-                return
-            for index, path in enumerate(recent[:10], 1):
-                action = QAction(f"&{index} {self.recent_project_label(path)}", self)
-                action.setToolTip(str(path))
-                action.triggered.connect(lambda _checked=False, project_path=path: self.open_recent_project(project_path))
-                self.recent_projects_menu.addAction(action)
-            self.recent_projects_menu.addSeparator()
-            self._add_action(self.recent_projects_menu, "Clear Recent Projects", None, self.clear_recent_projects)
+            gui_project_flow.refresh_recent_projects_menu(self)
 
         def recent_project_paths(self) -> list[Path]:
-            return normalize_recent_project_paths(self.settings.value("recent_projects", []))
+            return gui_project_flow.recent_project_paths(self)
 
         def recent_project_label(self, manifest_path: Path) -> str:
-            return recent_project_label(manifest_path)
+            return gui_project_flow.recent_project_label(manifest_path)
 
         def remember_recent_project(self, project_dir: Path) -> None:
-            recent = remember_recent_project(self.recent_project_paths(), project_dir)
-            self.settings.setValue("recent_projects", [str(path) for path in recent])
-            self.refresh_recent_projects_menu()
+            gui_project_flow.remember_recent_project(self, project_dir)
 
         def remove_recent_project(self, manifest_path: Path) -> None:
-            recent = remove_recent_project(self.recent_project_paths(), manifest_path)
-            self.settings.setValue("recent_projects", [str(path) for path in recent])
-            self.refresh_recent_projects_menu()
+            gui_project_flow.remove_recent_project(self, manifest_path)
 
         def clear_recent_projects(self) -> None:
-            self.settings.setValue("recent_projects", [])
-            self.refresh_recent_projects_menu()
-            self.statusBar().showMessage("Recent projects cleared.", 3000)
+            gui_project_flow.clear_recent_projects(self)
 
         def open_recent_project(self, manifest_path: Path) -> None:
-            if not manifest_path.exists():
-                self.remove_recent_project(manifest_path)
-                self.append_log(f"Recent project no longer exists: {manifest_path}")
-                self.statusBar().showMessage("Recent project was removed because it no longer exists.", 5000)
-                return
-            self.open_project_manifest(manifest_path)
+            gui_project_flow.open_recent_project(self, manifest_path)
 
         def show_timeline_controls(self) -> None:
             self.statusBar().showMessage(
@@ -664,68 +627,22 @@ def main() -> int:
             self.toggle_playback()
 
         def pick_audio(self) -> None:
-            filename, _selected_filter = QFileDialog.getOpenFileName(
-                self,
-                "Open audio",
-                str(Path.home()),
-                "Audio files (*.wav *.mp3 *.flac *.m4a *.aac *.ogg);;All files (*.*)",
-            )
-            if filename:
-                self.set_audio_path(Path(filename))
+            gui_project_flow.pick_audio(self)
 
         def set_audio_path(self, path: Path) -> None:
-            self.drop_zone.set_audio_file(path)
-            self.reset_stage_state(path)
+            gui_project_flow.set_audio_path(self, path)
 
         def save_project_now(self) -> None:
-            if self.current_result is None:
-                self.append_log("No project is open yet.")
-                return
-            if self.save_editor_state():
-                self.append_log(f"Saved project: {self.current_result.project_dir / PROJECT_FILENAME}")
+            gui_project_flow.save_project_now(self)
 
         def pick_output_dir(self) -> None:
-            directory = QFileDialog.getExistingDirectory(self, "Choose output directory")
-            if directory:
-                self.output_dir.setText(directory)
+            gui_project_flow.pick_output_dir(self)
 
         def pick_project(self) -> None:
-            filename, _selected_filter = QFileDialog.getOpenFileName(
-                self,
-                "Open PitchStems project",
-                str(Path(self.output_dir.text())),
-                f"PitchStems Project ({PROJECT_FILENAME});;JSON files (*.json)",
-            )
-            if not filename:
-                return
-            self.open_project_manifest(Path(filename))
+            gui_project_flow.pick_project(self)
 
         def open_project_manifest(self, manifest_path: Path) -> None:
-            self.invalidate_worker_token()
-            self.begin_activity("Opening project...")
-            try:
-                self.logger.info("Opening project manifest: %s", manifest_path)
-                result = load_pipeline_result(manifest_path)
-            except Exception as exc:
-                self.logger.exception("Could not open project manifest")
-                self.append_log(f"Could not open project: {exc}")
-                self.end_activity("Could not open project")
-                self.remove_recent_project(manifest_path)
-                return
-            self.output_dir.setText(str(result.project_dir.parent))
-            self.drop_zone.set_project_file(result.project_dir, result.source_audio)
-            try:
-                self.logger.info("Building editor for project: %s", result.project_dir)
-                self.set_current_result(result, open_output=False)
-            except Exception as exc:
-                self.logger.exception("Could not open project editor")
-                self.append_log(f"Could not open project editor: {exc}")
-                self.append_log(f"Log file: {self.log_path}")
-                self.reset_stage_state()
-                self.end_activity("Could not open project editor")
-                return
-            self.append_log(f"Opened project: {result.project_dir}")
-            self.end_activity("Project loaded")
+            gui_project_flow.open_project_manifest(self, manifest_path)
 
         def start_full_processing(self) -> None:
             gui_processing.start_full_processing(self)
@@ -1408,69 +1325,7 @@ def main() -> int:
             gui_editor_state.request_editor_state_save(self, delay_ms)
 
         def reset_stage_state(self, _path: Path | None = None) -> None:
-            self.stop_transport()
-            self.invalidate_worker_token()
-            self.editor_load_token += 1
-            self.editor_load_activity_tokens.clear()
-            self.midi_preview_token += 1
-            self.midi_preview_workers.clear()
-            if _path is None:
-                self.drop_zone.reset_prompt()
-            self.current_result = None
-            self.current_stems = []
-            self.current_input_stem = None
-            self.base_editor_project = None
-            self.editor_project = None
-            self.manual_chords = []
-            self.removed_chord_ranges = []
-            self.chord_note_overrides = {}
-            self.chord_note_filter_context = None
-            self.current_chord_base_weights = {}
-            self.current_harmony_context = None
-            self.current_theory_analysis = None
-            self.current_chord_gap_analysis = None
-            self.notation_spelling.blockSignals(True)
-            self.notation_spelling.setCurrentIndex(0)
-            self.notation_spelling.blockSignals(False)
-            self.rendering_midi_previews.clear()
-            self.clear_transport_players()
-            self.track_audio_checks.clear()
-            self.track_audio_sliders.clear()
-            self.track_midi_checks.clear()
-            self.track_midi_sliders.clear()
-            self.track_analysis_checks.clear()
-            self.track_control_panels.clear()
-            self.track_control_detail_rows.clear()
-            self.track_control_top_spacer = None
-            self.track_control_bottom_spacer = None
-            self.hidden_track_status = None
-            self.latest_output_dir = None
-            self.run_midi.setEnabled(False)
-            self.separation_status.setText("Not run yet.")
-            self.midi_status.setText("Run the full pipeline first, then MIDI can be rerun without separating again.")
-            self.editor_summary.setText("Run separation + MIDI to build an editor timeline.")
-            self.timeline_slider.setRange(0, 0)
-            self.timeline_slider.setEnabled(False)
-            self.fit_song_button.setEnabled(False)
-            self.inspect_chord_button.setEnabled(False)
-            self.inspect_theory_button.setEnabled(False)
-            self.use_gap_suggestion_button.setEnabled(False)
-            self.inspect_gap_suggestion_button.setEnabled(False)
-            self.editor_position.setText(format_time(0))
-            self.current_chord.setText("Harmony: -")
-            self.set_chord_context_text("Sample: -")
-            self.set_theory_analysis(None)
-            self.set_gap_analysis(None)
-            self.reset_activity("Ready for new audio")
-            self.track_list.clear()
-            self.note_filter_list.clear()
-            self.track_visibility_checks.clear()
-            self.track_note_counts.clear()
-            self.editor_track_visibility = {}
-            _clear_layout(self.playback_controls)
-            self.chord_list.clear()
-            self.refresh_chord_keyboard()
-            self.timeline.set_project(None)
+            gui_project_flow.reset_stage_state(self, _path)
 
         def set_processing_state(self, busy: bool) -> None:
             self.drop_zone.setEnabled(not busy)
@@ -1590,21 +1445,13 @@ def main() -> int:
             )
 
         def open_latest_output(self) -> None:
-            target = self.latest_output_dir or Path(self.output_dir.text())
-            self.open_folder_path(target, "output folder")
+            gui_project_flow.open_latest_output(self)
 
         def open_logs_folder(self) -> None:
-            self.open_folder_path(logs_dir(), "logs folder")
+            gui_project_flow.open_logs_folder(self)
 
         def open_folder_path(self, target: Path, label: str) -> None:
-            try:
-                opened = open_folder(target)
-            except Exception as exc:
-                self.logger.exception("Could not open %s: %s", label, target)
-                self.append_log(f"Could not open {label}: {exc}")
-                self.statusBar().showMessage(f"Could not open {label}. See logs for details.", 6000)
-                return
-            self.statusBar().showMessage(f"Opened {label}: {opened}", 3000)
+            gui_project_flow.open_folder_path(self, target, label)
 
     def _double_spin(low: float, high: float, value: float, step: float, decimals: int) -> QDoubleSpinBox:
         spin = NoWheelDoubleSpinBox()
