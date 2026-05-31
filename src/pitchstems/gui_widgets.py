@@ -23,9 +23,8 @@ class DropZone(QLabel):
         self.setFocusPolicy(Qt.StrongFocus)
         self.setAlignment(Qt.AlignCenter)
         self.setWordWrap(True)
-        self.setMinimumHeight(105)
-        self.setMaximumHeight(130)
-        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.setMinimumHeight(96)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.setStyleSheet(
             """
             QLabel {
@@ -120,9 +119,8 @@ class PianoChordWidget(QWidget):
         self.chord_label = ""
         self.source_label = "Selected chord"
         self.pitch_classes: set[int] = set()
-        self.setMinimumHeight(94)
-        self.setMaximumHeight(112)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setMinimumHeight(90)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.setToolTip("Select a chord candidate to see its tones on one octave of piano keys.")
 
     def set_chord(

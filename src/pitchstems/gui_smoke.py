@@ -30,6 +30,9 @@ def run_startup_smoke(window) -> None:
     _assert(not window.stop_button.isEnabled(), "stop disabled before playback")
     _assert(not window.fit_song_button.isEnabled(), "fit disabled before project load")
     _assert(window.editor_position.text() == "00:00.000", "initial editor position")
+    _assert(window.drop_zone.maximumHeight() > 1000, "drop zone can grow with content")
+    _assert(window.note_filter_list.maximumHeight() > 1000, "note evidence list can grow")
+    _assert(window.piano_chord_view.maximumHeight() > 1000, "piano view can grow")
 
     window.main_tabs.setCurrentIndex(tab_names.index("Pipeline"))
     _assert(window.run_full.isEnabled(), "run button enabled")

@@ -200,7 +200,6 @@ def reset_stage_state(window, path: Path | None = None) -> None:
     window.set_theory_analysis(None)
     window.set_gap_analysis(None)
     window.reset_activity("Ready for new audio")
-    window.track_list.clear()
     window.note_filter_list.clear()
     window.track_visibility_checks.clear()
     window.track_note_counts.clear()
