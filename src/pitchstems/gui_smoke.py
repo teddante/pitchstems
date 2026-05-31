@@ -34,6 +34,9 @@ def run_startup_smoke(window) -> None:
     _assert(window.run_full.isEnabled(), "run button enabled")
     _assert(not window.run_midi.isEnabled(), "rerun midi disabled before project load")
     _assert(window.generate_midi.isChecked(), "generate MIDI default")
+    _assert(window.processing_tabs.count() == 2, "pipeline processing tabs")
+    _assert(window.processing_tabs.tabText(0) == "Basic Pitch", "basic pitch tab")
+    _assert(window.processing_tabs.tabText(1) == "Runtime", "runtime tab")
     _assert("drums" in window.midi_stem_checks, "MIDI stem checks populated")
     _assert(not window.midi_stem_checks["drums"].isChecked(), "drums MIDI default off")
 
