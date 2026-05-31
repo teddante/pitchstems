@@ -334,8 +334,7 @@ def _replace_midi_outputs(
         _remove_staging_dir(backup_export_dir, project_dir)
     except Exception:
         if midi_dir.exists():
-            _assert_project_child(project_dir, midi_dir, "partial MIDI output")
-            shutil.rmtree(midi_dir)
+            _remove_project_dir(midi_dir, project_dir, "partial MIDI output")
         if backup_midi_dir.exists():
             shutil.move(str(backup_midi_dir), str(midi_dir))
         if backup_export_dir.exists():
@@ -353,13 +352,21 @@ def _reset_staging_dir(path: Path, project_dir: Path | None = None) -> None:
 
 
 def _remove_staging_dir(path: Path, project_dir: Path | None = None) -> None:
-    if project_dir is not None:
-        _assert_project_child(project_dir, path, "staging directory")
+    if project_dir is None:
+        raise ValueError("project_dir is required for recursive staging cleanup")
+    _remove_project_dir(path, project_dir, "staging directory")
+
+
+def _remove_project_dir(path: Path, project_dir: Path, label: str) -> None:
+    _assert_project_child(project_dir, path, label)
     if path.exists():
+        if path.is_symlink():
+            raise ValueError(f"{label} must not be a symlink: {path}")
         shutil.rmtree(path)
 
 
 def _assert_project_child(project_dir: Path, path: Path, label: str) -> None:
+    _assert_project_workspace(project_dir)
     root = project_dir.expanduser().resolve()
     target = path.expanduser().resolve()
     if target == root:
@@ -368,6 +375,14 @@ def _assert_project_child(project_dir: Path, path: Path, label: str) -> None:
         target.relative_to(root)
     except ValueError as exc:
         raise ValueError(f"{label} must stay inside the project folder: {target}") from exc
+
+
+def _assert_project_workspace(project_dir: Path) -> None:
+    root = project_dir.expanduser().resolve()
+    if root.anchor == str(root):
+        raise ValueError(f"project folder must not be a filesystem root: {root}")
+    if root.suffix != ".pitchstems" and not (root / PROJECT_FILENAME).exists():
+        raise ValueError(f"project folder must be a PitchStems project: {root}")
 
 
 def _remove_export_stem_copies(export_dir: Path, stems: list[StemResult]) -> None:

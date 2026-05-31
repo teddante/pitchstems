@@ -407,6 +407,27 @@ def test_remove_staging_dir_rejects_paths_outside_project(tmp_path: Path) -> Non
     assert outside_dir.exists()
 
 
+def test_remove_staging_dir_requires_project_context(tmp_path: Path) -> None:
+    staging_dir = tmp_path / "midi.tmp"
+    staging_dir.mkdir()
+
+    with pytest.raises(ValueError, match="project_dir is required"):
+        _remove_staging_dir(staging_dir)
+
+    assert staging_dir.exists()
+
+
+def test_remove_staging_dir_rejects_non_project_workspace(tmp_path: Path) -> None:
+    project_dir = tmp_path / "plain-folder"
+    staging_dir = project_dir / "midi.tmp"
+    staging_dir.mkdir(parents=True)
+
+    with pytest.raises(ValueError, match="must be a PitchStems project"):
+        _remove_staging_dir(staging_dir, project_dir)
+
+    assert staging_dir.exists()
+
+
 def test_midi_rerun_restores_previous_outputs_if_replacement_fails(
     tmp_path: Path,
     monkeypatch,
