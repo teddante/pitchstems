@@ -49,6 +49,7 @@ from pitchstems.harmony_inspector import (
     resolve_notation_preference,
     selected_chord_analysis_notes,
 )
+from pitchstems import harmony_panel
 from pitchstems.harmony_report import current_chord_analysis_report as build_chord_analysis_report
 from pitchstems.gui_options import default_midi_checked, device_label, optional_frequency
 from pitchstems.gui_track_controls import rebuild_track_controls, sync_track_control_panel as sync_track_controls
@@ -1475,35 +1476,10 @@ def main() -> int:
             return start, end
 
         def set_gap_analysis(self, analysis: ChordGapAnalysis | None) -> None:
-            self.current_chord_gap_analysis = analysis
-            self.gap_suggestion_list.clear()
-            if analysis is None or not analysis.suggestions:
-                self.gap_suggestion_list.addItem("No chord-track gap selected or under the playhead.")
-                self.refresh_gap_suggestion_actions()
-                return
-            self.gap_suggestion_list.addItem(
-                f"Gap {format_time(analysis.start)} - {format_time(analysis.end)}"
-            )
-            for index, suggestion in enumerate(analysis.suggestions[:8]):
-                item = QListWidgetItem(
-                    f"{self.display_chord(suggestion.label)}  {suggestion.score:.0%}\n"
-                    f"{suggestion.action.replace('_', ' ')} | local {suggestion.local_evidence:.0%}, "
-                    f"theory {suggestion.theory_fit:.0%}, movement {suggestion.pitch_class_movement:.0%}"
-                )
-                item.setData(Qt.UserRole, index)
-                item.setToolTip("\n".join(suggestion.explanation))
-                self.gap_suggestion_list.addItem(item)
-            self.gap_suggestion_list.setCurrentRow(1)
-            self.refresh_gap_suggestion_actions()
+            harmony_panel.set_gap_analysis(self, analysis)
 
         def refresh_gap_suggestion_actions(self) -> None:
-            item = self.gap_suggestion_list.currentItem()
-            has_suggestion = bool(item and item.data(Qt.UserRole) is not None)
-            self.use_gap_suggestion_button.setEnabled(has_suggestion)
-            self.inspect_gap_suggestion_button.setEnabled(
-                self.current_chord_gap_analysis is not None
-                and bool(self.current_chord_gap_analysis.suggestions)
-            )
+            harmony_panel.refresh_gap_suggestion_actions(self)
 
         def chord_min_note_floor(self) -> float:
             return self.min_note_evidence_slider.value() / 100
@@ -1694,40 +1670,7 @@ def main() -> int:
             return inspector_chord_note_constraints(self.chord_note_overrides)
 
         def populate_note_filter_list(self, weights: dict[int, float]) -> None:
-            self.updating_chord_note_filter = True
-            try:
-                self.note_filter_list.clear()
-                detected = sorted(weights, key=lambda pitch_class: (-weights[pitch_class], pitch_class))
-                missing = [pitch_class for pitch_class in range(12) if pitch_class not in weights]
-                for pitch_class in [*detected, *missing]:
-                    state = self.chord_note_overrides.get(pitch_class, "auto")
-                    if pitch_class in weights:
-                        detail = f"{weights[pitch_class]:.0%}"
-                    else:
-                        detail = "not detected"
-                    if state == "exclude":
-                        detail = f"{detail}; hard excluded"
-                    elif state == "force":
-                        detail = "forced in"
-                    label = {"exclude": "Exclude", "auto": "Auto", "force": "Force"}[state]
-                    item = QListWidgetItem(f"{label} {self.display_pitch_class_name(pitch_class)}  -  {detail}")
-                    item.setData(Qt.UserRole, pitch_class)
-                    tristate_flag = getattr(Qt, "ItemIsUserTristate", Qt.ItemIsUserCheckable)
-                    item.setFlags(item.flags() | Qt.ItemIsUserCheckable | tristate_flag)
-                    check_state = {
-                        "exclude": Qt.Unchecked,
-                        "auto": Qt.PartiallyChecked,
-                        "force": Qt.Checked,
-                    }[state]
-                    item.setCheckState(check_state)
-                    item.setToolTip(
-                        "Unchecked: Exclude any chord name containing this note.\n"
-                        "Mixed: Auto, use detector evidence naturally.\n"
-                        "Checked: Force chord names to contain this note."
-                    )
-                    self.note_filter_list.addItem(item)
-            finally:
-                self.updating_chord_note_filter = False
+            harmony_panel.populate_note_filter_list(self, weights)
 
         def handle_chord_note_filter_changed(self, item) -> None:
             if self.updating_chord_note_filter:
@@ -1837,126 +1780,29 @@ def main() -> int:
             return build_chord_analysis_report(self)
 
         def _set_chord_candidates(self, analysis) -> None:
-            if analysis.candidates:
-                self.chord_list.clear()
-                for label, confidence in analysis.candidates:
-                    display_label = self.display_chord(label)
-                    note_names = self.display_chord_tones(label)
-                    notes = self._candidate_notes_text(analysis, label)
-                    aliases = analysis.candidate_aliases.get(label, [])
-                    alias_text = ""
-                    if aliases:
-                        shown_aliases = ", ".join(self.display_chord(alias) for alias in aliases[:4])
-                        if len(aliases) > 4:
-                            shown_aliases += f", +{len(aliases) - 4} more"
-                        alias_text = f"\naka: {shown_aliases}"
-                    item = QListWidgetItem(f"{display_label}  {confidence:.0%}\n{notes}{alias_text}")
-                    item.setData(Qt.UserRole, label)
-                    item.setData(Qt.UserRole + 1, confidence)
-                    item.setData(Qt.UserRole + 2, note_names)
-                    item.setToolTip(
-                        f"{display_label}\n"
-                        f"Official chord tones: {notes}\n"
-                        f"Alternate names: {', '.join(self.display_chord(alias) for alias in aliases) if aliases else '-'}\n"
-                        f"Detector ranking score: {confidence:.0%}\n\n"
-                        + "\n".join(analysis.candidate_explanations.get(label, []))
-                    )
-                    self.chord_list.addItem(item)
-            else:
-                self.chord_list.clear()
-                self.chord_list.addItem("No full chord candidates here.")
-                for label, confidence in analysis.partial_candidates:
-                    display_label = self.display_chord(label)
-                    note_names = self.display_chord_tones(label)
-                    notes = self._partial_candidate_notes_text(analysis, label)
-                    aliases = analysis.partial_candidate_aliases.get(label, [])
-                    alias_text = ""
-                    if aliases:
-                        alias_text = f"\naka: {', '.join(self.display_chord(alias) for alias in aliases[:4])}"
-                    item = QListWidgetItem(f"{display_label}  {confidence:.0%}\n{notes}{alias_text}")
-                    item.setData(Qt.UserRole, label)
-                    item.setData(Qt.UserRole + 1, confidence)
-                    item.setData(Qt.UserRole + 2, note_names)
-                    item.setToolTip(
-                        f"{display_label}\n"
-                        f"Observed shell tones: {notes}\n"
-                        "Partial/shell candidate, not a full chord detection.\n\n"
-                        + "\n".join(analysis.partial_candidate_explanations.get(label, []))
-                    )
-                    self.chord_list.addItem(item)
-                for hint in analysis.partial_hints:
-                    item = QListWidgetItem(hint)
-                    item.setToolTip("Partial harmony hint. This is not a confirmed chord candidate.")
-                    self.chord_list.addItem(item)
-            self.select_first_chord_candidate()
-            self.refresh_chord_actions()
+            harmony_panel.set_chord_candidates(self, analysis)
 
         def select_first_chord_candidate(self) -> None:
-            for row in range(self.chord_list.count()):
-                item = self.chord_list.item(row)
-                if item.data(Qt.UserRole):
-                    self.chord_list.setCurrentItem(item)
-                    return
-            self.refresh_chord_keyboard()
+            harmony_panel.select_first_chord_candidate(self)
 
         def handle_chord_selection_changed(self, *_args) -> None:
             self.refresh_chord_actions()
             self.refresh_chord_keyboard()
 
         def refresh_chord_keyboard(self) -> None:
-            track_chord = self.active_chord_track_region()
-            if track_chord is not None:
-                note_names = self.display_chord_tones(track_chord.label)
-                self.piano_chord_view.set_chord(
-                    self.display_chord(track_chord.label),
-                    note_names,
-                    "Chord track",
-                )
-                return
-            item = self.chord_list.currentItem()
-            if item is None:
-                self.piano_chord_view.set_chord(None, [])
-                return
-            label = item.data(Qt.UserRole)
-            note_names = item.data(Qt.UserRole + 2) or []
-            self.piano_chord_view.set_chord(label, note_names, "Inspector")
+            harmony_panel.refresh_chord_keyboard(self)
 
         def active_chord_track_region(self) -> ChordRegion | None:
-            if self.timeline.selected_chord is not None:
-                return self.timeline.selected_chord
-            if self.editor_project is None:
-                return None
-            position = self.timeline.position
-            for chord in reversed(self.editor_project.chords):
-                if chord.start <= position < chord.end:
-                    return chord
-            return None
+            return harmony_panel.active_chord_track_region(self)
 
         def _candidate_notes_text(self, analysis, label: str) -> str:
-            notes = self.display_chord_tones(label) if label else analysis.candidate_notes.get(label, [])
-            if not notes:
-                return "-"
-            text = " - ".join(notes)
-            bass_name = self.display_chord_bass(label)
-            if bass_name is not None:
-                text += f"  bass {bass_name}"
-            return text
+            return harmony_panel.candidate_notes_text(self, analysis, label)
 
         def _partial_candidate_notes_text(self, analysis, label: str) -> str:
-            notes = self.display_chord_tones(label) if label else analysis.partial_candidate_notes.get(label, [])
-            if not notes:
-                return "-"
-            text = " - ".join(notes)
-            bass_name = self.display_chord_bass(label)
-            if bass_name is not None:
-                text += f"  bass {bass_name}"
-            return text
+            return harmony_panel.partial_candidate_notes_text(self, analysis, label)
 
         def refresh_chord_actions(self) -> None:
-            item = self.chord_list.currentItem()
-            has_candidate = bool(item and item.data(Qt.UserRole))
-            self.preview_chord_button.setEnabled(has_candidate)
-            self.use_chord_button.setEnabled(has_candidate and self.timeline.selection_range() is not None)
+            harmony_panel.refresh_chord_actions(self)
 
         def preview_selected_chord(self) -> None:
             self.preview_chord_item(self.chord_list.currentItem())

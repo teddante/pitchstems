@@ -6,6 +6,7 @@ import wave
 from pathlib import Path
 
 from mido import Message, MetaMessage, MidiFile, MidiTrack
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from pitchstems.editor_loader import EditorLoadResult
@@ -82,6 +83,16 @@ def run_project_smoke(window) -> None:
     report = window.current_chord_analysis_report()
     _assert("Harmony Inspector Calculation" in report, "harmony report title")
     _assert("MIDI Energy Evidence" in report, "harmony report evidence section")
+    note_item = window.note_filter_list.item(0)
+    _assert(note_item is not None, "note evidence list populated")
+    note_pitch_class = int(note_item.data(Qt.UserRole))
+    note_item.setCheckState(Qt.Checked)
+    QApplication.processEvents()
+    _assert(window.chord_note_overrides.get(note_pitch_class) == "force", "note evidence force override")
+    note_item = window.note_filter_list.item(0)
+    note_item.setCheckState(Qt.PartiallyChecked)
+    QApplication.processEvents()
+    _assert(note_pitch_class not in window.chord_note_overrides, "note evidence auto override")
 
     window.fit_editor_song_to_view()
     _assert(window.timeline.horizontalScrollBar().value() == 0, "fit song horizontal start")
