@@ -8,6 +8,7 @@ PitchStems is a solo-developer, local-first desktop app. Work quickly, keep the 
 - Prefer small, reversible changes that can be tested and explained.
 - Use focused checks while iterating; run the full project check before asking to commit, push, open a PR, merge, tag, or release.
 - Avoid ceremony that does not reduce risk, save time, or clarify the work.
+- Optimize for useful progress per minute: keep context reads focused, batch independent inspections, avoid repeated slow commands, and choose the lightest check that proves the current change.
 - Keep generated audio, stems, MIDI, exports, model weights, and user files out of git.
 - Preserve the local-first posture and GPU-capable Windows workflow.
 
@@ -37,4 +38,6 @@ Add flags only when relevant:
 
 ## Self-Improvement
 
-Improve this guide when a recurring mistake, user preference, or repeated manual step becomes clear. Keep it short, general, and useful. Remove obsolete guidance instead of only appending more rules. Do not commit changes without user approval.
+Improve this guide when a recurring mistake, user preference, repeated manual step, or reliable efficiency gain becomes clear. Keep it short, general, and useful. Remove obsolete guidance instead of only appending more rules.
+
+Favor recursive improvement that makes future work faster, clearer, safer, or more correct: better checks, smaller modules, clearer workflows, less duplicate effort, and fewer unnecessary prompts. Commit guide updates when they are coherent, low-risk, and aligned with the user's standing preferences.

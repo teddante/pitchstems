@@ -10,7 +10,7 @@ from typing import Callable
 
 from pitchstems.audio import normalize_to_wav
 from pitchstems.midi import combine_midi_tracks
-from pitchstems.project_store import save_project_manifest
+from pitchstems.project_store import PROJECT_FILENAME, load_project_manifest, save_project_manifest
 from pitchstems.separation import SeparationOptions, StemResult, separate_stems
 from pitchstems.transcription import MidiOptions, MidiResult, transcribe_stem_to_midi
 
@@ -127,6 +127,7 @@ def process_midi_from_stems(
 ) -> PipelineResult:
     """Run or rerun Basic Pitch from already separated stems."""
     project_dir = project_dir.expanduser().resolve()
+    source_audio = source_audio or _existing_source_audio(project_dir)
     midi_dir = project_dir / "midi"
     export_dir = project_dir / "export"
     staged_midi_dir = project_dir / "midi.tmp"
@@ -140,10 +141,10 @@ def process_midi_from_stems(
     midi_dir.mkdir(parents=True, exist_ok=True)
     export_dir.mkdir(parents=True, exist_ok=True)
 
-    _reset_staging_dir(staged_midi_dir)
-    _reset_staging_dir(staged_export_dir)
-    _remove_staging_dir(backup_midi_dir)
-    _remove_staging_dir(backup_export_dir)
+    _reset_staging_dir(staged_midi_dir, project_dir)
+    _reset_staging_dir(staged_export_dir, project_dir)
+    _remove_staging_dir(backup_midi_dir, project_dir)
+    _remove_staging_dir(backup_export_dir, project_dir)
 
     midi_files: list[MidiResult] = []
     skip_percussion = midi_policy != "all" and selected_midi_stems is None
@@ -197,10 +198,10 @@ def process_midi_from_stems(
         _remove_export_stem_copies(export_dir, stems)
         midi_files = final_midi_files
     except Exception:
-        _remove_staging_dir(staged_midi_dir)
-        _remove_staging_dir(staged_export_dir)
-        _remove_staging_dir(backup_midi_dir)
-        _remove_staging_dir(backup_export_dir)
+        _remove_staging_dir(staged_midi_dir, project_dir)
+        _remove_staging_dir(staged_export_dir, project_dir)
+        _remove_staging_dir(backup_midi_dir, project_dir)
+        _remove_staging_dir(backup_export_dir, project_dir)
         raise
 
     zip_path = project_dir / f"{input_stem}_pitchstems.zip" if create_zip else None
@@ -247,6 +248,15 @@ def _copy_source_audio(input_path: Path, audio_dir: Path) -> Path:
     target = audio_dir / f"{_safe_stem(input_path.stem)}{input_path.suffix.lower()}"
     shutil.copy2(input_path, target)
     return target
+
+
+def _existing_source_audio(project_dir: Path) -> Path | None:
+    with contextlib.suppress(Exception):
+        value = load_project_manifest(project_dir / PROJECT_FILENAME).get("source_audio")
+        if isinstance(value, str) and value:
+            path = Path(value)
+            return path if path.is_absolute() else project_dir / path
+    return None
 
 
 def _safe_stem(stem: str, max_length: int = 80) -> str:
@@ -297,6 +307,15 @@ def _replace_midi_outputs(
     backup_midi_dir: Path,
     backup_export_dir: Path,
 ) -> None:
+    project_dir = midi_dir.parent
+    for label, path in [
+        ("MIDI output", midi_dir),
+        ("staged MIDI output", staged_midi_dir),
+        ("export output", export_dir),
+        ("MIDI backup", backup_midi_dir),
+        ("export backup", backup_export_dir),
+    ]:
+        _assert_project_child(project_dir, path, label)
     generated_names = {name.lower() for name in generated_export_midi}
     try:
         if midi_dir.exists():
@@ -308,13 +327,14 @@ def _replace_midi_outputs(
 
         shutil.move(str(staged_midi_dir), str(midi_dir))
         for staged_path in staged_export_paths:
+            _assert_project_child(project_dir, staged_path, "staged export output")
             shutil.move(str(staged_path), str(export_dir / staged_path.name))
-        _remove_staging_dir(staged_midi_dir)
-        _remove_staging_dir(backup_midi_dir)
-        _remove_staging_dir(backup_export_dir)
+        _remove_staging_dir(staged_midi_dir, project_dir)
+        _remove_staging_dir(backup_midi_dir, project_dir)
+        _remove_staging_dir(backup_export_dir, project_dir)
     except Exception:
         if midi_dir.exists():
-            shutil.rmtree(midi_dir)
+            _remove_project_dir(midi_dir, project_dir, "partial MIDI output")
         if backup_midi_dir.exists():
             shutil.move(str(backup_midi_dir), str(midi_dir))
         if backup_export_dir.exists():
@@ -326,14 +346,43 @@ def _replace_midi_outputs(
         raise
 
 
-def _reset_staging_dir(path: Path) -> None:
-    _remove_staging_dir(path)
+def _reset_staging_dir(path: Path, project_dir: Path | None = None) -> None:
+    _remove_staging_dir(path, project_dir)
     path.mkdir(parents=True, exist_ok=True)
 
 
-def _remove_staging_dir(path: Path) -> None:
+def _remove_staging_dir(path: Path, project_dir: Path | None = None) -> None:
+    if project_dir is None:
+        raise ValueError("project_dir is required for recursive staging cleanup")
+    _remove_project_dir(path, project_dir, "staging directory")
+
+
+def _remove_project_dir(path: Path, project_dir: Path, label: str) -> None:
+    _assert_project_child(project_dir, path, label)
     if path.exists():
+        if path.is_symlink():
+            raise ValueError(f"{label} must not be a symlink: {path}")
         shutil.rmtree(path)
+
+
+def _assert_project_child(project_dir: Path, path: Path, label: str) -> None:
+    _assert_project_workspace(project_dir)
+    root = project_dir.expanduser().resolve()
+    target = path.expanduser().resolve()
+    if target == root:
+        raise ValueError(f"{label} must not be the project root: {target}")
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"{label} must stay inside the project folder: {target}") from exc
+
+
+def _assert_project_workspace(project_dir: Path) -> None:
+    root = project_dir.expanduser().resolve()
+    if root.anchor == str(root):
+        raise ValueError(f"project folder must not be a filesystem root: {root}")
+    if root.suffix != ".pitchstems" and not (root / PROJECT_FILENAME).exists():
+        raise ValueError(f"project folder must be a PitchStems project: {root}")
 
 
 def _remove_export_stem_copies(export_dir: Path, stems: list[StemResult]) -> None:
@@ -345,7 +394,7 @@ def _remove_export_stem_copies(export_dir: Path, stems: list[StemResult]) -> Non
 
 def _remove_midi_preview_cache(project_dir: Path) -> None:
     with contextlib.suppress(OSError):
-        _remove_staging_dir(project_dir / "editor" / "midi-preview")
+        _remove_staging_dir(project_dir / "editor" / "midi-preview", project_dir)
 
 
 def _looks_like_copied_file(source: Path, candidate: Path) -> bool:

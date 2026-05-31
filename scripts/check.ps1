@@ -39,11 +39,11 @@ if (Test-Path $pitchstems) {
 if ($GuiSmoke) {
     Write-Host "Running GUI smoke test..."
     $previousQtPlatform = $env:QT_QPA_PLATFORM
+    $previousGuiSmoke = $env:PITCHSTEMS_GUI_SMOKE
     $env:QT_QPA_PLATFORM = "offscreen"
+    $env:PITCHSTEMS_GUI_SMOKE = "project"
     try {
         @'
-from PySide6.QtWidgets import QApplication
-QApplication.exec = lambda self: 0
 from pitchstems.app import main
 raise SystemExit(main())
 '@ | & $python @pythonArgs -
@@ -52,6 +52,11 @@ raise SystemExit(main())
             Remove-Item Env:\QT_QPA_PLATFORM -ErrorAction SilentlyContinue
         } else {
             $env:QT_QPA_PLATFORM = $previousQtPlatform
+        }
+        if ($null -eq $previousGuiSmoke) {
+            Remove-Item Env:\PITCHSTEMS_GUI_SMOKE -ErrorAction SilentlyContinue
+        } else {
+            $env:PITCHSTEMS_GUI_SMOKE = $previousGuiSmoke
         }
     }
 }

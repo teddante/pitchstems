@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import wave
 from bisect import bisect_right
 from dataclasses import dataclass, field
@@ -8,11 +9,21 @@ from pathlib import Path
 
 from mido import MidiFile, tick2second
 
+from pitchstems.notation import (
+    DEFAULT_PITCH_NAMES,
+    midi_note_name as spell_midi_note_name,
+    pitch_class_for_name,
+    pitch_class_name,
+    respell_chord_label,
+    spell_chord_tones,
+    split_chord_label,
+)
 from pitchstems.pipeline import PipelineResult
 
 
 DEFAULT_TEMPO = 500000
-PITCH_NAMES = ("C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B")
+PITCH_NAMES = DEFAULT_PITCH_NAMES
+LOGGER = logging.getLogger(__name__)
 PLAIN_CHORD_THRESHOLD = 0.70
 WEIGHTED_CHORD_THRESHOLD = 0.30
 PLAIN_CANDIDATE_MARGIN = 0.18
@@ -23,15 +34,6 @@ PARTIAL_HINT_LIMIT = 6
 
 @dataclass(frozen=True)
 class ChordScoringOptions:
-    coverage_weight: float = 0.50
-    purity_weight: float = 0.50
-    extra_weight_penalty: float = 0.0
-    plain_coverage_weight: float = 0.50
-    plain_purity_weight: float = 0.50
-    use_bass_root_bonus: bool = False
-    use_exact_match_bonus: bool = False
-    use_missing_penalty: bool = False
-    use_complexity_penalty: bool = False
     weak_note_floor: float = 0.0
 
 
@@ -117,7 +119,7 @@ def build_editor_project(result: PipelineResult) -> EditorProject:
     tracks = [EditorTrack(name=stem.name, audio_path=stem.path) for stem in result.stems]
     notes: list[NoteEvent] = []
     for midi in result.midi_files:
-        notes.extend(read_midi_notes(midi.path, midi.stem))
+        notes.extend(_read_midi_notes_for_project(midi.path, midi.stem))
     notes.sort(key=lambda note: (note.start, note.stem, note.pitch, note.end))
     duration = max(
         [note.end for note in notes]
@@ -133,6 +135,14 @@ def build_editor_project(result: PipelineResult) -> EditorProject:
         chords=chords,
         duration=duration,
     )
+
+
+def _read_midi_notes_for_project(path: Path, stem: str) -> list[NoteEvent]:
+    try:
+        return read_midi_notes(path, stem)
+    except Exception as exc:
+        LOGGER.warning("Skipping unreadable MIDI file for %s: %s (%s)", stem, path, exc)
+        return []
 
 
 def _audio_duration_seconds(path: Path) -> float:
@@ -281,13 +291,14 @@ def analyze_chord_at(
 ) -> ChordAnalysis:
     options = scoring_options or ChordScoringOptions()
     active = active_notes_at(notes, seconds)
-    if active and options.weak_note_floor > 0:
-        pitch_weights: dict[int, float] = {}
-        for note in active:
-            pitch_weights[note.pitch % 12] = max(
-                pitch_weights.get(note.pitch % 12, 0.0),
-                midi_velocity_energy(note.velocity),
-            )
+    pitch_weights: dict[int, float] = {}
+    exact_pitch_weights: dict[int, float] = {}
+    for note in active:
+        weight = midi_velocity_energy(note.velocity)
+        pitch_weights[note.pitch % 12] = pitch_weights.get(note.pitch % 12, 0.0) + weight
+        exact_pitch_weights[note.pitch] = exact_pitch_weights.get(note.pitch, 0.0) + weight
+
+    if pitch_weights and options.weak_note_floor > 0:
         max_weight = max(pitch_weights.values())
         kept_pitch_classes = {
             pitch_class
@@ -296,13 +307,51 @@ def analyze_chord_at(
         }
         if required_pitch_classes:
             kept_pitch_classes |= required_pitch_classes
-        active = [
-            note
-            for note in active
-            if note.pitch % 12 in kept_pitch_classes
-        ]
-    return analyze_chord(
-        [note.pitch for note in active],
+        pitch_weights = {
+            pitch_class: weight
+            for pitch_class, weight in pitch_weights.items()
+            if pitch_class in kept_pitch_classes
+        }
+        exact_pitch_weights = {
+            pitch: weight
+            for pitch, weight in exact_pitch_weights.items()
+            if pitch % 12 in kept_pitch_classes
+        }
+
+    active_note_names = [midi_note_name(pitch) for pitch in sorted(exact_pitch_weights)]
+    if not pitch_weights:
+        return ChordAnalysis(None, 0.0, active_note_names, [])
+
+    max_exact_weight = max(exact_pitch_weights.values())
+    bass_pitch = min(
+        pitch
+        for pitch, weight in exact_pitch_weights.items()
+        if weight >= max_exact_weight * 0.12
+    )
+    note_weights = _normalized_note_weights(pitch_weights)
+    effective_pitch_classes = set(pitch_weights)
+    if required_pitch_classes:
+        effective_pitch_classes |= required_pitch_classes
+    if len(effective_pitch_classes) < 3:
+        return ChordAnalysis(
+            None,
+            0.0,
+            active_note_names,
+            sorted(pitch_weights),
+            bass=bass_pitch % 12,
+            note_weights=note_weights,
+            partial_hints=partial_harmony_hints(
+                set(pitch_weights),
+                bass_pitch % 12,
+                required_pitch_classes=required_pitch_classes,
+                excluded_pitch_classes=excluded_pitch_classes,
+            ),
+        )
+    return _analyze_weighted_pitch_classes(
+        pitch_weights,
+        bass_pitch % 12,
+        active_note_names,
+        note_weights,
         required_pitch_classes=required_pitch_classes,
         excluded_pitch_classes=excluded_pitch_classes,
         scoring_options=options,
@@ -421,12 +470,12 @@ def analyze_chord(
         )
 
     bass = min(pitches) % 12 if pitches else min(effective_pitch_classes)
-    scored_roots: list[tuple[str, float, int, list[str]]] = []
+    scored_roots: list[tuple[str, float, int, list[str], tuple[float, ...]]] = []
     for root in range(12):
         scored = _score_root(root, effective_pitch_classes, bass, required_pitch_classes, excluded_pitch_classes, options)
         if scored is not None:
-            label, score, explanation = scored
-            scored_roots.append((label, score, root, explanation))
+            label, score, explanation, rank_key = scored
+            scored_roots.append((label, score, root, explanation, rank_key))
     if not scored_roots:
         return ChordAnalysis(
             None,
@@ -442,15 +491,8 @@ def analyze_chord(
             ),
         )
 
-    scored_roots.sort(
-        key=lambda item: (
-            item[1],
-            1 if item[2] == bass else 0,
-            1 if item[2] in pitch_classes else 0,
-        ),
-        reverse=True,
-    )
-    best_label, best_score, best_root, _best_explanation = scored_roots[0]
+    scored_roots.sort(key=lambda item: item[4], reverse=True)
+    best_label, best_score, best_root, _best_explanation, _best_rank_key = scored_roots[0]
     candidates = _candidate_labels(
         scored_roots,
         threshold=PLAIN_CHORD_THRESHOLD,
@@ -468,7 +510,7 @@ def analyze_chord(
     }
     candidate_explanations = {
         label: explanation
-        for label, score, _root, explanation in scored_roots
+        for label, score, _root, explanation, _rank_key in scored_roots
         if (label, score) in candidates
     }
 
@@ -514,7 +556,7 @@ def _analyze_weighted_pitch_classes(
     pitch_classes = sorted(pitch_weights)
     scored_roots = []
     for root in range(12):
-        for label, score, explanation in _score_weighted_root_candidates(
+        for label, score, explanation, rank_key in _score_weighted_root_candidates(
             root,
             pitch_weights,
             bass,
@@ -522,7 +564,7 @@ def _analyze_weighted_pitch_classes(
             excluded_pitch_classes,
             options,
         ):
-            scored_roots.append((label, score, explanation, root))
+            scored_roots.append((label, score, explanation, root, rank_key))
     if not scored_roots:
         partial_candidates = _partial_shell_candidates_from_weights(
             pitch_weights,
@@ -557,15 +599,8 @@ def _analyze_weighted_pitch_classes(
                 for candidate in partial_candidates
             },
         )
-    scored_roots.sort(
-        key=lambda item: (
-            item[1],
-            1 if item[3] == bass else 0,
-            1 if item[3] in pitch_classes else 0,
-        ),
-        reverse=True,
-    )
-    best_label, best_score, _best_explanation, best_root = scored_roots[0]
+    scored_roots.sort(key=lambda item: item[4], reverse=True)
+    best_label, best_score, _best_explanation, best_root, _best_rank_key = scored_roots[0]
     candidates = _candidate_labels(
         scored_roots,
         threshold=WEIGHTED_CHORD_THRESHOLD,
@@ -583,7 +618,7 @@ def _analyze_weighted_pitch_classes(
     }
     candidate_explanations = {
         label: explanation
-        for label, score, explanation, _root in scored_roots
+        for label, score, explanation, _root, _rank_key in scored_roots
         if (label, score) in candidates
     }
     if best_score < WEIGHTED_CHORD_THRESHOLD:
@@ -645,13 +680,49 @@ def identify_chord(pitches: list[int]) -> tuple[str | None, float]:
     return analysis.label, analysis.confidence
 
 
-def midi_note_name(pitch: int) -> str:
-    octave = (pitch // 12) - 1
-    return f"{PITCH_NAMES[pitch % 12]}{octave}"
+def midi_note_name(pitch: int, spelling_preference: str | None = "auto") -> str:
+    return spell_midi_note_name(pitch, spelling_preference)
 
 
-def chord_tones_for_label(label: str) -> list[str]:
-    return [PITCH_NAMES[pitch_class] for pitch_class in chord_pitch_classes_for_label(label)]
+def display_chord_label(label: str, spelling_preference: str | None = "auto") -> str:
+    return respell_chord_label(label, spelling_preference)
+
+
+def chord_bass_name_for_label(label: str, spelling_preference: str | None = "auto") -> str | None:
+    parts = split_chord_label(label)
+    if parts is None or parts.bass_pitch_class is None:
+        return None
+    return pitch_class_name(parts.bass_pitch_class, spelling_preference)
+
+
+def chord_tones_for_label(label: str, spelling_preference: str | None = "auto") -> list[str]:
+    base_label = label.split("/", 1)[0]
+    root_name = next(
+        (
+            name
+            for name in sorted(_accepted_note_names(), key=len, reverse=True)
+            if base_label.startswith(name)
+        ),
+        None,
+    )
+    if root_name is None:
+        return [PITCH_NAMES[pitch_class] for pitch_class in chord_pitch_classes_for_label(label)]
+    suffix = base_label[len(root_name):]
+    omitted_intervals: set[int] = set()
+    if "(no" in suffix:
+        suffix, omitted_intervals = _split_omitted_suffix(suffix)
+    quality = next(
+        (
+            intervals
+            for quality_suffix, intervals in _chord_qualities()
+            if quality_suffix == suffix
+        ),
+        None,
+    )
+    if quality is None:
+        return [PITCH_NAMES[pitch_class] for pitch_class in chord_pitch_classes_for_label(label)]
+    intervals = [interval for interval in quality if interval not in omitted_intervals]
+    return spell_chord_tones(label, intervals, spelling_preference)
 
 
 def partial_harmony_hints(
@@ -717,13 +788,13 @@ def _score_root(
     required_pitch_classes: set[int] | None = None,
     excluded_pitch_classes: set[int] | None = None,
     options: ChordScoringOptions | None = None,
-) -> tuple[str, float, list[str]] | None:
-    options = options or ChordScoringOptions()
+) -> tuple[str, float, list[str], tuple[float, ...]] | None:
     intervals = {(pitch - root) % 12 for pitch in pitch_classes}
     qualities = _chord_qualities()
     best_quality = ""
     best_score = 0.0
     best_explanation: list[str] = []
+    best_rank_key: tuple[float, ...] = ()
     for suffix, required in qualities:
         label = f"{PITCH_NAMES[root]}{suffix}"
         if bass != root:
@@ -736,30 +807,31 @@ def _score_root(
         missing = len(required_set - intervals)
         coverage = matched / len(required_set)
         purity = matched / max(1, len(intervals))
-        bass_bonus = _bass_root_bonus(root, bass, pitch_classes) if options.use_bass_root_bonus else 0.0
-        exact_bonus = 0.10 if options.use_exact_match_bonus and intervals == required_set else 0.0
-        missing_penalty = 0.08 * missing if options.use_missing_penalty else 0.0
-        complexity_penalty = _complexity_penalty(required) if options.use_complexity_penalty else 0.0
-        score = coverage * purity + bass_bonus + exact_bonus - missing_penalty - complexity_penalty
-        if score > best_score:
+        score = coverage * purity
+        rank_key = _plain_chord_rank_key(
+            score,
+            missing,
+            extras,
+            intervals == required_set,
+            root == bass,
+            root in pitch_classes,
+            len(required_set),
+        )
+        if rank_key > best_rank_key:
             best_quality = suffix
             best_score = score
+            best_rank_key = rank_key
             best_explanation = _plain_score_explanation(
                 label=label,
                 root=root,
                 required=required,
                 intervals=intervals,
                 bass=bass,
-                bass_bonus=bass_bonus,
-                exact_bonus=exact_bonus,
                 matched=matched,
                 extras=extras,
                 missing=missing,
                 coverage=coverage,
                 purity=purity,
-                missing_penalty=missing_penalty,
-                complexity_penalty=complexity_penalty,
-                options=options,
                 score=score,
             )
     label = f"{PITCH_NAMES[root]}{best_quality}"
@@ -767,7 +839,7 @@ def _score_root(
         label = f"{label}/{PITCH_NAMES[bass]}"
     if not best_explanation:
         return None
-    return label, max(0.0, min(1.0, best_score)), best_explanation
+    return label, max(0.0, min(1.0, best_score)), best_explanation, best_rank_key
 
 
 def _normalized_note_weights(pitch_weights: dict[int, float]) -> list[tuple[str, float]]:
@@ -788,16 +860,14 @@ def _score_weighted_root_candidates(
     required_pitch_classes: set[int] | None = None,
     excluded_pitch_classes: set[int] | None = None,
     options: ChordScoringOptions | None = None,
-) -> list[tuple[str, float, list[str]]]:
-    options = options or ChordScoringOptions()
+) -> list[tuple[str, float, list[str], tuple[float, ...]]]:
     interval_weights = {
         (pitch - root) % 12: weight
         for pitch, weight in pitch_weights.items()
     }
     total_weight = max(0.0001, sum(interval_weights.values()))
     max_weight = max(interval_weights.values())
-    bass_bonus = _bass_root_bonus(root, bass, set(pitch_weights)) if options.use_bass_root_bonus else 0.0
-    candidates: list[tuple[str, float, list[str]]] = []
+    candidates: list[tuple[str, float, list[str], tuple[float, ...]]] = []
     for suffix, required in _chord_qualities():
         label = f"{PITCH_NAMES[root]}{suffix}"
         if bass != root:
@@ -828,42 +898,67 @@ def _score_weighted_root_candidates(
             min(1.0, interval_weights.get(interval, 0.0) / max_weight)
             for interval in required
         ) / len(required)
-        exact_bonus = 0.08 if options.use_exact_match_bonus and extra_weight < 0.04 and missing == 0 else 0.0
-        missing_penalty = 0.10 * missing if options.use_missing_penalty else 0.0
-        complexity_penalty = _complexity_penalty(required) if options.use_complexity_penalty else 0.0
-        score = coverage * required_weight - extra_weight * options.extra_weight_penalty
-        score += bass_bonus + exact_bonus - missing_penalty - complexity_penalty
+        score = coverage * required_weight
+        rank_key = _weighted_chord_rank_key(
+            score,
+            missing,
+            extra_weight,
+            root == bass,
+            root in pitch_weights,
+            len(required_set),
+        )
         explanation = _weighted_score_explanation(
             label=label,
             root=root,
             required=required,
             interval_weights=interval_weights,
             bass=bass,
-            bass_bonus=bass_bonus,
             required_weight=required_weight,
             extra_weight=extra_weight,
             missing=missing,
             coverage=coverage,
-            exact_bonus=exact_bonus,
-            complexity_penalty=complexity_penalty,
-            missing_penalty=missing_penalty,
-            options=options,
             score=score,
         )
-        candidates.append((label, max(0.0, min(1.0, score)), explanation))
+        candidates.append((label, max(0.0, min(1.0, score)), explanation, rank_key))
     return candidates
 
 
-def _bass_root_bonus(root: int, bass: int, pitch_classes: set[int]) -> float:
-    if bass == root:
-        return 0.10
-    if root in pitch_classes:
-        return 0.035
-    return 0.0
+def _plain_chord_rank_key(
+    score: float,
+    missing: int,
+    extras: int,
+    exact_match: bool,
+    bass_is_root: bool,
+    root_is_present: bool,
+    required_count: int,
+) -> tuple[float, ...]:
+    return (
+        score,
+        -float(missing),
+        -float(extras),
+        1.0 if exact_match else 0.0,
+        1.0 if bass_is_root else 0.0,
+        1.0 if root_is_present else 0.0,
+        -float(required_count),
+    )
 
 
-def _complexity_penalty(required: tuple[int, ...]) -> float:
-    return max(0, len(required) - 3) * 0.02
+def _weighted_chord_rank_key(
+    score: float,
+    missing: int,
+    extra_weight: float,
+    bass_is_root: bool,
+    root_is_present: bool,
+    required_count: int,
+) -> tuple[float, ...]:
+    return (
+        score,
+        -float(missing),
+        -extra_weight,
+        1.0 if bass_is_root else 0.0,
+        1.0 if root_is_present else 0.0,
+        -float(required_count),
+    )
 
 
 def _candidate_labels(
@@ -969,10 +1064,12 @@ def _partial_shell_candidates_from_weights(
     for *_sort, candidate in suggestions:
         root_name = next(
             name
-            for name in sorted(PITCH_NAMES, key=len, reverse=True)
+            for name in sorted(_accepted_note_names(), key=len, reverse=True)
             if candidate.label.startswith(name)
         )
-        root = PITCH_NAMES.index(root_name)
+        root = pitch_class_for_name(root_name)
+        if root is None:
+            continue
         root_tone_key = (root, frozenset(candidate.observed_tones))
         if root_tone_key in seen_root_tone_sets:
             continue
@@ -1131,7 +1228,7 @@ def chord_pitch_classes_for_label(label: str) -> list[int]:
     root_name = next(
         (
             name
-            for name in sorted(PITCH_NAMES, key=len, reverse=True)
+            for name in sorted(_accepted_note_names(), key=len, reverse=True)
             if base_label.startswith(name)
         ),
         None,
@@ -1152,7 +1249,9 @@ def chord_pitch_classes_for_label(label: str) -> list[int]:
     )
     if quality is None:
         return []
-    root = PITCH_NAMES.index(root_name)
+    root = pitch_class_for_name(root_name)
+    if root is None:
+        return []
     tones: list[int] = []
     for interval in quality:
         if interval in omitted_intervals:
@@ -1161,6 +1260,32 @@ def chord_pitch_classes_for_label(label: str) -> list[int]:
         if pitch_class not in tones:
             tones.append(pitch_class)
     return tones
+
+
+def _accepted_note_names() -> tuple[str, ...]:
+    return (
+        "C#",
+        "Db",
+        "D#",
+        "Eb",
+        "E#",
+        "Fb",
+        "F#",
+        "Gb",
+        "G#",
+        "Ab",
+        "A#",
+        "Bb",
+        "B#",
+        "Cb",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "A",
+        "B",
+    )
 
 
 def _split_omitted_suffix(suffix: str) -> tuple[str, set[int]]:
@@ -1186,16 +1311,11 @@ def _plain_score_explanation(
     required: tuple[int, ...],
     intervals: set[int],
     bass: int,
-    bass_bonus: float,
-    exact_bonus: float,
     matched: int,
     extras: int,
     missing: int,
     coverage: float,
     purity: float,
-    missing_penalty: float,
-    complexity_penalty: float,
-    options: ChordScoringOptions,
     score: float,
 ) -> list[str]:
     required_set = set(required)
@@ -1208,19 +1328,9 @@ def _plain_score_explanation(
         f"Matched tones: {', '.join(matched_notes) or 'none'} ({matched}/{len(required_set)}).",
         f"Missing tones: {', '.join(missing_notes) or 'none'}. Extra active tones: {', '.join(extra_notes) or 'none'}.",
         f"Evidence terms: coverage {coverage:.0%}, purity {purity:.0%}.",
-        _ranking_modifier_summary(
-            options,
-            bass_bonus,
-            exact_bonus,
-            missing_penalty,
-            complexity_penalty,
-        ),
-        (
-            "Score formula: "
-            "coverage * purity "
-            f"{_formula_modifier_text(options, 0.0)}."
-        ),
-        f"Raw score {score:.2f}; displayed confidence is a ranking score, not a statistical probability.",
+        "Ranking rule: prefer higher unweighted evidence, then fewer missing tones, fewer extra tones, exact note-set matches, and bass/root agreement.",
+        "Display score: coverage * purity. No naming bonuses, penalties, or user-tuned weights are applied.",
+        f"Raw score {score:.2f}; displayed percentage is a ranking score, not a statistical probability.",
     ]
 
 
@@ -1230,15 +1340,10 @@ def _weighted_score_explanation(
     required: tuple[int, ...],
     interval_weights: dict[int, float],
     bass: int,
-    bass_bonus: float,
     required_weight: float,
     extra_weight: float,
     missing: int,
     coverage: float,
-    exact_bonus: float,
-    complexity_penalty: float,
-    missing_penalty: float,
-    options: ChordScoringOptions,
     score: float,
 ) -> list[str]:
     required_set = set(required)
@@ -1259,66 +1364,14 @@ def _weighted_score_explanation(
         f"Matched weighted tones: {', '.join(matched_notes) or 'none'}; candidate-tone energy {required_weight:.0%}.",
         f"Missing tones: {', '.join(missing_notes) or 'none'}. Extra weighted tones: {', '.join(extra_notes) or 'none'} ({extra_weight:.0%}).",
         f"Evidence terms: coverage {coverage:.0%}, purity {required_weight:.0%}.",
-        _ranking_modifier_summary(
-            options,
-            bass_bonus,
-            exact_bonus,
-            missing_penalty,
-            complexity_penalty,
-            extra_weight * options.extra_weight_penalty,
-        ),
-        (
-            "Score formula: "
-            "coverage * purity "
-            f"{_formula_modifier_text(options, options.extra_weight_penalty)}."
-        ),
-        f"Raw score {score:.2f}; displayed confidence is a ranking score, not a statistical probability.",
+        "Ranking rule: prefer higher unweighted evidence, then fewer missing tones, less extra energy, and bass/root agreement.",
+        "Display score: coverage * purity. No naming bonuses, penalties, or user-tuned weights are applied.",
+        f"Raw score {score:.2f}; displayed percentage is a ranking score, not a statistical probability.",
     ]
 
 
 def _interval_names(root: int, intervals) -> list[str]:
     return [PITCH_NAMES[(root + interval) % 12] for interval in intervals]
-
-
-def _ranking_modifier_summary(
-    options: ChordScoringOptions,
-    bass_bonus: float,
-    exact_bonus: float,
-    missing_penalty: float,
-    complexity_penalty: float,
-    extra_weight_penalty: float = 0.0,
-) -> str:
-    modifiers = []
-    if options.use_bass_root_bonus:
-        modifiers.append(f"bass/root +{bass_bonus:.2f}")
-    if options.use_exact_match_bonus:
-        modifiers.append(f"exact match +{exact_bonus:.2f}")
-    if extra_weight_penalty:
-        modifiers.append(f"extra energy -{extra_weight_penalty:.2f}")
-    if options.use_missing_penalty:
-        modifiers.append(f"missing notes -{missing_penalty:.2f}")
-    if options.use_complexity_penalty:
-        modifiers.append(f"complexity -{complexity_penalty:.2f}")
-    if not modifiers:
-        return "No naming bonuses or penalties are applied."
-    return f"Naming modifiers: {', '.join(modifiers)}."
-
-
-def _formula_modifier_text(options: ChordScoringOptions, extra_weight_penalty: float) -> str:
-    parts = []
-    if extra_weight_penalty:
-        parts.append(f"- {extra_weight_penalty:.2f}*extra-energy")
-    if options.use_bass_root_bonus:
-        parts.append("+ bass/root")
-    if options.use_exact_match_bonus:
-        parts.append("+ exact-match")
-    if options.use_missing_penalty:
-        parts.append("- missing-note penalty")
-    if options.use_complexity_penalty:
-        parts.append("- complexity penalty")
-    if not parts:
-        return ""
-    return " " + " ".join(parts)
 
 
 def _chord_qualities() -> list[tuple[str, tuple[int, ...]]]:
