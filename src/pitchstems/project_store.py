@@ -7,7 +7,7 @@ import threading
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from pitchstems.separation import SeparationOptions, StemResult
 from pitchstems.transcription import MidiOptions, MidiResult
@@ -16,6 +16,7 @@ from pitchstems.transcription import MidiOptions, MidiResult
 PROJECT_FILENAME = "pitchstems.project.json"
 PROJECT_FORMAT_VERSION = 2
 _MANIFEST_LOCK = threading.Lock()
+ManifestMigration = Callable[[dict[str, Any]], dict[str, Any]]
 
 
 def project_manifest_path(project_dir: Path) -> Path:
@@ -252,6 +253,20 @@ def _migrate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
         return manifest
 
     migrated = dict(manifest)
+    while format_version < PROJECT_FORMAT_VERSION:
+        migration = _MANIFEST_MIGRATIONS.get(format_version)
+        if migration is None:
+            return migrated
+        migrated = migration(migrated)
+        try:
+            format_version = int(migrated.get("format_version", format_version + 1))
+        except (TypeError, ValueError):
+            return migrated
+    return migrated
+
+
+def _migrate_legacy_to_v2(manifest: dict[str, Any]) -> dict[str, Any]:
+    migrated = dict(manifest)
     settings = migrated.get("settings")
     if not isinstance(settings, dict):
         settings = {}
@@ -274,6 +289,12 @@ def _migrate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
     migrated["editor"] = editor
     migrated["format_version"] = PROJECT_FORMAT_VERSION
     return migrated
+
+
+_MANIFEST_MIGRATIONS: dict[int, ManifestMigration] = {
+    0: _migrate_legacy_to_v2,
+    1: _migrate_legacy_to_v2,
+}
 
 
 def _dataclass_dict(value) -> dict[str, Any]:

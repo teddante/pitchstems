@@ -313,16 +313,18 @@ def main() -> int:
             self.editor_position = QLabel("00:00.000")
             self.editor_position.setMinimumWidth(86)
             self.current_chord = QLabel("Harmony: -")
-            self.current_chord.setFixedWidth(320)
+            self.current_chord.setMinimumWidth(220)
+            self.current_chord.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
             self.current_chord.setStyleSheet("font-weight: 700; color: #4c1d95;")
             self.chord_context = QLabel("Sample: -")
             self.chord_context.setWordWrap(True)
-            self.chord_context.setFixedHeight(74)
+            self.chord_context.setMinimumHeight(74)
             self.chord_context.setAlignment(Qt.AlignLeft | Qt.AlignTop)
             self.chord_context.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             self.chord_context.setStyleSheet("color: #475569;")
             self.note_filter_list = QListWidget()
-            self.note_filter_list.setFixedHeight(150)
+            self.note_filter_list.setMinimumHeight(120)
+            self.note_filter_list.setMaximumHeight(180)
             self.note_filter_list.setAlternatingRowColors(True)
             self.note_filter_list.setToolTip("Optional corrections: Auto uses energy evidence, Exclude rejects chord names containing a note, Force requires chord names containing a note.")
             self.note_filter_help = QLabel(
@@ -376,7 +378,8 @@ def main() -> int:
             self.playback_scroll = QScrollArea()
             self.playback_scroll.setWidgetResizable(True)
             self.playback_scroll.setWidget(self.playback_controls_widget)
-            self.playback_scroll.setFixedWidth(286)
+            self.playback_scroll.setMinimumWidth(286)
+            self.playback_scroll.setMaximumWidth(360)
             self.playback_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             self.playback_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             self.playback_scroll.setStyleSheet("QScrollArea { border: 1px solid #e2e8f0; background: #f8fafc; }")
@@ -394,7 +397,7 @@ def main() -> int:
             self.chord_list.setAlternatingRowColors(True)
             self.theory_context = QLabel("Theory: -")
             self.theory_context.setWordWrap(True)
-            self.theory_context.setFixedHeight(54)
+            self.theory_context.setMinimumHeight(54)
             self.theory_context.setAlignment(Qt.AlignLeft | Qt.AlignTop)
             self.theory_context.setStyleSheet("color: #475569;")
             self.theory_list = QListWidget()
@@ -596,7 +599,8 @@ def main() -> int:
             editor_body = QHBoxLayout()
             editor_body.setSpacing(10)
             editor_side_panel = QWidget()
-            editor_side_panel.setFixedWidth(330)
+            editor_side_panel.setMinimumWidth(330)
+            editor_side_panel.setMaximumWidth(460)
             editor_side = QVBoxLayout()
             editor_side.setContentsMargins(0, 0, 0, 0)
             editor_side.setSpacing(8)
@@ -638,7 +642,8 @@ def main() -> int:
             editor_side.addWidget(self.gap_suggestion_list, 1)
             editor_side_panel.setLayout(editor_side)
             track_mix_panel = QWidget()
-            track_mix_panel.setFixedWidth(292)
+            track_mix_panel.setMinimumWidth(292)
+            track_mix_panel.setMaximumWidth(370)
             track_mix_layout = QVBoxLayout()
             track_mix_layout.setContentsMargins(0, 0, 0, 0)
             track_mix_layout.setSpacing(0)
@@ -1502,7 +1507,7 @@ def main() -> int:
                 slider_row.setContentsMargins(0, 0, 0, 0)
                 slider_row.setSpacing(6)
                 audio_label = QLabel("Audio")
-                audio_label.setFixedWidth(42)
+                audio_label.setMinimumWidth(42)
                 audio_label.setStyleSheet("color: #64748b;")
                 audio_label.setToolTip("Separated stem audio volume.")
                 slider_row.addWidget(audio_label)
@@ -1515,7 +1520,7 @@ def main() -> int:
                 midi_slider_row.setContentsMargins(0, 0, 0, 0)
                 midi_slider_row.setSpacing(6)
                 midi_label = QLabel("MIDI")
-                midi_label.setFixedWidth(42)
+                midi_label.setMinimumWidth(42)
                 midi_label.setStyleSheet("color: #64748b;")
                 midi_label.setToolTip("Generated MIDI preview volume.")
                 midi_slider_row.addWidget(midi_label)
@@ -1938,7 +1943,7 @@ def main() -> int:
                 item = QListWidgetItem(
                     f"{self.display_chord(suggestion.label)}  {suggestion.score:.0%}\n"
                     f"{suggestion.action.replace('_', ' ')} | local {suggestion.local_evidence:.0%}, "
-                    f"theory {suggestion.theory_fit:.0%}, voice {suggestion.voice_leading:.0%}"
+                    f"theory {suggestion.theory_fit:.0%}, movement {suggestion.pitch_class_movement:.0%}"
                 )
                 item.setData(Qt.UserRole, index)
                 item.setToolTip("\n".join(suggestion.explanation))
@@ -1999,7 +2004,7 @@ def main() -> int:
             self.refresh_current_harmony(self.timeline.position)
 
         def handle_notation_spelling_changed(self, *_args) -> None:
-            self.timeline.redraw()
+            self.timeline.set_note_name_formatter(self.display_note_name)
             self.refresh_current_harmony(self.timeline.position)
 
         def refresh_current_harmony(self, seconds: float) -> None:

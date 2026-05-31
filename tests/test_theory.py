@@ -163,7 +163,7 @@ def test_chord_gap_suggestions_use_local_midi_evidence_inside_gap() -> None:
 
     assert analysis.suggestions[0].label == "Dm"
     assert analysis.suggestions[0].local_evidence > 0.8
-    assert analysis.suggestions[0].voice_leading > 0
+    assert analysis.suggestions[0].pitch_class_movement > 0
     assert analysis.suggestions[0].theory_fit > 0
 
 

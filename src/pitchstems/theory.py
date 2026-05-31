@@ -71,9 +71,13 @@ class ChordGapSuggestion:
     end: float
     local_evidence: float
     theory_fit: float
-    voice_leading: float
+    pitch_class_movement: float
     common_tone_support: float
     explanation: list[str] = field(default_factory=list)
+
+    @property
+    def voice_leading(self) -> float:
+        return self.pitch_class_movement
 
 
 @dataclass(frozen=True)
@@ -400,7 +404,7 @@ def chord_gap_report(analysis: ChordGapAnalysis) -> str:
                 f"Action: {suggestion.action}",
                 f"Local MIDI evidence: {suggestion.local_evidence:.0%}",
                 f"Theory fit: {suggestion.theory_fit:.0%}",
-                f"Pitch-class movement: {suggestion.voice_leading:.0%}",
+                f"Pitch-class movement: {suggestion.pitch_class_movement:.0%}",
                 f"Common-tone support: {suggestion.common_tone_support:.0%}",
                 *suggestion.explanation,
             ]
@@ -465,7 +469,7 @@ def _gap_suggestions(
         if action in {"extend_previous", "start_next"}:
             local_evidence = max(local_evidence, no_local_evidence)
         theory_fit = _candidate_theory_fit(tones, theory_analysis)
-        voice_leading = _candidate_voice_leading(tones, previous_chord, next_chord)
+        pitch_class_movement = _candidate_pitch_class_movement(tones, previous_chord, next_chord)
         common_tone_support = _candidate_common_tones(tones, previous_chord, next_chord)
         score = _gap_display_strength(action, local_evidence, theory_fit, no_local_evidence)
         suggestions.append(
@@ -477,7 +481,7 @@ def _gap_suggestions(
                 end=end,
                 local_evidence=fit_clamp(local_evidence),
                 theory_fit=fit_clamp(theory_fit),
-                voice_leading=fit_clamp(voice_leading),
+                pitch_class_movement=fit_clamp(pitch_class_movement),
                 common_tone_support=fit_clamp(common_tone_support),
                 explanation=[
                     f"{label} is ranked from local MIDI evidence, formal scale/key fit, "
@@ -520,14 +524,14 @@ def _gap_suggestion_sort_key(
         return (
             float(is_continuity),
             suggestion.theory_fit,
-            suggestion.voice_leading,
+            suggestion.pitch_class_movement,
             suggestion.common_tone_support,
         )
     return (
         float(has_local_chord_evidence),
         suggestion.local_evidence,
         suggestion.theory_fit,
-        suggestion.voice_leading,
+        suggestion.pitch_class_movement,
         suggestion.common_tone_support,
     )
 
@@ -570,7 +574,7 @@ def _candidate_theory_fit(tones: set[int], analysis: TheoryAnalysis) -> float:
     return len(tones & scale_tones) / len(tones)
 
 
-def _candidate_voice_leading(
+def _candidate_pitch_class_movement(
     tones: set[int],
     previous_chord: ChordRegion | None,
     next_chord: ChordRegion | None,
@@ -581,13 +585,13 @@ def _candidate_voice_leading(
             continue
         neighbor_tones = set(chord_pitch_classes_for_label(neighbor.label))
         if neighbor_tones:
-            scores.append(_voice_leading_score(neighbor_tones, tones))
+            scores.append(_pitch_class_movement_score(neighbor_tones, tones))
     if not scores:
         return 0.0
     return sum(scores) / len(scores)
 
 
-def _voice_leading_score(from_tones: set[int], to_tones: set[int]) -> float:
+def _pitch_class_movement_score(from_tones: set[int], to_tones: set[int]) -> float:
     if not from_tones or not to_tones:
         return 0.0
     distances = []

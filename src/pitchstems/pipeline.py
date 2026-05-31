@@ -141,10 +141,10 @@ def process_midi_from_stems(
     midi_dir.mkdir(parents=True, exist_ok=True)
     export_dir.mkdir(parents=True, exist_ok=True)
 
-    _reset_staging_dir(staged_midi_dir)
-    _reset_staging_dir(staged_export_dir)
-    _remove_staging_dir(backup_midi_dir)
-    _remove_staging_dir(backup_export_dir)
+    _reset_staging_dir(staged_midi_dir, project_dir)
+    _reset_staging_dir(staged_export_dir, project_dir)
+    _remove_staging_dir(backup_midi_dir, project_dir)
+    _remove_staging_dir(backup_export_dir, project_dir)
 
     midi_files: list[MidiResult] = []
     skip_percussion = midi_policy != "all" and selected_midi_stems is None
@@ -198,10 +198,10 @@ def process_midi_from_stems(
         _remove_export_stem_copies(export_dir, stems)
         midi_files = final_midi_files
     except Exception:
-        _remove_staging_dir(staged_midi_dir)
-        _remove_staging_dir(staged_export_dir)
-        _remove_staging_dir(backup_midi_dir)
-        _remove_staging_dir(backup_export_dir)
+        _remove_staging_dir(staged_midi_dir, project_dir)
+        _remove_staging_dir(staged_export_dir, project_dir)
+        _remove_staging_dir(backup_midi_dir, project_dir)
+        _remove_staging_dir(backup_export_dir, project_dir)
         raise
 
     zip_path = project_dir / f"{input_stem}_pitchstems.zip" if create_zip else None
@@ -307,6 +307,15 @@ def _replace_midi_outputs(
     backup_midi_dir: Path,
     backup_export_dir: Path,
 ) -> None:
+    project_dir = midi_dir.parent
+    for label, path in [
+        ("MIDI output", midi_dir),
+        ("staged MIDI output", staged_midi_dir),
+        ("export output", export_dir),
+        ("MIDI backup", backup_midi_dir),
+        ("export backup", backup_export_dir),
+    ]:
+        _assert_project_child(project_dir, path, label)
     generated_names = {name.lower() for name in generated_export_midi}
     try:
         if midi_dir.exists():
@@ -318,12 +327,14 @@ def _replace_midi_outputs(
 
         shutil.move(str(staged_midi_dir), str(midi_dir))
         for staged_path in staged_export_paths:
+            _assert_project_child(project_dir, staged_path, "staged export output")
             shutil.move(str(staged_path), str(export_dir / staged_path.name))
-        _remove_staging_dir(staged_midi_dir)
-        _remove_staging_dir(backup_midi_dir)
-        _remove_staging_dir(backup_export_dir)
+        _remove_staging_dir(staged_midi_dir, project_dir)
+        _remove_staging_dir(backup_midi_dir, project_dir)
+        _remove_staging_dir(backup_export_dir, project_dir)
     except Exception:
         if midi_dir.exists():
+            _assert_project_child(project_dir, midi_dir, "partial MIDI output")
             shutil.rmtree(midi_dir)
         if backup_midi_dir.exists():
             shutil.move(str(backup_midi_dir), str(midi_dir))
@@ -336,14 +347,27 @@ def _replace_midi_outputs(
         raise
 
 
-def _reset_staging_dir(path: Path) -> None:
-    _remove_staging_dir(path)
+def _reset_staging_dir(path: Path, project_dir: Path | None = None) -> None:
+    _remove_staging_dir(path, project_dir)
     path.mkdir(parents=True, exist_ok=True)
 
 
-def _remove_staging_dir(path: Path) -> None:
+def _remove_staging_dir(path: Path, project_dir: Path | None = None) -> None:
+    if project_dir is not None:
+        _assert_project_child(project_dir, path, "staging directory")
     if path.exists():
         shutil.rmtree(path)
+
+
+def _assert_project_child(project_dir: Path, path: Path, label: str) -> None:
+    root = project_dir.expanduser().resolve()
+    target = path.expanduser().resolve()
+    if target == root:
+        raise ValueError(f"{label} must not be the project root: {target}")
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"{label} must stay inside the project folder: {target}") from exc
 
 
 def _remove_export_stem_copies(export_dir: Path, stems: list[StemResult]) -> None:
@@ -355,7 +379,7 @@ def _remove_export_stem_copies(export_dir: Path, stems: list[StemResult]) -> Non
 
 def _remove_midi_preview_cache(project_dir: Path) -> None:
     with contextlib.suppress(OSError):
-        _remove_staging_dir(project_dir / "editor" / "midi-preview")
+        _remove_staging_dir(project_dir / "editor" / "midi-preview", project_dir)
 
 
 def _looks_like_copied_file(source: Path, candidate: Path) -> bool:

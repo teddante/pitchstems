@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from zipfile import ZipFile
 
+import pytest
 from mido import Message, MidiFile, MidiTrack
 
 import pitchstems.pipeline as pipeline
@@ -9,6 +10,7 @@ from pitchstems.pipeline import (
     PipelineResult,
     _project_dir,
     _remove_export_stem_copies,
+    _remove_staging_dir,
     _safe_stem,
     _zip_project_outputs,
     process_audio_file,
@@ -363,10 +365,10 @@ def test_midi_rerun_does_not_fail_if_preview_cache_cleanup_is_locked(
 
     real_remove_staging_dir = pipeline._remove_staging_dir
 
-    def locked_preview_cache(path):
+    def locked_preview_cache(path, project_root=None):
         if path == project_dir / "editor" / "midi-preview":
             raise PermissionError("preview in use")
-        return real_remove_staging_dir(path)
+        return real_remove_staging_dir(path, project_root)
 
     monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", fake_transcribe)
     monkeypatch.setattr(pipeline, "_remove_staging_dir", locked_preview_cache)
@@ -381,6 +383,28 @@ def test_midi_rerun_does_not_fail_if_preview_cache_cleanup_is_locked(
     )
 
     assert result.midi_files
+
+
+def test_remove_staging_dir_rejects_project_root(tmp_path: Path) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    project_dir.mkdir()
+
+    with pytest.raises(ValueError, match="must not be the project root"):
+        _remove_staging_dir(project_dir, project_dir)
+
+    assert project_dir.exists()
+
+
+def test_remove_staging_dir_rejects_paths_outside_project(tmp_path: Path) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    outside_dir = tmp_path / "outside.tmp"
+    project_dir.mkdir()
+    outside_dir.mkdir()
+
+    with pytest.raises(ValueError, match="must stay inside the project folder"):
+        _remove_staging_dir(outside_dir, project_dir)
+
+    assert outside_dir.exists()
 
 
 def test_midi_rerun_restores_previous_outputs_if_replacement_fails(
