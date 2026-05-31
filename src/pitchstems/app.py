@@ -6,7 +6,6 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from pitchstems.acceleration import onnxruntime_status, torch_status
 from pitchstems.app_logging import app_logger, setup_app_logging
 from pitchstems.chord_preview import chord_preview_pitches
 from pitchstems.editor_project import (
@@ -39,15 +38,15 @@ from pitchstems.harmony_inspector import (
     selected_chord_analysis_notes,
 )
 from pitchstems import harmony_panel
+from pitchstems import gui_pipeline_state
 from pitchstems import gui_processing
 from pitchstems.harmony_report import current_chord_analysis_report as build_chord_analysis_report
 from pitchstems import gui_editor_load
 from pitchstems import gui_editor_state
 from pitchstems import gui_project_flow
 from pitchstems import gui_transport_flow
-from pitchstems.gui_options import default_midi_checked, device_label, optional_frequency
 from pitchstems.gui_track_controls import rebuild_track_controls, sync_track_control_panel as sync_track_controls
-from pitchstems.separation import SeparationOptions, StemResult
+from pitchstems.separation import StemResult
 from pitchstems.theory import (
     ChordGapAnalysis,
     TheoryAnalysis,
@@ -58,7 +57,6 @@ from pitchstems.theory import (
     theory_analysis_report,
 )
 from pitchstems.time_format import format_time
-from pitchstems.transcription import MidiOptions
 
 @dataclass(frozen=True)
 class HarmonyContext:
@@ -1325,121 +1323,25 @@ def main() -> int:
             gui_project_flow.reset_stage_state(self, _path)
 
         def set_processing_state(self, busy: bool) -> None:
-            self.drop_zone.setEnabled(not busy)
-            self.run_full.setEnabled(not busy)
-            self.run_midi.setEnabled((not busy) and self.current_result is not None)
-            self.stem.setEnabled(not busy)
-            self.bs_device.setEnabled(not busy)
-            self.generate_midi.setEnabled(not busy)
-            for checkbox in self.midi_stem_checks.values():
-                checkbox.setEnabled(not busy and self.generate_midi.isChecked())
-            for widget in [
-                self.onset_threshold,
-                self.frame_threshold,
-                self.minimum_note_length,
-                self.minimum_frequency,
-                self.maximum_frequency,
-                self.midi_tempo,
-                self.melodia_trick,
-                self.multiple_pitch_bends,
-                self.save_notes,
-                self.save_model_outputs,
-                self.sonify_midi,
-                self.sonification_samplerate,
-                self.create_zip,
-                self.open_when_done,
-            ]:
-                widget.setEnabled(not busy)
-            if not busy:
-                self.refresh_midi_stem_checks()
+            gui_pipeline_state.set_processing_state(self, busy)
 
         def selected_model_key(self) -> str:
-            return "bs_roformer_sw"
+            return gui_pipeline_state.selected_model_key(self)
 
-        def selected_separation_options(self) -> SeparationOptions:
-            return SeparationOptions(
-                model_key=self.selected_model_key(),
-                selected_stem=self.stem.currentData(),
-                device=self.bs_device.currentData(),
-            )
+        def selected_separation_options(self):
+            return gui_pipeline_state.selected_separation_options(self)
 
-        def selected_midi_options(self) -> MidiOptions:
-            return MidiOptions(
-                onset_threshold=self.onset_threshold.value(),
-                frame_threshold=self.frame_threshold.value(),
-                minimum_note_length=self.minimum_note_length.value(),
-                minimum_frequency=optional_frequency(self.minimum_frequency.value()),
-                maximum_frequency=optional_frequency(self.maximum_frequency.value()),
-                multiple_pitch_bends=self.multiple_pitch_bends.isChecked(),
-                melodia_trick=self.melodia_trick.isChecked(),
-                midi_tempo=self.midi_tempo.value(),
-                save_notes=self.save_notes.isChecked(),
-                save_model_outputs=self.save_model_outputs.isChecked(),
-                sonify_midi=self.sonify_midi.isChecked(),
-                sonification_samplerate=self.sonification_samplerate.value(),
-            )
+        def selected_midi_options(self):
+            return gui_pipeline_state.selected_midi_options(self)
 
         def selected_midi_stems(self) -> set[str]:
-            if not self.generate_midi.isChecked():
-                return set()
-            return {
-                stem_name
-                for stem_name, checkbox in self.midi_stem_checks.items()
-                if checkbox.isChecked()
-            }
+            return gui_pipeline_state.selected_midi_stems(self)
 
         def refresh_midi_stem_checks(self, *_args) -> None:
-            choice = model_choice(self.selected_model_key())
-            saved_stem = self.stem.currentData()
-            previous = {stem: checkbox.isChecked() for stem, checkbox in self.midi_stem_checks.items()}
-            self.midi_stem_checks.clear()
-            _clear_layout(self.midi_stems_layout)
-
-            for index, stem_name in enumerate(choice.stems):
-                checkbox = QCheckBox(stem_name)
-                checkbox.setChecked(previous.get(stem_name, default_midi_checked(stem_name)))
-                can_run = self.generate_midi.isChecked() and (saved_stem is None or stem_name == saved_stem)
-                checkbox.setEnabled(can_run)
-                if saved_stem is not None and stem_name != saved_stem:
-                    checkbox.setChecked(False)
-                    checkbox.setToolTip("This stem is not being saved, so it cannot be analysed.")
-                elif stem_name.lower() == "drums":
-                    checkbox.setToolTip("Off by default because Basic Pitch is not a drum transcription model.")
-                else:
-                    checkbox.setToolTip("Run Basic Pitch on this separated stem.")
-                self.midi_stem_checks[stem_name] = checkbox
-                self.midi_stems_layout.addWidget(checkbox, index // 2, index % 2)
+            gui_pipeline_state.refresh_midi_stem_checks(self, *_args)
 
         def refresh_model_details(self, *_args) -> None:
-            choice = model_choice(self.selected_model_key())
-
-            self.stem.blockSignals(True)
-            self.stem.clear()
-            self.stem.addItem("All stems from this model", None)
-            for stem_name in choice.stems:
-                self.stem.addItem(stem_name, stem_name)
-            self.stem.blockSignals(False)
-            self.refresh_midi_stem_checks()
-
-            torch = torch_status()
-            ort = onnxruntime_status()
-            self.model_title.setText(choice.label)
-            self.model_summary.setText(choice.summary)
-            self.model_facts.setText(
-                f"Best for: {choice.best_for}\n"
-                f"Creates: {', '.join(choice.stems)}\n"
-                f"Evidence: {choice.score_summary}"
-            )
-            self.model_runtime.setText(
-                f"Separation: {choice.source} on {device_label(self.bs_device.currentData(), torch.cuda_available)}. "
-                f"MIDI: Spotify Basic Pitch ONNX on {'ONNX CUDA' if ort.has_cuda else 'ONNX CPU'}."
-            )
-            self.model_backend_detail.setText(
-                f"BS-RoFormer: {choice.native_model_id}\n"
-                f"Weights: {choice.filename or 'provided by registry'}\n"
-                f"Config: {choice.config_filename or 'provided by registry'}\n"
-                f"Calls: bs_roformer.inference.proc_folder -> basic_pitch.inference.predict_and_save"
-            )
+            gui_pipeline_state.refresh_model_details(self, *_args)
 
         def open_latest_output(self) -> None:
             gui_project_flow.open_latest_output(self)
@@ -1462,13 +1364,6 @@ def main() -> int:
         spin = _double_spin(0.0, 20000.0, 0.0, 10.0, 1)
         spin.setSpecialValueText(special)
         return spin
-
-    def _clear_layout(layout) -> None:
-        while layout.count():
-            item = layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
 
     app = QApplication([])
     window = MainWindow()
