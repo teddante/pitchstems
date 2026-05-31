@@ -14,9 +14,6 @@ from pitchstems.editor_project import (
     ChordScoringOptions,
     EditorProject,
     NoteEvent,
-    active_notes_at,
-    analyze_chord_at,
-    analyze_chord_region,
     chord_bass_name_for_label,
     chord_tones_for_label,
     display_chord_label,
@@ -29,15 +26,10 @@ from pitchstems.notation import pitch_class_for_name, pitch_class_name
 from pitchstems.pipeline import PipelineResult
 from pitchstems.harmony_inspector import (
     chord_analysis_track_names as inspector_chord_analysis_track_names,
-    chord_base_pitch_weights as inspector_chord_base_pitch_weights,
-    chord_note_constraints as inspector_chord_note_constraints,
-    chord_sample_text as inspector_chord_sample_text,
-    filtered_chord_analysis_notes as inspector_filtered_chord_analysis_notes,
-    harmony_context_key as inspector_harmony_context_key,
     resolve_notation_preference,
-    selected_chord_analysis_notes,
 )
 from pitchstems import harmony_panel
+from pitchstems import gui_harmony_flow
 from pitchstems import gui_pipeline_state
 from pitchstems import gui_processing
 from pitchstems.harmony_report import current_chord_analysis_report as build_chord_analysis_report
@@ -976,89 +968,7 @@ def main() -> int:
             self.refresh_current_harmony(self.timeline.position)
 
         def refresh_current_harmony(self, seconds: float) -> None:
-            if self.editor_project is None:
-                self.current_chord.setText("Harmony: -")
-                self.set_chord_context_text("Sample: -")
-                self.chord_list.clear()
-                self.refresh_chord_keyboard()
-                self.set_theory_analysis(None)
-                self.set_gap_analysis(None)
-                self.current_harmony_context = None
-                self.note_filter_list.clear()
-                self.inspect_chord_button.setEnabled(False)
-                return
-            self.inspect_chord_button.setEnabled(True)
-            context = self.chord_context_key(seconds)
-            if context != self.chord_note_filter_context:
-                self.chord_note_filter_context = context
-                self.chord_note_overrides = {}
-            source_notes = self.chord_analysis_notes()
-            self.current_chord_base_weights = self.chord_base_pitch_weights(source_notes, context)
-            analysis_notes = self.filtered_chord_analysis_notes(source_notes, context)
-            sample_text = self.chord_sample_text(source_notes)
-            scoring_options = self.chord_scoring_options()
-            selection = self.timeline.selection_range()
-            if selection is not None:
-                start, end = selection
-                required, excluded = self.chord_note_constraints()
-                analysis = analyze_chord_region(
-                    analysis_notes,
-                    start,
-                    end,
-                    required_pitch_classes=required,
-                    excluded_pitch_classes=excluded,
-                    scoring_options=scoring_options,
-                )
-                self.refresh_current_theory(source_notes, seconds)
-                chord = self.display_chord(analysis.label)
-                self.current_chord.setText(
-                    f"Selection: {chord}  (score {analysis.confidence:.0%})  "
-                    f"{format_time(start)} - {format_time(end)}"
-                )
-                self._set_chord_candidates(analysis)
-                self.refresh_current_gap_suggestions(source_notes)
-                self.update_harmony_context("selection", source_notes, analysis_notes, analysis)
-                self.populate_note_filter_list(self.current_chord_base_weights)
-                if analysis.note_weights:
-                    note_text = ", ".join(
-                        f"{self.display_weighted_note_name(name)} ({weight:.0%})"
-                        for name, weight in analysis.note_weights[:12]
-                    )
-                    self.set_chord_context_text(f"{sample_text}\nWeighted notes: {note_text}")
-                elif analysis.active_note_names:
-                    note_text = ", ".join(analysis.active_note_names[:32])
-                    if len(analysis.active_note_names) > 32:
-                        note_text += f", +{len(analysis.active_note_names) - 32} more"
-                    self.set_chord_context_text(f"{sample_text}\nNotes in selection: {note_text}")
-                else:
-                    self.set_chord_context_text(f"{sample_text}\nNotes in selection: -")
-                return
-
-            required, excluded = self.chord_note_constraints()
-            analysis = analyze_chord_at(
-                analysis_notes,
-                seconds,
-                required_pitch_classes=required,
-                excluded_pitch_classes=excluded,
-                scoring_options=scoring_options,
-            )
-            active_notes = active_notes_at(analysis_notes, seconds)
-            self.refresh_current_theory(source_notes, seconds)
-            chord = self.display_chord(analysis.label)
-            self.current_chord.setText(f"Harmony: {chord}  (score {analysis.confidence:.0%})")
-            self._set_chord_candidates(analysis)
-            self.refresh_current_gap_suggestions(source_notes)
-            self.update_harmony_context("playhead", source_notes, analysis_notes, analysis)
-            self.populate_note_filter_list(self.current_chord_base_weights)
-            if active_notes:
-                unique_pitches = sorted({note.pitch for note in active_notes})
-                shown_pitches = unique_pitches[:32]
-                note_text = ", ".join(self.display_note_name(pitch) for pitch in shown_pitches)
-                if len(unique_pitches) > len(shown_pitches):
-                    note_text += f", +{len(unique_pitches) - len(shown_pitches)} more"
-                self.set_chord_context_text(f"{sample_text}\nNotes: {note_text}")
-            else:
-                self.set_chord_context_text(f"{sample_text}\nNotes: -")
+            gui_harmony_flow.refresh_current_harmony(self, seconds)
 
         def update_harmony_context(
             self,
@@ -1078,18 +988,13 @@ def main() -> int:
             )
 
         def chord_context_key(self, seconds: float):
-            return inspector_harmony_context_key(seconds, self.timeline.selection_range())
+            return gui_harmony_flow.chord_context_key(self, seconds)
 
         def chord_analysis_notes(self) -> list[NoteEvent]:
-            return selected_chord_analysis_notes(
-                self.editor_project,
-                self.selected_chord_analysis_tracks(),
-            )
+            return gui_harmony_flow.chord_analysis_notes(self)
 
         def chord_sample_text(self, notes: list[NoteEvent]) -> str:
-            if self.editor_project is None:
-                return "Sample: -"
-            return inspector_chord_sample_text(self.chord_analysis_track_names(), len(notes))
+            return gui_harmony_flow.chord_sample_text(self, notes)
 
         def chord_analysis_track_names(self) -> list[str]:
             return inspector_chord_analysis_track_names(
@@ -1098,48 +1003,25 @@ def main() -> int:
             )
 
         def selected_chord_analysis_tracks(self) -> set[str] | None:
-            if not self.track_analysis_checks:
-                return None
-            return {
-                stem_name
-                for stem_name, checkbox in self.track_analysis_checks.items()
-                if checkbox.isChecked()
-            }
+            return gui_harmony_flow.selected_chord_analysis_tracks(self)
 
         def chord_base_pitch_weights(self, notes: list[NoteEvent], context) -> dict[int, float]:
-            return inspector_chord_base_pitch_weights(notes, context)
+            return gui_harmony_flow.chord_base_pitch_weights(self, notes, context)
 
         def filtered_chord_analysis_notes(self, notes: list[NoteEvent], context) -> list[NoteEvent]:
-            _required, excluded_pitch_classes = self.chord_note_constraints()
-            return inspector_filtered_chord_analysis_notes(notes, excluded_pitch_classes)
+            return gui_harmony_flow.filtered_chord_analysis_notes(self, notes, context)
 
         def chord_note_constraints(self) -> tuple[set[int], set[int]]:
-            return inspector_chord_note_constraints(self.chord_note_overrides)
+            return gui_harmony_flow.chord_note_constraints(self)
 
         def populate_note_filter_list(self, weights: dict[int, float]) -> None:
-            harmony_panel.populate_note_filter_list(self, weights)
+            gui_harmony_flow.populate_note_filter_list(self, weights)
 
         def handle_chord_note_filter_changed(self, item) -> None:
-            if self.updating_chord_note_filter:
-                return
-            pitch_class = item.data(Qt.UserRole)
-            if pitch_class is None:
-                return
-            pitch_class = int(pitch_class)
-            state = {
-                Qt.Unchecked: "exclude",
-                Qt.PartiallyChecked: "auto",
-                Qt.Checked: "force",
-            }.get(item.checkState(), "auto")
-            if state == "auto":
-                self.chord_note_overrides.pop(pitch_class, None)
-            else:
-                self.chord_note_overrides[pitch_class] = state
-            self.refresh_current_harmony(self.timeline.position)
+            gui_harmony_flow.handle_chord_note_filter_changed(self, item)
 
         def reset_chord_note_filter(self) -> None:
-            self.chord_note_overrides = {}
-            self.refresh_current_harmony(self.timeline.position)
+            gui_harmony_flow.reset_chord_note_filter(self)
 
         def inspect_current_chord_analysis(self) -> None:
             if self.editor_project is None:
