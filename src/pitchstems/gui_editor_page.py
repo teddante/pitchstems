@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -30,8 +31,8 @@ def build_editor_page(window) -> QWidget:
     editor_body = QHBoxLayout()
     editor_body.setSpacing(10)
     editor_side_panel = QWidget()
-    editor_side_panel.setMinimumWidth(330)
-    editor_side_panel.setMaximumWidth(460)
+    editor_side_panel.setMinimumWidth(300)
+    editor_side_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
     editor_side = QVBoxLayout()
     editor_side.setContentsMargins(0, 0, 0, 0)
     editor_side.setSpacing(8)
@@ -78,8 +79,8 @@ def build_editor_page(window) -> QWidget:
     editor_side_panel.setLayout(editor_side)
 
     track_mix_panel = QWidget()
-    track_mix_panel.setMinimumWidth(292)
-    track_mix_panel.setMaximumWidth(370)
+    track_mix_panel.setMinimumWidth(280)
+    track_mix_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
     track_mix_layout = QVBoxLayout()
     track_mix_layout.setContentsMargins(0, 0, 0, 0)
     track_mix_layout.setSpacing(0)

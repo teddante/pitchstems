@@ -353,9 +353,8 @@ def main() -> int:
             self.playback_scroll = QScrollArea()
             self.playback_scroll.setWidgetResizable(True)
             self.playback_scroll.setWidget(self.playback_controls_widget)
-            self.playback_scroll.setMinimumWidth(286)
-            self.playback_scroll.setMaximumWidth(360)
-            self.playback_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            self.playback_scroll.setMinimumWidth(270)
+            self.playback_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
             self.playback_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             self.playback_scroll.setStyleSheet("QScrollArea { border: 1px solid #e2e8f0; background: #f8fafc; }")
             self.track_visibility_checks: dict[str, QCheckBox] = {}
