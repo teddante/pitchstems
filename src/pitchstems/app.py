@@ -36,6 +36,7 @@ from pitchstems.harmony_report import current_chord_analysis_report as build_cho
 from pitchstems import gui_editor_load
 from pitchstems import gui_editor_state
 from pitchstems import gui_project_flow
+from pitchstems import gui_shutdown
 from pitchstems import gui_transport_flow
 from pitchstems.gui_jobs import EditorLoadJobState, MidiPreviewJobState, WorkerJobState
 from pitchstems.gui_track_controls import rebuild_track_controls, sync_track_control_panel as sync_track_controls
@@ -127,6 +128,7 @@ def main() -> int:
             self.worker_jobs = WorkerJobState()
             self.editor_load_jobs = EditorLoadJobState()
             self.midi_preview_jobs = MidiPreviewJobState()
+            self.close_after_worker = False
             self.latest_output_dir: Path | None = None
             self.current_result: PipelineResult | None = None
             self.current_stems: list[StemResult] = []
@@ -450,6 +452,9 @@ def main() -> int:
             self.editor_save_timer.timeout.connect(self.save_editor_state)
 
         def closeEvent(self, event) -> None:
+            if not gui_shutdown.request_window_close(self):
+                event.ignore()
+                return
             self.save_editor_state()
             super().closeEvent(event)
 

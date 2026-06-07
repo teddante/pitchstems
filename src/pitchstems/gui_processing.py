@@ -229,6 +229,9 @@ def flush_messages(window) -> None:
                     window.end_activity("Processing failed")
                 else:
                     window.end_activity("Processing complete")
+                if getattr(window, "close_after_worker", False):
+                    window.close_after_worker = False
+                    window.close()
             else:
                 window.logger.info("Ignored stale worker completion for token %s", token)
         elif isinstance(message, str) and message.startswith("__OUTPUT_DIR__"):
