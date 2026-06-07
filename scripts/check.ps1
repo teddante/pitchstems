@@ -16,40 +16,48 @@ if (-not (Test-Path $python)) {
     $pythonArgs = @()
 }
 
-Write-Host "Running Ruff..."
-& $python @pythonArgs -m ruff check src tests
+function Invoke-Checked {
+    param(
+        [string]$Label,
+        [scriptblock]$Command
+    )
 
-Write-Host "Running tests..."
-& $python @pythonArgs -m pytest
+    Write-Host $Label
+    & $Command
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Label failed with exit code $LASTEXITCODE"
+    }
+}
 
-Write-Host "Compiling source..."
-& $python @pythonArgs -m compileall src
+Invoke-Checked "Running Ruff..." { & $python @pythonArgs -m ruff check src tests }
 
-Write-Host "Checking installed package metadata..."
-& $python @pythonArgs -m pip check
+Invoke-Checked "Running tests..." { & $python @pythonArgs -m pytest }
+
+Invoke-Checked "Compiling source..." { & $python @pythonArgs -m compileall src }
+
+Invoke-Checked "Checking installed package metadata..." { & $python @pythonArgs -m pip check }
 
 if (Test-Path $pitchstems) {
-    Write-Host "Running doctor..."
-    & $pitchstems --doctor
+    Invoke-Checked "Running doctor..." { & $pitchstems --doctor }
     if ($Gpu) {
-        Write-Host "Running GPU doctor..."
-        & $pitchstems --doctor --gpu
+        Invoke-Checked "Running GPU doctor..." { & $pitchstems --doctor --gpu }
     }
 } else {
     Write-Host "Skipping doctor: venv launcher not found."
 }
 
 if ($GuiSmoke) {
-    Write-Host "Running GUI smoke test..."
     $previousQtPlatform = $env:QT_QPA_PLATFORM
     $previousGuiSmoke = $env:PITCHSTEMS_GUI_SMOKE
     $env:QT_QPA_PLATFORM = "offscreen"
     $env:PITCHSTEMS_GUI_SMOKE = "project"
     try {
+        Invoke-Checked "Running GUI smoke test..." {
         @'
 from pitchstems.app import main
 raise SystemExit(main())
 '@ | & $python @pythonArgs -
+        }
     } finally {
         if ($null -eq $previousQtPlatform) {
             Remove-Item Env:\QT_QPA_PLATFORM -ErrorAction SilentlyContinue
@@ -65,8 +73,7 @@ raise SystemExit(main())
 }
 
 if ($Build) {
-    Write-Host "Building package..."
-    & $python @pythonArgs -m build
+    Invoke-Checked "Building package..." { & $python @pythonArgs -m build }
 }
 
 Write-Host "All requested checks passed."
