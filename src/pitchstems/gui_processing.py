@@ -100,6 +100,7 @@ def invalidate_worker_token(window) -> None:
 
 
 def run_full_pipeline(window, token: int, request: FullRunRequest) -> None:
+    completion = "success"
     try:
         window.logger.info("Starting full pipeline for %s", request.input_path)
         result = process_audio_file(
@@ -117,16 +118,19 @@ def run_full_pipeline(window, token: int, request: FullRunRequest) -> None:
         window.messages.put(("RESULT", token, result))
         window.messages.put(("WORKER_LOG", token, f"Project ready: {result.project_dir}"))
     except PipelineCancelledError:
+        completion = "cancelled"
         window.logger.info("Processing cancelled")
         window.messages.put(("WORKER_LOG", token, "Processing cancelled."))
     except Exception as exc:
+        completion = "error"
         window.logger.exception("Full pipeline failed")
         window.messages.put(("WORKER_LOG", token, f"Error: {exc}"))
     finally:
-        window.messages.put(("ENABLE_PROCESS", token))
+        window.messages.put(("ENABLE_PROCESS", token, completion))
 
 
 def run_midi_stage(window, token: int, request: MidiRunRequest) -> None:
+    completion = "success"
     try:
         window.logger.info("Starting MIDI rerun for %s", request.result.project_dir)
         result = process_midi_from_stems(
@@ -144,13 +148,15 @@ def run_midi_stage(window, token: int, request: MidiRunRequest) -> None:
         window.messages.put(("RESULT", token, result))
         window.messages.put(("WORKER_LOG", token, f"Updated project MIDI: {result.project_dir}"))
     except PipelineCancelledError:
+        completion = "cancelled"
         window.logger.info("Processing cancelled")
         window.messages.put(("WORKER_LOG", token, "Processing cancelled."))
     except Exception as exc:
+        completion = "error"
         window.logger.exception("MIDI rerun failed")
         window.messages.put(("WORKER_LOG", token, f"Error: {exc}"))
     finally:
-        window.messages.put(("ENABLE_PROCESS", token))
+        window.messages.put(("ENABLE_PROCESS", token, completion))
 
 
 def flush_messages(window) -> None:
@@ -208,11 +214,17 @@ def flush_messages(window) -> None:
             else:
                 window.logger.info("Ignored stale MIDI preview failure for %s: %s", project_dir, error)
         elif isinstance(message, tuple) and message[0] == "ENABLE_PROCESS":
-            _kind, token = message
+            _kind, token, *status_parts = message
+            status = str(status_parts[0]) if status_parts else "success"
             if window.is_active_worker_token(int(token)):
                 window.worker_jobs.active_token = None
                 window.set_processing_state(False)
-                window.end_activity("Processing complete")
+                if status == "cancelled":
+                    window.end_activity("Processing cancelled")
+                elif status == "error":
+                    window.end_activity("Processing failed")
+                else:
+                    window.end_activity("Processing complete")
             else:
                 window.logger.info("Ignored stale worker completion for token %s", token)
         elif isinstance(message, str) and message.startswith("__OUTPUT_DIR__"):
