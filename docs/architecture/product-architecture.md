@@ -40,6 +40,12 @@ The remaining PySide maintainability pressure is concentrated in a few deliberat
 - `src/pitchstems/gui_timeline.py`: split timeline rendering, input handling, playback coordination, and scene cache management before adding more editor tools.
 - `src/pitchstems/chord_analysis.py`: move shared `NoteEvent` and `ChordRegion` models into a neutral music/editor model module, then split naming, scoring, detection, and explanation logic behind compatibility imports.
 
+Before adding new editor UI behavior:
+
+- `MainWindow` should lose direct ownership of harmony inspector actions by moving dialog creation and action enablement behind a `gui_harmony_dialogs.py` module.
+- `TimelineView` should expose pure geometry/editing helpers for chord drag, selection, and visible-note windows so those behaviors can be tested without constructing a full `QGraphicsScene`.
+- Chord analysis should split into at least `chord_models.py`, `chord_naming.py`, `chord_scoring.py`, and `chord_detection.py` once shared editor models are stable.
+
 ## Target Runtime Shape
 
 ```text
