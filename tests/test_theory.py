@@ -1,4 +1,6 @@
 from pitchstems.editor_project import ChordRegion, NoteEvent
+from pitchstems.chord_gap_analysis import analyze_chord_gap as analyze_gap_from_module
+from pitchstems.scale_analysis import analyze_theory_region as analyze_theory_from_module
 from pitchstems.theory import (
     SCALE_REGISTRY,
     analyze_chord_gap,
@@ -28,6 +30,13 @@ def test_scale_registry_includes_common_modal_and_symmetrical_families() -> None
     assert "Chromatic" in names
     assert "Enigmatic" in names
     assert "Raga Bhairav" in names
+
+
+def test_extracted_theory_modules_expose_core_entry_points() -> None:
+    notes = [_note(0.0, 1.0, 60)]
+
+    assert analyze_theory_from_module(notes, [], 0.0, 1.0).candidates
+    assert analyze_gap_from_module([], [], 0.0, 1.0).suggestions == []
 
 
 def test_generated_modes_keep_intervals_relative_to_each_mode_root() -> None:
