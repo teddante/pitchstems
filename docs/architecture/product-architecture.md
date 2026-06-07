@@ -46,6 +46,16 @@ Before adding new editor UI behavior:
 - `TimelineView` should expose pure geometry/editing helpers for chord drag, selection, and visible-note windows so those behaviors can be tested without constructing a full `QGraphicsScene`.
 - Chord analysis should split into at least `chord_models.py`, `chord_naming.py`, `chord_scoring.py`, and `chord_detection.py` once shared editor models are stable.
 
+## Extraction Backlog
+
+| Slice | First file to create | Source pressure | Verification |
+| --- | --- | --- | --- |
+| Harmony dialogs | `src/pitchstems/gui_harmony_dialogs.py` | `MainWindow` owns report dialog construction | `.\scripts\check.ps1 -GuiSmoke` |
+| Timeline chord geometry | `src/pitchstems/timeline_chord_geometry.py` | `TimelineView` mixes drag math with scene updates | focused geometry tests plus `.\scripts\check.ps1` |
+| Chord naming | `src/pitchstems/chord_naming.py` | `chord_analysis.py` mixes naming with scoring and detection | existing chord analysis tests plus new naming tests |
+| Chord scoring | `src/pitchstems/chord_scoring.py` | scoring weights and evidence are embedded in detection flow | existing chord analysis tests plus scoring fixture tests |
+| Chord detection facade | `src/pitchstems/chord_detection.py` | compatibility API should survive internal splits | full test suite and import compatibility checks |
+
 ## Target Runtime Shape
 
 ```text
