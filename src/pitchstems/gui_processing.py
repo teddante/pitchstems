@@ -99,13 +99,6 @@ def invalidate_worker_token(window) -> None:
         window.set_processing_state(False)
 
 
-def request_worker_cancel(window) -> bool:
-    if not window.worker_jobs.cancel():
-        return False
-    window.set_activity_message("Cancelling after the current model stage...")
-    return True
-
-
 def run_full_pipeline(window, token: int, request: FullRunRequest) -> None:
     completion = "success"
     try:
@@ -234,6 +227,7 @@ def flush_messages(window) -> None:
                     window.end_activity("Processing complete")
                 if getattr(window, "close_after_worker", False):
                     window.close_after_worker = False
+                    window.worker = None
                     window.close()
             else:
                 window.logger.info("Ignored stale worker completion for token %s", token)

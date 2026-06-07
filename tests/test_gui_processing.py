@@ -4,6 +4,7 @@ import queue
 from pathlib import Path
 
 import pitchstems.gui_processing as gui_processing
+import pitchstems.gui_shutdown as gui_shutdown
 from pitchstems.gui_jobs import WorkerJobState
 from pitchstems.pipeline import PipelineCancelledError, PipelineResult
 from pitchstems.separation import StemResult
@@ -16,6 +17,11 @@ class _Logger:
 
     def exception(self, *_args, **_kwargs) -> None:
         raise AssertionError("cancellation should not be logged as an exception")
+
+
+class _LiveWorker:
+    def is_alive(self) -> bool:
+        return True
 
 
 class _Window:
@@ -60,6 +66,10 @@ class _FlushWindow:
         self.messages: queue.Queue[object] = queue.Queue()
         self.worker_jobs = WorkerJobState()
         self.worker_jobs.active_token = 7
+        self.worker = _LiveWorker()
+        self.close_after_worker = False
+        self.closed = False
+        self.close_attempts = 0
         self.results: list[PipelineResult] = []
         self.logs: list[str] = []
         self.processing_states: list[bool] = []
@@ -82,6 +92,11 @@ class _FlushWindow:
 
     def end_activity(self, message: str = "Ready") -> None:
         self.activity_messages.append(message)
+
+    def close(self) -> None:
+        self.close_attempts += 1
+        if gui_shutdown.request_window_close(self):
+            self.closed = True
 
 
 def test_flush_messages_reports_cancelled_completion_without_success_text(tmp_path: Path) -> None:
@@ -107,4 +122,17 @@ def test_flush_messages_reports_error_completion_without_success_text(tmp_path: 
     assert window.logs == ["Error: boom"]
     assert window.processing_states == [False]
     assert window.activity_messages[-1] == "Processing failed"
+    assert window.worker_jobs.active_token is None
+
+
+def test_flush_messages_allows_deferred_close_after_worker_completion() -> None:
+    window = _FlushWindow()
+    window.close_after_worker = True
+    window.messages.put(("ENABLE_PROCESS", 7, "cancelled"))
+
+    gui_processing.flush_messages(window)
+
+    assert window.close_attempts == 1
+    assert window.closed is True
+    assert window.close_after_worker is False
     assert window.worker_jobs.active_token is None
