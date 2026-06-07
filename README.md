@@ -162,6 +162,13 @@ python -m compileall src
 python -m pip check
 ```
 
+Validation tiers:
+
+- Fast source check: `.\scripts\check.ps1`
+- GUI/package check: `.\scripts\check.ps1 -GuiSmoke -Build`
+- GPU/runtime check after setup or ML dependency changes: `.\scripts\check.ps1 -Gpu`
+- Manual real-audio smoke when changing separation/transcription behavior: run a short local audio file, reopen the `.pitchstems` project, and confirm stems, MIDI, combined MIDI, manifest, editor timeline, and optional ZIP are present.
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution notes.
 
 ## Native Settings

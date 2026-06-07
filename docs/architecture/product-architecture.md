@@ -26,6 +26,14 @@ Preferred target stack:
 - Prefer documented schemas over implicit UI state.
 - Avoid rewriting working ML/audio code unless a specific bottleneck proves it is needed.
 
+## Current PySide Hardening Boundary
+
+The PySide app remains the active product surface while the target architecture evolves. Near-term hardening should keep these boundaries intact:
+
+- Long-running work has explicit worker/editor/preview job state and cooperative cancellation checks where Python orchestration can act.
+- Music-analysis logic is split behind compatibility facades: editor project loading, chord analysis, scale analysis, and chord-gap analysis can move independently without changing current imports all at once.
+- Project manifests stay JSON-compatible for the current app; sidecar job messages and future SQLite storage should be introduced alongside, not by breaking existing `.pitchstems` projects.
+
 ## Target Runtime Shape
 
 ```text
