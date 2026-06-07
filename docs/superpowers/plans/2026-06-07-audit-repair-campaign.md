@@ -657,4 +657,3 @@ gh pr view 6 --json url,isDraft,mergeable,statusCheckRollup
 ```
 
 Expected: PR #6 remains open, draft until intentionally marked ready, mergeable or awaiting GitHub refresh, and checks pass after GitHub completes.
-
