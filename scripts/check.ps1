@@ -68,7 +68,15 @@ Invoke-GitWhitespaceChecks
 
 Invoke-Checked "Running Ruff..." { & $python @pythonArgs -m ruff check src tests }
 
-Invoke-Checked "Running tests..." { & $python @pythonArgs -m pytest }
+Invoke-Checked "Running mypy..." { & $python @pythonArgs -m mypy }
+
+Invoke-Checked "Running tests..." {
+    & $python @pythonArgs -m pytest `
+        --cov=pitchstems.editor_models `
+        --cov=pitchstems.gui_jobs `
+        --cov-report=term-missing `
+        --cov-fail-under=90
+}
 
 Invoke-Checked "Compiling source..." { & $python @pythonArgs -m compileall src }
 
