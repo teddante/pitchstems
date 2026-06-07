@@ -592,6 +592,40 @@ def test_full_pipeline_cancellation_removes_partial_new_project(
     assert not list((tmp_path / "out").glob("*.pitchstems"))
 
 
+def test_full_pipeline_logs_deferred_cancellation_boundary(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    input_path = tmp_path / "source.mp3"
+    input_path.write_bytes(b"audio")
+    messages: list[str] = []
+
+    def fake_normalize(_input_path, output_path):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"wav")
+        return output_path
+
+    def fake_separate(_audio_path, output_dir, **_kwargs):
+        stem_path = output_dir / "source_bass.wav"
+        stem_path.parent.mkdir(parents=True, exist_ok=True)
+        stem_path.write_bytes(b"stem")
+        return [StemResult("bass", stem_path)]
+
+    monkeypatch.setattr(pipeline, "normalize_to_wav", fake_normalize)
+    monkeypatch.setattr(pipeline, "separate_stems", fake_separate)
+
+    process_audio_file(
+        input_path,
+        tmp_path / "out",
+        generate_midi=False,
+        create_zip=False,
+        log=messages.append,
+        cancelled=lambda: False,
+    )
+
+    assert "Cancellation will take effect between native model stages." in messages
+
+
 def test_project_dir_avoids_same_second_name_collision(tmp_path: Path) -> None:
     audio_path = tmp_path / "song.mp3"
     audio_path.write_bytes(b"audio")

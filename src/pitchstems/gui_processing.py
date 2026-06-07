@@ -100,7 +100,10 @@ def invalidate_worker_token(window) -> None:
 
 
 def request_worker_cancel(window) -> bool:
-    return window.worker_jobs.cancel()
+    if not window.worker_jobs.cancel():
+        return False
+    window.set_activity_message("Cancelling after the current model stage...")
+    return True
 
 
 def run_full_pipeline(window, token: int, request: FullRunRequest) -> None:

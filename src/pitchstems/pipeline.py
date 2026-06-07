@@ -69,6 +69,8 @@ def process_audio_file(
         if log:
             log(f"Preparing {input_path.name}...")
             log("Audio prep: FFmpeg -> stereo 44.1 kHz PCM WAV for native BS-RoFormer.")
+            if cancelled is not None:
+                log("Cancellation will take effect between native model stages.")
         normalized_audio = normalize_to_wav(project_source_audio, work_dir / f"{input_stem}.wav")
         _raise_if_cancelled(cancelled)
 
