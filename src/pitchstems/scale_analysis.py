@@ -8,7 +8,7 @@ from pitchstems.chord_analysis import (
     exact_chord_names_for_pitch_classes,
     midi_velocity_energy,
 )
-from pitchstems.editor_project import ChordRegion, NoteEvent
+from pitchstems.editor_models import ChordRegion, NoteEvent
 from pitchstems.notation import (
     pitch_class_for_name,
     pitch_class_name,

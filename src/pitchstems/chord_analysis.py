@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import contextlib
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
+from pitchstems.editor_models import ChordRegion, NoteEvent
 from pitchstems.notation import (
     DEFAULT_PITCH_NAMES,
     midi_note_name as spell_midi_note_name,
@@ -13,9 +13,6 @@ from pitchstems.notation import (
     spell_chord_tones,
     split_chord_label,
 )
-
-if TYPE_CHECKING:
-    from pitchstems.editor_project import ChordRegion, NoteEvent
 
 PITCH_NAMES = DEFAULT_PITCH_NAMES
 PLAIN_CHORD_THRESHOLD = 0.70
@@ -63,8 +60,6 @@ class PartialChordCandidate:
 
 def detect_chords(notes: list[NoteEvent], minimum_region: float = 0.18) -> list[ChordRegion]:
     """Infer coarse chord regions from simultaneous MIDI notes."""
-    from pitchstems.editor_project import ChordRegion
-
     if not notes:
         return []
 

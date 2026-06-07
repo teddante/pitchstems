@@ -30,6 +30,7 @@ from pitchstems.chord_analysis import (
     midi_velocity_energy,
     partial_harmony_hints,
 )
+from pitchstems.editor_models import ChordRegion, NoteEvent
 from pitchstems.pipeline import PipelineResult
 
 
@@ -66,40 +67,11 @@ __all__ = [
 
 
 @dataclass(frozen=True)
-class NoteEvent:
-    stem: str
-    start: float
-    end: float
-    pitch: int
-    velocity: int
-
-    @property
-    def duration(self) -> float:
-        return max(0.0, self.end - self.start)
-
-    @property
-    def name(self) -> str:
-        return midi_note_name(self.pitch)
-
-
-@dataclass(frozen=True)
 class EditorTrack:
     name: str
     audio_path: Path
     muted: bool = False
     solo: bool = False
-
-
-@dataclass(frozen=True)
-class ChordRegion:
-    start: float
-    end: float
-    label: str
-    confidence: float
-
-    @property
-    def duration(self) -> float:
-        return max(0.0, self.end - self.start)
 
 
 @dataclass(frozen=True)

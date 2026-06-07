@@ -481,6 +481,15 @@ def test_midi_note_name_formats_octaves() -> None:
     assert midi_note_name(60) == "C4"
 
 
+def test_editor_project_reexports_shared_music_models() -> None:
+    from pitchstems.editor_models import ChordRegion as SharedChordRegion
+    from pitchstems.editor_models import NoteEvent as SharedNoteEvent
+    from pitchstems.editor_project import ChordRegion, NoteEvent
+
+    assert ChordRegion is SharedChordRegion
+    assert NoteEvent is SharedNoteEvent
+
+
 def _note(start: float, end: float, pitch: int, velocity: int = 80) -> NoteEvent:
     return NoteEvent(stem="piano", start=start, end=end, pitch=pitch, velocity=velocity)
 
