@@ -55,7 +55,7 @@ def start_full_processing(window) -> None:
         midi_options=window.selected_midi_options(),
         midi_stems=midi_stems,
         create_zip=window.create_zip.isChecked(),
-        cancelled=lambda token=token: not window.is_active_worker_token(token),
+        cancelled=lambda token=token: window.worker_jobs.is_cancel_requested(token),
     )
 
     window.set_processing_state(True)
@@ -79,7 +79,7 @@ def start_midi_processing(window) -> None:
         midi_options=window.selected_midi_options(),
         midi_stems=window.selected_midi_stems(),
         create_zip=window.create_zip.isChecked(),
-        cancelled=lambda token=token: not window.is_active_worker_token(token),
+        cancelled=lambda token=token: window.worker_jobs.is_cancel_requested(token),
     )
 
     window.set_processing_state(True)
@@ -94,9 +94,13 @@ def start_worker_token(window) -> int:
 
 
 def invalidate_worker_token(window) -> None:
-    had_active_worker = window.worker_jobs.cancel()
+    had_active_worker = window.worker_jobs.invalidate()
     if had_active_worker:
         window.set_processing_state(False)
+
+
+def request_worker_cancel(window) -> bool:
+    return window.worker_jobs.cancel()
 
 
 def run_full_pipeline(window, token: int, request: FullRunRequest) -> None:
@@ -217,7 +221,7 @@ def flush_messages(window) -> None:
             _kind, token, *status_parts = message
             status = str(status_parts[0]) if status_parts else "success"
             if window.is_active_worker_token(int(token)):
-                window.worker_jobs.active_token = None
+                window.worker_jobs.finish(int(token))
                 window.set_processing_state(False)
                 if status == "cancelled":
                     window.end_activity("Processing cancelled")

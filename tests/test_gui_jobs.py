@@ -10,7 +10,11 @@ def test_worker_job_state_starts_cancels_and_rejects_stale_tokens() -> None:
     assert state.is_active(first)
 
     assert state.cancel()
+    assert state.is_active(first)
+    assert state.is_cancel_requested(first)
+    assert state.invalidate()
     assert not state.is_active(first)
+    assert not state.is_cancel_requested(first)
 
     second = state.start()
     assert second != first
@@ -22,6 +26,20 @@ def test_worker_job_state_reports_no_active_cancel() -> None:
 
     assert not state.cancel()
     assert state.active_token is None
+
+
+def test_worker_job_state_tracks_cancel_request_without_clearing_active_token() -> None:
+    state = WorkerJobState()
+    token = state.start()
+
+    assert state.request_cancel(token) is True
+    assert state.active_token == token
+    assert state.is_cancel_requested(token)
+
+    state.finish(token)
+
+    assert state.active_token is None
+    assert not state.is_cancel_requested(token)
 
 
 def test_editor_load_job_state_tracks_activity_tokens() -> None:
