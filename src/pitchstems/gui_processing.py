@@ -4,8 +4,14 @@ import queue
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
-from pitchstems.pipeline import PipelineResult, process_audio_file, process_midi_from_stems
+from pitchstems.pipeline import (
+    PipelineCancelledError,
+    PipelineResult,
+    process_audio_file,
+    process_midi_from_stems,
+)
 from pitchstems.separation import SeparationOptions, StemResult
 from pitchstems.transcription import MidiOptions
 
@@ -19,6 +25,7 @@ class FullRunRequest:
     midi_options: MidiOptions
     midi_stems: set[str]
     create_zip: bool
+    cancelled: Callable[[], bool]
 
 
 @dataclass(frozen=True)
@@ -29,6 +36,7 @@ class MidiRunRequest:
     midi_options: MidiOptions
     midi_stems: set[str]
     create_zip: bool
+    cancelled: Callable[[], bool]
 
 
 def start_full_processing(window) -> None:
@@ -37,6 +45,7 @@ def start_full_processing(window) -> None:
     if not window.drop_zone.path:
         window.append_log("Drop an audio file first.")
         return
+    token = start_worker_token(window)
     midi_stems = window.selected_midi_stems()
     request = FullRunRequest(
         input_path=window.drop_zone.path,
@@ -46,12 +55,12 @@ def start_full_processing(window) -> None:
         midi_options=window.selected_midi_options(),
         midi_stems=midi_stems,
         create_zip=window.create_zip.isChecked(),
+        cancelled=lambda token=token: not window.is_active_worker_token(token),
     )
 
     window.set_processing_state(True)
     window.begin_activity("Running separation + MIDI...")
     window.append_log("Starting separation + MIDI pipeline...")
-    token = start_worker_token(window)
     window.worker = threading.Thread(target=run_full_pipeline, args=(window, token, request), daemon=True)
     window.worker.start()
 
@@ -62,6 +71,7 @@ def start_midi_processing(window) -> None:
     if not window.current_result or not window.current_stems or not window.current_input_stem:
         window.append_log("Run separation first. Then MIDI can be rerun from those stems.")
         return
+    token = start_worker_token(window)
     request = MidiRunRequest(
         result=window.current_result,
         input_stem=window.current_input_stem,
@@ -69,12 +79,12 @@ def start_midi_processing(window) -> None:
         midi_options=window.selected_midi_options(),
         midi_stems=window.selected_midi_stems(),
         create_zip=window.create_zip.isChecked(),
+        cancelled=lambda token=token: not window.is_active_worker_token(token),
     )
 
     window.set_processing_state(True)
     window.begin_activity("Rerunning MIDI...")
     window.append_log("Rerunning MIDI from existing stems...")
-    token = start_worker_token(window)
     window.worker = threading.Thread(target=run_midi_stage, args=(window, token, request), daemon=True)
     window.worker.start()
 
@@ -106,9 +116,13 @@ def run_full_pipeline(window, token: int, request: FullRunRequest) -> None:
             midi_stems=request.midi_stems,
             create_zip=request.create_zip,
             log=lambda message: window.messages.put(("WORKER_LOG", token, message)),
+            cancelled=request.cancelled,
         )
         window.messages.put(("RESULT", token, result))
         window.messages.put(("WORKER_LOG", token, f"Project ready: {result.project_dir}"))
+    except PipelineCancelledError:
+        window.logger.info("Processing cancelled")
+        window.messages.put(("WORKER_LOG", token, "Processing cancelled."))
     except Exception as exc:
         window.logger.exception("Full pipeline failed")
         window.messages.put(("WORKER_LOG", token, f"Error: {exc}"))
@@ -129,9 +143,13 @@ def run_midi_stage(window, token: int, request: MidiRunRequest) -> None:
             midi_stems=request.midi_stems,
             create_zip=request.create_zip,
             log=lambda message: window.messages.put(("WORKER_LOG", token, message)),
+            cancelled=request.cancelled,
         )
         window.messages.put(("RESULT", token, result))
         window.messages.put(("WORKER_LOG", token, f"Updated project MIDI: {result.project_dir}"))
+    except PipelineCancelledError:
+        window.logger.info("Processing cancelled")
+        window.messages.put(("WORKER_LOG", token, "Processing cancelled."))
     except Exception as exc:
         window.logger.exception("MIDI rerun failed")
         window.messages.put(("WORKER_LOG", token, f"Error: {exc}"))

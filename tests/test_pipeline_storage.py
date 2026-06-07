@@ -385,6 +385,39 @@ def test_midi_rerun_does_not_fail_if_preview_cache_cleanup_is_locked(
     assert result.midi_files
 
 
+def test_midi_rerun_cancellation_preserves_existing_outputs(tmp_path: Path, monkeypatch) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    stem_path = project_dir / "stems" / "song_bass.wav"
+    old_midi = project_dir / "midi" / "bass" / "old.mid"
+    old_export = project_dir / "export" / "bass.mid"
+    for path in [stem_path, old_midi, old_export]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"old")
+
+    def fake_transcribe(stem_name, _audio_path, output_dir, **_kwargs):
+        midi_path = output_dir / f"{stem_name}.mid"
+        _write_midi(midi_path, 40)
+        return MidiResult(stem_name, midi_path)
+
+    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", fake_transcribe)
+
+    with pytest.raises(pipeline.PipelineCancelledError):
+        process_midi_from_stems(
+            project_dir=project_dir,
+            input_stem="source",
+            normalized_audio=None,
+            stems=[StemResult("bass", stem_path)],
+            midi_stems={"bass"},
+            create_zip=False,
+            cancelled=lambda: True,
+        )
+
+    assert old_midi.read_bytes() == b"old"
+    assert old_export.read_bytes() == b"old"
+    assert not (project_dir / "midi.tmp").exists()
+    assert not (project_dir / "export.tmp").exists()
+
+
 def test_remove_staging_dir_rejects_project_root(tmp_path: Path) -> None:
     project_dir = tmp_path / "song.pitchstems"
     project_dir.mkdir()

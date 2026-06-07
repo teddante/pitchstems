@@ -26,6 +26,13 @@ class PipelineResult:
     source_audio: Path | None = None
 
 
+CancelCheck = Callable[[], bool]
+
+
+class PipelineCancelledError(RuntimeError):
+    """Raised when a user-requested cancellation stops pipeline orchestration."""
+
+
 def process_audio_file(
     input_path: Path,
     output_root: Path,
@@ -37,6 +44,7 @@ def process_audio_file(
     midi_stems: set[str] | None = None,
     create_zip: bool = True,
     log: Callable[[str], None] | None = None,
+    cancelled: CancelCheck | None = None,
 ) -> PipelineResult:
     """Run the complete local stem-to-MIDI pipeline."""
     input_path = input_path.expanduser().resolve()
@@ -56,12 +64,15 @@ def process_audio_file(
         directory.mkdir(parents=True, exist_ok=True)
 
     project_source_audio = _copy_source_audio(input_path, audio_dir)
+    _raise_if_cancelled(cancelled)
     if log:
         log(f"Preparing {input_path.name}...")
         log("Audio prep: FFmpeg -> stereo 44.1 kHz PCM WAV for native BS-RoFormer.")
     normalized_audio = normalize_to_wav(project_source_audio, work_dir / f"{input_stem}.wav")
+    _raise_if_cancelled(cancelled)
 
     stems = separate_stems(normalized_audio, stems_dir, profile=quality, options=separation_options, log=log)
+    _raise_if_cancelled(cancelled)
 
     midi_files: list[MidiResult] = []
     combined_midi = None
@@ -78,6 +89,7 @@ def process_audio_file(
             midi_stems=midi_stems,
             create_zip=False,
             log=log,
+            cancelled=cancelled,
         )
         midi_files = midi_result.midi_files
         combined_midi = midi_result.combined_midi
@@ -124,6 +136,7 @@ def process_midi_from_stems(
     midi_stems: set[str] | None = None,
     create_zip: bool = True,
     log: Callable[[str], None] | None = None,
+    cancelled: CancelCheck | None = None,
 ) -> PipelineResult:
     """Run or rerun Basic Pitch from already separated stems."""
     project_dir = project_dir.expanduser().resolve()
@@ -152,7 +165,9 @@ def process_midi_from_stems(
         log("Running Basic Pitch from existing separated stems.")
 
     try:
+        _raise_if_cancelled(cancelled)
         for stem in stems:
+            _raise_if_cancelled(cancelled)
             if selected_midi_stems is not None and stem.name.lower() not in selected_midi_stems:
                 if log:
                     log(f"Skipping MIDI for {stem.name}: not selected for Basic Pitch analysis.")
@@ -167,6 +182,7 @@ def process_midi_from_stems(
             )
             if midi:
                 midi_files.append(midi)
+            _raise_if_cancelled(cancelled)
 
         staged_combined_midi = combine_midi_tracks(midi_files, staged_export_dir / f"{input_stem}_combined.mid")
         for midi in midi_files:
@@ -185,6 +201,7 @@ def process_midi_from_stems(
             f"{stem.name}.mid"
             for stem in stems
         }
+        _raise_if_cancelled(cancelled)
         _replace_midi_outputs(
             midi_dir,
             staged_midi_dir,
@@ -242,6 +259,11 @@ def _project_dir(output_root: Path, input_path: Path) -> Path:
         if not candidate.exists():
             return candidate
         index += 1
+
+
+def _raise_if_cancelled(cancelled: CancelCheck | None) -> None:
+    if cancelled is not None and cancelled():
+        raise PipelineCancelledError("Processing cancelled.")
 
 
 def _copy_source_audio(input_path: Path, audio_dir: Path) -> Path:
