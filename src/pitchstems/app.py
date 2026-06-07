@@ -29,6 +29,7 @@ from pitchstems.harmony_inspector import (
     resolve_notation_preference,
 )
 from pitchstems import harmony_panel
+from pitchstems import gui_harmony_dialogs
 from pitchstems import gui_harmony_flow
 from pitchstems import gui_pipeline_state
 from pitchstems import gui_processing
@@ -47,8 +48,6 @@ from pitchstems.theory import (
     analyze_chord_gap,
     analyze_theory_at,
     analyze_theory_region,
-    chord_gap_report,
-    theory_analysis_report,
 )
 from pitchstems.time_format import format_time
 
@@ -74,10 +73,8 @@ def main() -> int:
             QApplication,
             QCheckBox,
             QComboBox,
-            QDialog,
             QDoubleSpinBox,
             QGridLayout,
-            QHBoxLayout,
             QLabel,
             QLineEdit,
             QListWidget,
@@ -1074,65 +1071,13 @@ def main() -> int:
             gui_harmony_flow.reset_chord_note_filter(self)
 
         def inspect_current_chord_analysis(self) -> None:
-            if self.editor_project is None:
-                return
-            report = self.current_chord_analysis_report()
-            dialog = QDialog(self)
-            dialog.setWindowTitle("Harmony Inspector Calculation")
-            layout = QVBoxLayout()
-            text = QTextEdit()
-            text.setReadOnly(True)
-            text.setPlainText(report)
-            layout.addWidget(text)
-            close_button = QPushButton("Close")
-            close_button.clicked.connect(dialog.accept)
-            button_row = QHBoxLayout()
-            button_row.addStretch(1)
-            button_row.addWidget(close_button)
-            layout.addLayout(button_row)
-            dialog.setLayout(layout)
-            dialog.resize(820, 680)
-            dialog.exec()
+            gui_harmony_dialogs.inspect_current_chord_analysis(self)
 
         def inspect_current_theory_analysis(self) -> None:
-            if self.current_theory_analysis is None:
-                return
-            dialog = QDialog(self)
-            dialog.setWindowTitle("Theory Inspector Calculation")
-            layout = QVBoxLayout()
-            text = QTextEdit()
-            text.setReadOnly(True)
-            text.setPlainText(theory_analysis_report(self.current_theory_analysis))
-            layout.addWidget(text)
-            close_button = QPushButton("Close")
-            close_button.clicked.connect(dialog.accept)
-            button_row = QHBoxLayout()
-            button_row.addStretch(1)
-            button_row.addWidget(close_button)
-            layout.addLayout(button_row)
-            dialog.setLayout(layout)
-            dialog.resize(820, 680)
-            dialog.exec()
+            gui_harmony_dialogs.inspect_current_theory_analysis(self)
 
         def inspect_current_gap_suggestions(self) -> None:
-            if self.current_chord_gap_analysis is None:
-                return
-            dialog = QDialog(self)
-            dialog.setWindowTitle("Chord Gap Suggestions")
-            layout = QVBoxLayout()
-            text = QTextEdit()
-            text.setReadOnly(True)
-            text.setPlainText(chord_gap_report(self.current_chord_gap_analysis))
-            layout.addWidget(text)
-            close_button = QPushButton("Close")
-            close_button.clicked.connect(dialog.accept)
-            button_row = QHBoxLayout()
-            button_row.addStretch(1)
-            button_row.addWidget(close_button)
-            layout.addLayout(button_row)
-            dialog.setLayout(layout)
-            dialog.resize(820, 680)
-            dialog.exec()
+            gui_harmony_dialogs.inspect_current_gap_suggestions(self)
 
         def use_selected_gap_suggestion(self) -> None:
             if self.current_chord_gap_analysis is None:
