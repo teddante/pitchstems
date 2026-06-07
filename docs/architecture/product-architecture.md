@@ -34,6 +34,12 @@ The PySide app remains the active product surface while the target architecture 
 - Music-analysis logic is split behind compatibility facades: editor project loading, chord analysis, scale analysis, and chord-gap analysis can move independently without changing current imports all at once.
 - Project manifests stay JSON-compatible for the current app; sidecar job messages and future SQLite storage should be introduced alongside, not by breaking existing `.pitchstems` projects.
 
+The remaining PySide maintainability pressure is concentrated in a few deliberate extraction targets:
+
+- `src/pitchstems/app.py`: keep shrinking `MainWindow` toward command controllers and view-state models instead of adding more pass-through methods.
+- `src/pitchstems/gui_timeline.py`: split timeline rendering, input handling, playback coordination, and scene cache management before adding more editor tools.
+- `src/pitchstems/chord_analysis.py`: move shared `NoteEvent` and `ChordRegion` models into a neutral music/editor model module, then split naming, scoring, detection, and explanation logic behind compatibility imports.
+
 ## Target Runtime Shape
 
 ```text

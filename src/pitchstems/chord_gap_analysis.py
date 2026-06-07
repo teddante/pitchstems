@@ -227,5 +227,3 @@ def _gap_suggestion_sort_key(
         suggestion.pitch_class_movement,
         suggestion.common_tone_support,
     )
-
-

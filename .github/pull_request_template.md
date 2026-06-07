@@ -5,6 +5,7 @@
 ## Checks
 
 - [ ] `.\scripts\check.ps1`
+- [ ] `git diff --check main...HEAD`
 - [ ] `python -m pip check` passes in the touched environment
 - [ ] `.\scripts\check.ps1 -Gpu` when GPU/runtime/packaging behavior changed
 - [ ] GUI smoke-tested when UI behavior changed

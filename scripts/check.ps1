@@ -29,6 +29,43 @@ function Invoke-Checked {
     }
 }
 
+function Test-GitRef {
+    param([string]$Ref)
+
+    & git rev-parse --verify --quiet $Ref *> $null
+    return $LASTEXITCODE -eq 0
+}
+
+function Get-GitWhitespaceBase {
+    foreach ($candidate in @("origin/main", "main")) {
+        if (Test-GitRef $candidate) {
+            return $candidate
+        }
+    }
+    return $null
+}
+
+function Invoke-GitWhitespaceChecks {
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        Write-Host "Skipping Git whitespace checks: git not found."
+        return
+    }
+
+    Invoke-Checked "Checking working tree whitespace..." { & git diff --check }
+    Invoke-Checked "Checking staged whitespace..." { & git diff --cached --check }
+
+    $baseRef = Get-GitWhitespaceBase
+    if ($null -eq $baseRef) {
+        Write-Host "Skipping branch diff whitespace check: main ref not found."
+        return
+    }
+    Invoke-Checked "Checking whitespace against $baseRef..." {
+        & git diff --check $baseRef
+    }
+}
+
+Invoke-GitWhitespaceChecks
+
 Invoke-Checked "Running Ruff..." { & $python @pythonArgs -m ruff check src tests }
 
 Invoke-Checked "Running tests..." { & $python @pythonArgs -m pytest }

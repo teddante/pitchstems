@@ -63,66 +63,76 @@ def process_audio_file(
     for directory in [audio_dir, work_dir, stems_dir, midi_dir, export_dir]:
         directory.mkdir(parents=True, exist_ok=True)
 
-    project_source_audio = _copy_source_audio(input_path, audio_dir)
-    _raise_if_cancelled(cancelled)
-    if log:
-        log(f"Preparing {input_path.name}...")
-        log("Audio prep: FFmpeg -> stereo 44.1 kHz PCM WAV for native BS-RoFormer.")
-    normalized_audio = normalize_to_wav(project_source_audio, work_dir / f"{input_stem}.wav")
-    _raise_if_cancelled(cancelled)
+    try:
+        project_source_audio = _copy_source_audio(input_path, audio_dir)
+        _raise_if_cancelled(cancelled)
+        if log:
+            log(f"Preparing {input_path.name}...")
+            log("Audio prep: FFmpeg -> stereo 44.1 kHz PCM WAV for native BS-RoFormer.")
+        normalized_audio = normalize_to_wav(project_source_audio, work_dir / f"{input_stem}.wav")
+        _raise_if_cancelled(cancelled)
 
-    stems = separate_stems(normalized_audio, stems_dir, profile=quality, options=separation_options, log=log)
-    _raise_if_cancelled(cancelled)
+        stems = separate_stems(
+            normalized_audio,
+            stems_dir,
+            profile=quality,
+            options=separation_options,
+            log=log,
+        )
+        _raise_if_cancelled(cancelled)
 
-    midi_files: list[MidiResult] = []
-    combined_midi = None
-    zip_path = None
-    if generate_midi and midi_policy != "none":
-        midi_result = process_midi_from_stems(
+        midi_files: list[MidiResult] = []
+        combined_midi = None
+        zip_path = None
+        if generate_midi and midi_policy != "none":
+            midi_result = process_midi_from_stems(
+                project_dir=project_dir,
+                input_stem=input_stem,
+                normalized_audio=normalized_audio,
+                stems=stems,
+                source_audio=project_source_audio,
+                midi_policy=midi_policy,
+                midi_options=midi_options,
+                midi_stems=midi_stems,
+                create_zip=False,
+                log=log,
+                cancelled=cancelled,
+            )
+            midi_files = midi_result.midi_files
+            combined_midi = midi_result.combined_midi
+            zip_path = project_dir / f"{input_stem}_pitchstems.zip" if create_zip else None
+        else:
+            if log:
+                log("Skipping MIDI transcription.")
+            zip_path = project_dir / f"{input_stem}_pitchstems.zip" if create_zip else None
+
+        if log:
+            log(f"Done: {zip_path or project_dir}")
+
+        result = PipelineResult(
             project_dir=project_dir,
-            input_stem=input_stem,
             normalized_audio=normalized_audio,
             stems=stems,
+            midi_files=midi_files,
+            combined_midi=combined_midi,
+            zip_path=zip_path,
             source_audio=project_source_audio,
-            midi_policy=midi_policy,
+        )
+        save_project_manifest(
+            result,
+            separation_options=separation_options,
             midi_options=midi_options,
             midi_stems=midi_stems,
-            create_zip=False,
-            log=log,
-            cancelled=cancelled,
+            generate_midi=generate_midi,
+            midi_policy=midi_policy,
+            create_zip=create_zip,
         )
-        midi_files = midi_result.midi_files
-        combined_midi = midi_result.combined_midi
-        zip_path = project_dir / f"{input_stem}_pitchstems.zip" if create_zip else None
-    else:
-        if log:
-            log("Skipping MIDI transcription.")
-        zip_path = project_dir / f"{input_stem}_pitchstems.zip" if create_zip else None
-
-    if log:
-        log(f"Done: {zip_path or project_dir}")
-
-    result = PipelineResult(
-        project_dir=project_dir,
-        normalized_audio=normalized_audio,
-        stems=stems,
-        midi_files=midi_files,
-        combined_midi=combined_midi,
-        zip_path=zip_path,
-        source_audio=project_source_audio,
-    )
-    save_project_manifest(
-        result,
-        separation_options=separation_options,
-        midi_options=midi_options,
-        midi_stems=midi_stems,
-        generate_midi=generate_midi,
-        midi_policy=midi_policy,
-        create_zip=create_zip,
-    )
-    if zip_path:
-        _zip_project_outputs(project_dir, stems, midi_files, combined_midi, zip_path)
-    return result
+        if zip_path:
+            _zip_project_outputs(project_dir, stems, midi_files, combined_midi, zip_path)
+        return result
+    except PipelineCancelledError:
+        _remove_new_project_dir(project_dir, output_root)
+        raise
 
 
 def process_midi_from_stems(
@@ -385,6 +395,23 @@ def _remove_project_dir(path: Path, project_dir: Path, label: str) -> None:
         if path.is_symlink():
             raise ValueError(f"{label} must not be a symlink: {path}")
         shutil.rmtree(path)
+
+
+def _remove_new_project_dir(project_dir: Path, output_root: Path) -> None:
+    root = output_root.expanduser().resolve()
+    target = project_dir.expanduser().resolve()
+    if target == root:
+        raise ValueError(f"project folder must not be the output root: {target}")
+    if target.suffix != ".pitchstems":
+        raise ValueError(f"project folder must be a PitchStems project: {target}")
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"project folder must stay inside the output root: {target}") from exc
+    if target.exists():
+        if target.is_symlink():
+            raise ValueError(f"project folder must not be a symlink: {target}")
+        shutil.rmtree(target)
 
 
 def _assert_project_child(project_dir: Path, path: Path, label: str) -> None:

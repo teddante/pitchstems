@@ -42,8 +42,8 @@ ml = [
 win-gpu = [
   "bs-roformer-infer>=0.1.1,<0.2",
   "basic-pitch>=0.4.0",
-  "onnxruntime-gpu>=1.19.0",
-  "torch>=2.3",
+  "onnxruntime-gpu[cuda,cudnn]>=1.23.2,<1.24",
+  "torch>=2.11,<2.12",
 ]
 cpu = [
   "bs-roformer-infer>=0.1.1,<0.2",

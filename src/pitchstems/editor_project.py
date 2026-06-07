@@ -223,5 +223,3 @@ def _ticks_to_seconds(
     index = max(0, bisect_right(tempo_ticks, ticks) - 1)
     segment_tick, tempo, segment_seconds = tempo_map[index]
     return segment_seconds + tick2second(ticks - segment_tick, ticks_per_beat, tempo)
-
-

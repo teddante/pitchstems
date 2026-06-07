@@ -25,6 +25,9 @@ On Windows with an NVIDIA GPU, use:
 .\scripts\setup-windows-gpu.ps1
 ```
 
+The supported Windows GPU pins live in `constraints/windows-gpu.txt`; keep that
+file aligned with `scripts/setup-windows-gpu.ps1` when changing ML runtimes.
+
 ## Checks
 
 Run these before opening a pull request:
@@ -34,7 +37,14 @@ Run these before opening a pull request:
 ```
 
 The project check also runs `python -m pip check` so broken installed
-dependency metadata is caught before review.
+dependency metadata is caught before review. It also runs Git whitespace checks
+for the working tree, staged changes, and branch diff when `main` is available.
+
+For a focused branch whitespace check, run:
+
+```powershell
+git diff --check main...HEAD
+```
 
 Use the GPU check when changing GPU setup, acceleration code, model runtime,
 launcher behavior, or packaging:
@@ -42,6 +52,11 @@ launcher behavior, or packaging:
 ```powershell
 .\scripts\check.ps1 -Gpu
 ```
+
+When changing separation, transcription, project packaging, or editor timeline
+loading, run a short real-audio smoke through the CLI, reopen the generated
+`.pitchstems` project in the GUI, and confirm stems, MIDI, combined MIDI,
+manifest, timeline playback, and optional ZIP export are present.
 
 See [AGENTS.md](AGENTS.md) for the solo-development branch, commit, pull
 request, release, and approval workflow used by AI-assisted development.

@@ -67,7 +67,7 @@ The Windows GPU path uses:
 - ONNX Runtime GPU for ONNX-backed models
 - Basic Pitch forced to its ONNX model so it can use ONNX Runtime's `CUDAExecutionProvider`
 
-The setup script replaces default CPU wheels with PyTorch CUDA 12.8 wheels and installs ONNX Runtime GPU with CUDA/cuDNN runtime DLLs. This avoids the common Windows issue where `pip install torch` silently installs a CPU-only wheel.
+The setup script replaces default CPU wheels with PyTorch CUDA 12.8 wheels and installs ONNX Runtime GPU with CUDA/cuDNN runtime DLLs. This avoids the common Windows issue where `pip install torch` silently installs a CPU-only wheel. The supported Windows GPU package pins live in `constraints/windows-gpu.txt`; keep that file and `scripts/setup-windows-gpu.ps1` aligned when changing the runtime stack.
 
 The GPU setup keeps both `onnxruntime` package metadata and `onnxruntime-gpu`
 installed. Basic Pitch declares `onnxruntime`, while PitchStems imports ONNX
@@ -160,6 +160,7 @@ python -m ruff check src tests
 python -m pytest
 python -m compileall src
 python -m pip check
+git diff --check main...HEAD
 ```
 
 Validation tiers:
@@ -167,7 +168,14 @@ Validation tiers:
 - Fast source check: `.\scripts\check.ps1`
 - GUI/package check: `.\scripts\check.ps1 -GuiSmoke -Build`
 - GPU/runtime check after setup or ML dependency changes: `.\scripts\check.ps1 -Gpu`
-- Manual real-audio smoke when changing separation/transcription behavior: run a short local audio file, reopen the `.pitchstems` project, and confirm stems, MIDI, combined MIDI, manifest, editor timeline, and optional ZIP are present.
+- Manual real-audio smoke when changing separation/transcription behavior:
+
+```powershell
+pitchstems "C:\path\to\short-audio.mp3" --output-dir "C:\path\to\pitchstems-smoke" --midi-policy pitched
+pitchstems-gui
+```
+
+Open the generated `.pitchstems` project in the GUI and confirm stems, per-stem MIDI, combined MIDI, `pitchstems.project.json`, editor timeline playback, and optional ZIP export are present.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution notes.
 
