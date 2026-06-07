@@ -25,6 +25,9 @@ Write-Host "Running tests..."
 Write-Host "Compiling source..."
 & $python @pythonArgs -m compileall src
 
+Write-Host "Checking installed package metadata..."
+& $python @pythonArgs -m pip check
+
 if (Test-Path $pitchstems) {
     Write-Host "Running doctor..."
     & $pitchstems --doctor

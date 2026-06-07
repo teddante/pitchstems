@@ -69,6 +69,11 @@ The Windows GPU path uses:
 
 The setup script replaces default CPU wheels with PyTorch CUDA 12.8 wheels and installs ONNX Runtime GPU with CUDA/cuDNN runtime DLLs. This avoids the common Windows issue where `pip install torch` silently installs a CPU-only wheel.
 
+The GPU setup keeps both `onnxruntime` package metadata and `onnxruntime-gpu`
+installed. Basic Pitch declares `onnxruntime`, while PitchStems imports ONNX
+Runtime from the GPU wheel so CUDA providers remain available. `pip check` is
+part of the project check and should pass after setup.
+
 If `pitchstems --doctor --gpu` does not show `OK` for both ONNX Runtime CUDA and PyTorch CUDA, the app may still run but it is not truly using the GPU path.
 
 ## Run
@@ -154,6 +159,7 @@ python -m pip install -e ".[dev]"
 python -m ruff check src tests
 python -m pytest
 python -m compileall src
+python -m pip check
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution notes.

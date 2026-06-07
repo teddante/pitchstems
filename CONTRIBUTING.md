@@ -33,6 +33,9 @@ Run these before opening a pull request:
 .\scripts\check.ps1
 ```
 
+The project check also runs `python -m pip check` so broken installed
+dependency metadata is caught before review.
+
 Use the GPU check when changing GPU setup, acceleration code, model runtime,
 launcher behavior, or packaging:
 

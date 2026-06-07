@@ -38,6 +38,9 @@ jobs:
       - name: Compile
         run: python -m compileall src
 
+      - name: Check installed package metadata
+        run: python -m pip check
+
       - name: GUI smoke
         env:
           QT_QPA_PLATFORM: offscreen
