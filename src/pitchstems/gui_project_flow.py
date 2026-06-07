@@ -148,10 +148,9 @@ def open_project_manifest(window, manifest_path: Path) -> None:
 def reset_stage_state(window, path: Path | None = None) -> None:
     window.stop_transport()
     window.invalidate_worker_token()
-    window.editor_load_token += 1
-    window.editor_load_activity_tokens.clear()
-    window.midi_preview_token += 1
-    window.midi_preview_workers.clear()
+    window.editor_load_jobs.next()
+    window.editor_load_jobs.activity_tokens.clear()
+    window.midi_preview_jobs.next()
     if path is None:
         window.drop_zone.reset_prompt()
     window.current_result = None

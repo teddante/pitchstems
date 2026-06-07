@@ -46,7 +46,7 @@ def start_midi_preview_render(window, result, requested_stems: set[str] | None =
         return
     project = window.editor_project
     preview_dir = result.project_dir / "editor" / "midi-preview"
-    token = window.midi_preview_token
+    token = window.midi_preview_jobs.token
     window.rendering_midi_previews.update(missing)
     window.refresh_timeline_track_summaries()
     window.append_log(f"Rendering MIDI preview audio for {', '.join(missing)} in the background...")
@@ -79,27 +79,27 @@ def start_midi_preview_render(window, result, requested_stems: set[str] | None =
 
     worker_thread = threading.Thread(target=worker, daemon=True)
     for stem_name in missing:
-        window.midi_preview_workers[(result.project_dir, stem_name.lower())] = (token, worker_thread)
+        window.midi_preview_jobs.workers[(result.project_dir, stem_name.lower())] = (token, worker_thread)
     worker_thread.start()
 
 
 def midi_preview_worker_running(window, project_dir: Path, stem_name: str) -> bool:
     key = (project_dir, stem_name.lower())
-    entry = window.midi_preview_workers.get(key)
+    entry = window.midi_preview_jobs.workers.get(key)
     if entry is None:
         return False
     token, worker = entry
-    if token != window.midi_preview_token or not worker.is_alive():
-        window.midi_preview_workers.pop(key, None)
+    if token != window.midi_preview_jobs.token or not worker.is_alive():
+        window.midi_preview_jobs.workers.pop(key, None)
         return False
     return True
 
 
 def clear_midi_preview_worker(window, project_dir: Path, stem_name: str, token: int) -> None:
     key = (project_dir, stem_name.lower())
-    entry = window.midi_preview_workers.get(key)
+    entry = window.midi_preview_jobs.workers.get(key)
     if entry is not None and entry[0] == token:
-        window.midi_preview_workers.pop(key, None)
+        window.midi_preview_jobs.workers.pop(key, None)
 
 
 def attach_midi_preview_players(window, previews: dict[str, Path], finish_activity: bool = True) -> None:

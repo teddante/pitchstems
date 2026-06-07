@@ -90,15 +90,11 @@ def start_midi_processing(window) -> None:
 
 
 def start_worker_token(window) -> int:
-    window.worker_token += 1
-    window.active_worker_token = window.worker_token
-    return window.worker_token
+    return window.worker_jobs.start()
 
 
 def invalidate_worker_token(window) -> None:
-    had_active_worker = window.active_worker_token is not None
-    window.worker_token += 1
-    window.active_worker_token = None
+    had_active_worker = window.worker_jobs.cancel()
     if had_active_worker:
         window.set_processing_state(False)
 
@@ -188,7 +184,7 @@ def flush_messages(window) -> None:
             for stem_name in requested_stems:
                 window.clear_midi_preview_worker(project_dir, stem_name, int(token))
             if (
-                token == window.midi_preview_token
+                token == window.midi_preview_jobs.token
                 and window.current_result is not None
                 and window.current_result.project_dir == project_dir
             ):
@@ -201,7 +197,7 @@ def flush_messages(window) -> None:
             for stem_name in requested_stems:
                 window.clear_midi_preview_worker(project_dir, stem_name, int(token))
             if (
-                token == window.midi_preview_token
+                token == window.midi_preview_jobs.token
                 and window.current_result is not None
                 and window.current_result.project_dir == project_dir
             ):
@@ -214,7 +210,7 @@ def flush_messages(window) -> None:
         elif isinstance(message, tuple) and message[0] == "ENABLE_PROCESS":
             _kind, token = message
             if window.is_active_worker_token(int(token)):
-                window.active_worker_token = None
+                window.worker_jobs.active_token = None
                 window.set_processing_state(False)
                 window.end_activity("Processing complete")
             else:

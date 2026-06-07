@@ -12,10 +12,9 @@ def set_current_result(window, result, open_output: bool = True) -> None:
     window.logger.info("Setting current result: %s", result.project_dir)
     window.stop_transport()
     window.set_activity_message("Loading result...")
-    window.editor_load_token += 1
+    token = window.editor_load_jobs.next()
     window.current_result = result
-    window.midi_preview_token += 1
-    window.midi_preview_workers.clear()
+    window.midi_preview_jobs.next()
     window.current_stems = result.stems
     window.current_input_stem = (result.source_audio or result.normalized_audio).stem
     window.latest_output_dir = result.project_dir
@@ -36,12 +35,12 @@ def set_current_result(window, result, open_output: bool = True) -> None:
     window.remember_recent_project(result.project_dir)
     if open_output and window.open_when_done.isChecked():
         window.open_latest_output()
-    window.start_editor_project_load(result, window.editor_load_token)
+    window.start_editor_project_load(result, token)
 
 
 def start_editor_project_load(window, result, token: int) -> None:
     window.logger.info("Starting editor project load: %s", result.project_dir)
-    window.editor_load_activity_tokens.add(token)
+    window.editor_load_jobs.activity_tokens.add(token)
     window.begin_activity("Building editor project...")
 
     def worker() -> None:
@@ -52,16 +51,16 @@ def start_editor_project_load(window, result, token: int) -> None:
             window.logger.exception("Editor project load failed")
             window.messages.put(("EDITOR_LOAD_FAILED", token, result.project_dir, f"{exc}"))
 
-    window.editor_load_worker = threading.Thread(
+    window.editor_load_jobs.worker = threading.Thread(
         target=worker,
         name="PitchStemsEditorLoad",
         daemon=True,
     )
-    window.editor_load_worker.start()
+    window.editor_load_jobs.worker.start()
 
 
 def finish_editor_project_load(window, token: int, loaded) -> None:
-    if token != window.editor_load_token or window.current_result is None:
+    if token != window.editor_load_jobs.token or window.current_result is None:
         window.logger.info("Ignored stale editor load for %s", loaded.pipeline_result.project_dir)
         window.finish_editor_load_activity(token, "Ready")
         return
@@ -118,7 +117,7 @@ def finish_editor_project_load(window, token: int, loaded) -> None:
 
 
 def finish_editor_project_load_failed(window, token: int, project_dir: Path, error: str) -> None:
-    if token != window.editor_load_token:
+    if token != window.editor_load_jobs.token:
         window.logger.info("Ignored stale editor load failure for %s: %s", project_dir, error)
         window.finish_editor_load_activity(token, "Ready")
         return
@@ -131,9 +130,9 @@ def finish_editor_project_load_failed(window, token: int, project_dir: Path, err
 
 
 def finish_editor_load_activity(window, token: int, message: str) -> None:
-    if token not in window.editor_load_activity_tokens:
+    if token not in window.editor_load_jobs.activity_tokens:
         return
-    window.editor_load_activity_tokens.discard(token)
+    window.editor_load_jobs.activity_tokens.discard(token)
     window.end_activity(message)
 
 

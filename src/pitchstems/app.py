@@ -37,6 +37,7 @@ from pitchstems import gui_editor_load
 from pitchstems import gui_editor_state
 from pitchstems import gui_project_flow
 from pitchstems import gui_transport_flow
+from pitchstems.gui_jobs import EditorLoadJobState, MidiPreviewJobState, WorkerJobState
 from pitchstems.gui_track_controls import rebuild_track_controls, sync_track_control_panel as sync_track_controls
 from pitchstems.separation import StemResult
 from pitchstems.theory import (
@@ -123,13 +124,9 @@ def main() -> int:
             self.logger = logger
             self.messages: queue.Queue[object] = queue.Queue()
             self.worker: threading.Thread | None = None
-            self.worker_token = 0
-            self.active_worker_token: int | None = None
-            self.editor_load_worker: threading.Thread | None = None
-            self.editor_load_token = 0
-            self.editor_load_activity_tokens: set[int] = set()
-            self.midi_preview_token = 0
-            self.midi_preview_workers: dict[tuple[Path, str], tuple[int, threading.Thread]] = {}
+            self.worker_jobs = WorkerJobState()
+            self.editor_load_jobs = EditorLoadJobState()
+            self.midi_preview_jobs = MidiPreviewJobState()
             self.latest_output_dir: Path | None = None
             self.current_result: PipelineResult | None = None
             self.current_stems: list[StemResult] = []
@@ -456,6 +453,54 @@ def main() -> int:
             self.save_editor_state()
             super().closeEvent(event)
 
+        @property
+        def worker_token(self) -> int:
+            return self.worker_jobs.next_token
+
+        @worker_token.setter
+        def worker_token(self, value: int) -> None:
+            self.worker_jobs.next_token = value
+
+        @property
+        def active_worker_token(self) -> int | None:
+            return self.worker_jobs.active_token
+
+        @active_worker_token.setter
+        def active_worker_token(self, value: int | None) -> None:
+            self.worker_jobs.active_token = value
+
+        @property
+        def editor_load_worker(self) -> threading.Thread | None:
+            return self.editor_load_jobs.worker
+
+        @editor_load_worker.setter
+        def editor_load_worker(self, value: threading.Thread | None) -> None:
+            self.editor_load_jobs.worker = value
+
+        @property
+        def editor_load_token(self) -> int:
+            return self.editor_load_jobs.token
+
+        @editor_load_token.setter
+        def editor_load_token(self, value: int) -> None:
+            self.editor_load_jobs.token = value
+
+        @property
+        def editor_load_activity_tokens(self) -> set[int]:
+            return self.editor_load_jobs.activity_tokens
+
+        @property
+        def midi_preview_token(self) -> int:
+            return self.midi_preview_jobs.token
+
+        @midi_preview_token.setter
+        def midi_preview_token(self, value: int) -> None:
+            self.midi_preview_jobs.token = value
+
+        @property
+        def midi_preview_workers(self) -> dict[tuple[Path, str], tuple[int, threading.Thread]]:
+            return self.midi_preview_jobs.workers
+
         def begin_activity(self, message: str, busy: bool = True) -> None:
             self.activity_depth += 1
             self.activity_label.setText(message)
@@ -647,7 +692,7 @@ def main() -> int:
             gui_processing.flush_messages(self)
 
         def is_active_worker_token(self, token: int) -> bool:
-            return self.active_worker_token == token
+            return self.worker_jobs.is_active(token)
 
         def append_log(self, message: str) -> None:
             self.logger.info(message)
