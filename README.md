@@ -150,6 +150,8 @@ separation step.
 Cancellation is cooperative. PitchStems checks for cancellation between orchestration
 steps, but native BS-RoFormer and Basic Pitch calls may need to finish their current
 model stage before the GUI can report the job as cancelled.
+For the technical boundary and future process-based cancellation strategy, see
+`docs/architecture/native-job-cancellation.md`.
 
 The curated model catalog lives in `src/pitchstems/model_catalog.py`; the native BS-RoFormer runtime bridge lives in `src/pitchstems/separation.py`.
 
