@@ -189,6 +189,30 @@ def test_chord_gap_report_explains_gap_formula_terms() -> None:
     assert "Ranking rule:" in report
 
 
+def test_theory_helpers_expose_gap_support_functions() -> None:
+    from pitchstems.editor_models import ChordRegion as SharedChordRegion
+    from pitchstems.editor_models import NoteEvent as SharedNoteEvent
+    from pitchstems.theory_helpers import (
+        candidate_common_tones,
+        next_chord,
+        previous_chord,
+        region_energy,
+        report_time,
+    )
+
+    chords = [
+        SharedChordRegion(0.0, 1.0, "C", 0.9),
+        SharedChordRegion(2.0, 3.0, "G", 0.9),
+    ]
+    notes = [SharedNoteEvent("piano", 1.25, 1.75, 60, 100)]
+
+    assert previous_chord(chords, 1.5) == chords[0]
+    assert next_chord(chords, 1.5) == chords[1]
+    assert region_energy(notes, 1.0, 2.0) > 0.0
+    assert candidate_common_tones({0, 4, 7}, chords[0], chords[1]) > 0.0
+    assert report_time(65.0) == "01:05.000"
+
+
 def _note(start: float, end: float, pitch: int, velocity: int = 100) -> NoteEvent:
     return NoteEvent(
         stem="piano",
