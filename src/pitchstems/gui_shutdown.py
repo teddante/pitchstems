@@ -14,8 +14,14 @@ def request_worker_cancel(window) -> bool:
 def request_window_close(window) -> bool:
     worker = getattr(window, "worker", None)
     if worker is None or not worker.is_alive():
+        begin_auxiliary_shutdown(window)
         return True
     if request_worker_cancel(window):
         window.close_after_worker = True
         window.append_log("Close requested; cancelling active processing first.")
     return False
+
+
+def begin_auxiliary_shutdown(window) -> None:
+    window.editor_load_jobs.begin_closing()
+    window.midi_preview_jobs.begin_closing()

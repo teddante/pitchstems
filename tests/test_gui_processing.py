@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pitchstems.gui_processing as gui_processing
 import pitchstems.gui_shutdown as gui_shutdown
-from pitchstems.gui_jobs import WorkerJobState
+from pitchstems.gui_jobs import EditorLoadJobState, MidiPreviewJobState, WorkerJobState
 from pitchstems.pipeline import PipelineCancelledError, PipelineResult
 from pitchstems.separation import StemResult
 from pitchstems.transcription import MidiOptions
@@ -28,6 +28,36 @@ class _Window:
     def __init__(self) -> None:
         self.logger = _Logger()
         self.messages: queue.Queue[object] = queue.Queue()
+
+
+class DummyWindow:
+    def __init__(self) -> None:
+        self.worker_jobs = WorkerJobState()
+        self.activities: list[str] = []
+        self.logs: list[str] = []
+
+    def set_activity_message(self, message: str) -> None:
+        self.activities.append(message)
+
+    def append_log(self, message: str) -> None:
+        self.logs.append(message)
+
+
+def test_cancel_processing_requests_active_worker_and_updates_activity() -> None:
+    window = DummyWindow()
+    token = window.worker_jobs.start()
+
+    assert gui_processing.cancel_processing(window) is True
+    assert window.worker_jobs.is_cancel_requested(token)
+    assert window.activities[-1] == "Cancelling after the current model stage..."
+    assert "Cancellation requested." in window.logs[-1]
+
+
+def test_cancel_processing_reports_no_active_worker() -> None:
+    window = DummyWindow()
+
+    assert gui_processing.cancel_processing(window) is False
+    assert "No active processing job to cancel." in window.logs[-1]
 
 
 def test_run_midi_stage_reports_cancellation_without_error(monkeypatch, tmp_path: Path) -> None:
@@ -74,6 +104,8 @@ class _FlushWindow:
         self.logs: list[str] = []
         self.processing_states: list[bool] = []
         self.activity_messages: list[str] = []
+        self.editor_load_jobs = EditorLoadJobState()
+        self.midi_preview_jobs = MidiPreviewJobState()
 
     def is_active_worker_token(self, token: int) -> bool:
         return self.worker_jobs.is_active(token)

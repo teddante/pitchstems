@@ -251,6 +251,8 @@ def main() -> int:
             self.run_full = QPushButton("Run separation + MIDI")
             self.run_midi = QPushButton("Rerun MIDI only")
             self.run_midi.setEnabled(False)
+            self.cancel_button = QPushButton("Cancel")
+            self.cancel_button.setEnabled(False)
             self.log = QTextEdit()
             self.log.setReadOnly(True)
             self.editor_summary = QLabel("Run separation + MIDI to build an editor timeline.")
@@ -410,6 +412,7 @@ def main() -> int:
 
             self.run_full.clicked.connect(self.start_full_processing)
             self.run_midi.clicked.connect(self.start_midi_processing)
+            self.cancel_button.clicked.connect(self.cancel_processing)
             self.play_button.clicked.connect(self.toggle_playback)
             self.stop_button.clicked.connect(self.stop_transport)
             self.fit_song_button.clicked.connect(self.fit_editor_song_to_view)
@@ -570,6 +573,7 @@ def main() -> int:
             run_menu = self.menuBar().addMenu("&Run")
             self._add_action(run_menu, "Run Separation + MIDI", "F5", self.start_full_processing)
             self._add_action(run_menu, "Rerun MIDI Only", "Shift+F5", self.start_midi_processing)
+            self._add_action(run_menu, "Cancel Processing", None, self.cancel_processing)
 
             view_menu = self.menuBar().addMenu("&View")
             self._add_action(view_menu, "Pipeline", "Ctrl+1", lambda: self.main_tabs.setCurrentIndex(0))
@@ -683,6 +687,9 @@ def main() -> int:
 
         def start_midi_processing(self) -> None:
             gui_processing.start_midi_processing(self)
+
+        def cancel_processing(self) -> None:
+            gui_processing.cancel_processing(self)
 
         def start_worker_token(self) -> int:
             return gui_processing.start_worker_token(self)

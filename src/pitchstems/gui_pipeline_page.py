@@ -152,6 +152,7 @@ def build_pipeline_page(window) -> QWidget:
 
     action_row = QHBoxLayout()
     action_row.addStretch(1)
+    action_row.addWidget(window.cancel_button)
     action_row.addWidget(window.run_midi)
     action_row.addWidget(window.run_full)
 

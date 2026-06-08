@@ -11,6 +11,7 @@ def set_processing_state(window, busy: bool) -> None:
     window.drop_zone.setEnabled(not busy)
     window.run_full.setEnabled(not busy)
     window.run_midi.setEnabled((not busy) and window.current_result is not None)
+    window.cancel_button.setEnabled(busy)
     window.stem.setEnabled(not busy)
     window.bs_device.setEnabled(not busy)
     window.generate_midi.setEnabled(not busy)

@@ -46,9 +46,13 @@ def start_editor_project_load(window, result, token: int) -> None:
     def worker() -> None:
         try:
             loaded = build_editor_load_result(result)
+            if window.editor_load_jobs.closing or token != window.editor_load_jobs.token:
+                return
             window.messages.put(("EDITOR_LOADED", token, loaded))
         except Exception as exc:
             window.logger.exception("Editor project load failed")
+            if window.editor_load_jobs.closing or token != window.editor_load_jobs.token:
+                return
             window.messages.put(("EDITOR_LOAD_FAILED", token, result.project_dir, f"{exc}"))
 
     window.editor_load_jobs.worker = threading.Thread(

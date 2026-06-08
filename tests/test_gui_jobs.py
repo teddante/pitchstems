@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from pitchstems.gui_jobs import EditorLoadJobState, MidiPreviewJobState, WorkerJobState
 
 
@@ -57,4 +59,27 @@ def test_midi_preview_job_state_next_clears_workers(tmp_path) -> None:
 
     state.next()
 
+    assert state.workers == {}
+
+
+def test_editor_load_state_invalidates_and_marks_closing() -> None:
+    state = EditorLoadJobState()
+    first = state.next()
+    state.worker = object()  # type: ignore[assignment]
+
+    state.begin_closing()
+
+    assert state.closing
+    assert state.token > first
+    assert state.worker is None
+
+
+def test_midi_preview_state_invalidates_project_workers() -> None:
+    state = MidiPreviewJobState()
+    state.token = 4
+    state.workers[(Path("song.pitchstems"), "vocals")] = (4, object())  # type: ignore[assignment]
+
+    state.invalidate_all()
+
+    assert state.token == 5
     assert state.workers == {}

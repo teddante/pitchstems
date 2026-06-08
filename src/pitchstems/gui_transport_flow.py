@@ -31,6 +31,8 @@ def transport_players(window):
 
 
 def start_midi_preview_render(window, result, requested_stems: set[str] | None = None) -> None:
+    if window.midi_preview_jobs.closing:
+        return
     if window.editor_project is None or not window.editor_project.notes:
         return
     requested_keys = {stem.lower() for stem in (requested_stems or set())}
@@ -64,9 +66,13 @@ def start_midi_preview_render(window, result, requested_stems: set[str] | None =
                 )
                 if preview:
                     previews[stem_name] = preview
+            if window.midi_preview_jobs.closing or token != window.midi_preview_jobs.token:
+                return
             window.messages.put(("MIDI_PREVIEWS", token, result.project_dir, set(missing), previews))
         except Exception as exc:
             window.logger.exception("MIDI preview render failed")
+            if window.midi_preview_jobs.closing or token != window.midi_preview_jobs.token:
+                return
             window.messages.put(
                 (
                     "MIDI_PREVIEW_FAILED",

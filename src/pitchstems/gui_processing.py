@@ -13,6 +13,7 @@ from pitchstems.pipeline import (
     process_midi_from_stems,
 )
 from pitchstems.separation import SeparationOptions, StemResult
+from pitchstems.gui_shutdown import CANCELLING_AFTER_STAGE_MESSAGE, begin_auxiliary_shutdown
 from pitchstems.transcription import MidiOptions
 
 
@@ -91,6 +92,15 @@ def start_midi_processing(window) -> None:
 
 def start_worker_token(window) -> int:
     return window.worker_jobs.start()
+
+
+def cancel_processing(window) -> bool:
+    if not window.worker_jobs.cancel():
+        window.append_log("No active processing job to cancel.")
+        return False
+    window.set_activity_message(CANCELLING_AFTER_STAGE_MESSAGE)
+    window.append_log("Cancellation requested.")
+    return True
 
 
 def invalidate_worker_token(window) -> None:
@@ -228,6 +238,7 @@ def flush_messages(window) -> None:
                 if getattr(window, "close_after_worker", False):
                     window.close_after_worker = False
                     window.worker = None
+                    begin_auxiliary_shutdown(window)
                     window.close()
             else:
                 window.logger.info("Ignored stale worker completion for token %s", token)

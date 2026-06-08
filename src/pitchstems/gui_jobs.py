@@ -54,18 +54,34 @@ class EditorLoadJobState:
     token: int = 0
     activity_tokens: set[int] = field(default_factory=set)
     worker: threading.Thread | None = None
+    closing: bool = False
 
     def next(self) -> int:
         self.token += 1
         return self.token
+
+    def begin_closing(self) -> None:
+        self.token += 1
+        self.activity_tokens.clear()
+        self.worker = None
+        self.closing = True
 
 
 @dataclass
 class MidiPreviewJobState:
     token: int = 0
     workers: dict[tuple[Path, str], tuple[int, threading.Thread]] = field(default_factory=dict)
+    closing: bool = False
 
     def next(self) -> int:
         self.token += 1
         self.workers.clear()
         return self.token
+
+    def invalidate_all(self) -> None:
+        self.token += 1
+        self.workers.clear()
+
+    def begin_closing(self) -> None:
+        self.invalidate_all()
+        self.closing = True
