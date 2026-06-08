@@ -35,3 +35,6 @@ jobs:
 
       - name: Check installed metadata
         run: python -m pip check
+
+      - name: Import ML packages
+        run: python scripts/ml_import_smoke.py
