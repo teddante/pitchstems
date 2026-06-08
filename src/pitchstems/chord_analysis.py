@@ -1083,5 +1083,3 @@ def _weighted_score_explanation(
 
 def _interval_names(root: int, intervals) -> list[str]:
     return [PITCH_NAMES[(root + interval) % 12] for interval in intervals]
-
-

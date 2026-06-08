@@ -634,5 +634,3 @@ def _accepted_note_names() -> tuple[str, ...]:
 
 def _add_pitch_weight(totals: dict[int, float], pitch_class: int, weight: float) -> None:
     totals[pitch_class] = totals.get(pitch_class, 0.0) + weight
-
-
