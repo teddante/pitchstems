@@ -92,12 +92,16 @@ Invoke-Checked "Running mypy..." { & $python @pythonArgs -m mypy }
 Invoke-Checked "Running tests..." {
     & $python @pythonArgs -m pytest `
         --cov=pitchstems.editor_models `
+        --cov=pitchstems.gui_editor_model `
         --cov=pitchstems.gui_jobs `
+        --cov=pitchstems.gui_layout_policy `
+        --cov=pitchstems.gui_pipeline_model `
         --cov=pitchstems.input_validation `
         --cov=pitchstems.preflight `
         --cov=pitchstems.pipeline `
         --cov=pitchstems.project_store `
         --cov=pitchstems.recent_projects `
+        --cov=pitchstems.timeline_render_policy `
         --cov=pitchstems.time_format `
         --cov-report=term-missing `
         --cov-fail-under=90

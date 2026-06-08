@@ -232,6 +232,21 @@ def run_project_smoke(window) -> None:
     _assert(not window.run_midi.isEnabled(), "reset disables rerun MIDI")
 
 
+def capture_visual_audit(window, output_dir: Path) -> list[Path]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    captures: list[Path] = []
+    tab_names = [window.main_tabs.tabText(index) for index in range(window.main_tabs.count())]
+    for width, height in [(1220, 780), (900, 700)]:
+        window.resize(width, height)
+        for tab_name in ["Pipeline", "Editor"]:
+            window.main_tabs.setCurrentIndex(tab_names.index(tab_name))
+            QApplication.processEvents()
+            path = output_dir / f"{tab_name.lower()}-{width}x{height}.png"
+            window.grab().save(str(path))
+            captures.append(path)
+    return captures
+
+
 def _create_smoke_project(stem_name: str, pitches: list[int]) -> Path:
     root = Path(tempfile.mkdtemp(prefix="pitchstems-gui-smoke-"))
     project_dir = root / "smoke.pitchstems"

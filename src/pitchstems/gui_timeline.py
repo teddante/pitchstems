@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication, QGraphicsScene, QGraphicsView
 from pitchstems.editor_project import ChordRegion, EditorProject, midi_note_name
 from pitchstems.gui_track_controls import TRACK_CONTROL_MIN_HEIGHT
 from pitchstems.timeline_chord_geometry import compact_chord_label, snap_seconds_to_timeline_targets
+from pitchstems.timeline_render_policy import TimelineRenderPolicy
 from pitchstems.time_format import format_time
 
 
@@ -459,9 +460,13 @@ class TimelineView(QGraphicsView):
             )
             self._draw_pitch_guides(y, height, low_pitch, high_pitch)
 
-        draw_note_labels = self.pixels_per_second >= 150 and visible_note_count <= 900
-        dense_render = self.pixels_per_second < 55 or visible_note_count > 2400
-        enable_tooltips = visible_note_count <= 1400 and not dense_render
+        policy = TimelineRenderPolicy(
+            pixels_per_second=self.pixels_per_second,
+            visible_note_count=visible_note_count,
+        )
+        draw_note_labels = policy.draw_note_labels
+        dense_render = policy.dense_render
+        enable_tooltips = policy.enable_tooltips
         for track in tracks:
             track_key = track.name.lower()
             geometry = self.track_geometries.get(track_key)

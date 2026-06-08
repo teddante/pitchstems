@@ -22,27 +22,28 @@ class NoteIndex:
 class ChordIndex:
     def __init__(self, chords: list[ChordRegion], duration: float) -> None:
         self.chords = sorted(chords, key=lambda chord: (chord.start, chord.end))
+        self.starts = [chord.start for chord in self.chords]
         self.duration = duration
 
     def active_at(self, seconds: float) -> ChordRegion | None:
-        for chord in self.chords:
+        right = bisect_right(self.starts, seconds)
+        for chord in reversed(self.chords[:right]):
             if chord.start <= seconds < chord.end:
                 return chord
+            if chord.end <= seconds:
+                break
         return None
 
     def gap_at(self, seconds: float) -> tuple[float, float] | None:
         if self.active_at(seconds) is not None:
             return None
-        previous = max(
-            (chord for chord in self.chords if chord.end <= seconds),
-            key=lambda chord: chord.end,
-            default=None,
-        )
-        next_chord = min(
-            (chord for chord in self.chords if chord.start >= seconds),
-            key=lambda chord: chord.start,
-            default=None,
-        )
+        right = bisect_right(self.starts, seconds)
+        previous = None
+        for chord in reversed(self.chords[:right]):
+            if chord.end <= seconds:
+                previous = chord
+                break
+        next_chord = self.chords[right] if right < len(self.chords) else None
         start = previous.end if previous else 0.0
         end = next_chord.start if next_chord else self.duration
         return (start, end) if end - start >= 0.05 else None

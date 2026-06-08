@@ -9,6 +9,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from pitchstems.gui_layout_policy import PipelineLayoutPolicy
+
 
 def build_pipeline_page(window) -> QWidget:
     output_row = QHBoxLayout()
@@ -19,10 +21,7 @@ def build_pipeline_page(window) -> QWidget:
     separation_panel = QVBoxLayout()
     separation_panel.setSpacing(8)
     separation_panel.addWidget(section_label("Separation stage"))
-    intro = QLabel(
-        "PitchStems uses one stem model: BS-RoFormer SW six-stem. "
-        "The checkpoint and YAML config come from the native `bs-roformer-infer` registry."
-    )
+    intro = QLabel(PipelineLayoutPolicy().pipeline_intro)
     intro.setWordWrap(True)
     intro.setStyleSheet("color: #4b5563;")
     separation_panel.addWidget(intro)

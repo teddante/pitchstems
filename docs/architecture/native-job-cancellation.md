@@ -26,6 +26,17 @@ a stable `job_id`, emit progress events, write outputs into a staging directory,
 only after success. Cancellation can then terminate the process, delete the staging directory, and
 leave the existing project unchanged.
 
+## Process Job Boundary
+
+`pitchstems.native_jobs.NativeJobProcess` provides the hard-cancel primitive for future native ML
+execution. The GUI keeps the existing threaded path by default, and process jobs are opt-in through
+`PITCHSTEMS_NATIVE_PROCESS_JOBS=1` until real-audio parity is proven.
+
+The process boundary must preserve the current project safety rule: write into a staging project or
+staging output directory first, then promote outputs only after success. Cancellation may terminate
+the process and delete staging data, but it must not remove or mutate the last successful project
+manifest.
+
 ## Non-Goals
 
 - Do not kill Python threads inside the current PySide process.

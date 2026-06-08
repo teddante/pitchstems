@@ -5,6 +5,7 @@ from pathlib import Path
 from pitchstems.app_logging import logs_dir
 from pitchstems.file_opening import open_folder
 from pitchstems.input_validation import validate_audio_input
+from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
 from pitchstems.project_store import PROJECT_FILENAME, load_pipeline_result
 from pitchstems.recent_projects import (
     normalize_recent_project_paths,
@@ -192,7 +193,7 @@ def reset_stage_state(window, path: Path | None = None) -> None:
     window.run_midi.setEnabled(False)
     window.separation_status.setText("Not run yet.")
     window.midi_status.setText("Run the full pipeline first, then MIDI can be rerun without separating again.")
-    window.editor_summary.setText("Run separation + MIDI to build an editor timeline.")
+    window.editor_summary.setText(EMPTY_EDITOR_SUMMARY)
     window.timeline_slider.setRange(0, 0)
     window.timeline_slider.setEnabled(False)
     window.fit_song_button.setEnabled(False)

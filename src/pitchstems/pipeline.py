@@ -61,6 +61,8 @@ def process_audio_file(
     report = run_preflight(
         require_ml=True,
         requested_device=separation_options.device if separation_options else None,
+        output_root=output_root,
+        model_key=separation_options.model_key if separation_options else None,
     )
     if not report.ok:
         raise RuntimeError(f"Preflight failed: {report.failure_summary()}")

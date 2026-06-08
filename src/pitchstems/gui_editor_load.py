@@ -5,6 +5,7 @@ from pathlib import Path
 
 from pitchstems.editor_loader import build_editor_load_result
 from pitchstems.editor_state import editor_float
+from pitchstems.gui_editor_model import EditorSummaryModel
 from pitchstems.time_format import format_time
 
 
@@ -93,17 +94,19 @@ def finish_editor_project_load(window, token: int, loaded) -> None:
         window.notation_spelling.setCurrentIndex(notation_index)
         window.notation_spelling.blockSignals(False)
     playhead_seconds = editor_float(editor_state.get("playhead_seconds"), 0.0, low=0.0)
-    window.editor_summary.setText(
-        f"Editor project: {len(project.tracks)} tracks, {len(project.notes)} notes, "
-        f"{len(project.chords)} chord regions."
+    summary = EditorSummaryModel(
+        track_count=len(project.tracks),
+        note_count=len(project.notes),
+        duration_seconds=project.duration,
     )
+    window.editor_summary.setText(summary.summary)
     maximum = max(0, int(project.duration * 1000))
     window.timeline_slider.blockSignals(True)
     window.timeline_slider.setRange(0, maximum)
     window.timeline_slider.setValue(0)
     window.timeline_slider.setEnabled(maximum > 0)
     window.timeline_slider.blockSignals(False)
-    window.fit_song_button.setEnabled(maximum > 0)
+    window.fit_song_button.setEnabled(summary.fit_song_enabled and maximum > 0)
     window.editor_position.setText(format_time(playhead_seconds))
     refresh_editor_lists(window, track_visibility)
     window.refresh_playback_controls(editor_state)

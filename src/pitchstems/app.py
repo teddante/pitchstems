@@ -21,6 +21,7 @@ from pitchstems.editor_project import (
     midi_note_name,
 )
 from pitchstems.editor_loader import EditorLoadResult
+from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
 from pitchstems.midi_preview import render_note_preview
 from pitchstems.model_catalog import model_choice
 from pitchstems.notation import pitch_class_for_name, pitch_class_name
@@ -257,7 +258,7 @@ def main() -> int:
             self.cancel_button.setEnabled(False)
             self.log = QTextEdit()
             self.log.setReadOnly(True)
-            self.editor_summary = QLabel("Run separation + MIDI to build an editor timeline.")
+            self.editor_summary = QLabel(EMPTY_EDITOR_SUMMARY)
             self.editor_summary.setWordWrap(True)
             self.editor_summary.setStyleSheet("color: #4b5563;")
             self.editor_position = QLabel("00:00.000")
@@ -1239,13 +1240,16 @@ def main() -> int:
     window.show()
     smoke_mode = os.environ.get("PITCHSTEMS_GUI_SMOKE")
     if smoke_mode in {"startup", "project"}:
-        from pitchstems.gui_smoke import run_project_smoke, run_startup_smoke
+        from pitchstems.gui_smoke import capture_visual_audit, run_project_smoke, run_startup_smoke
 
         def run_smoke_and_exit() -> None:
             try:
                 run_startup_smoke(window)
                 if smoke_mode == "project":
                     run_project_smoke(window)
+                visual_audit_dir = os.environ.get("PITCHSTEMS_VISUAL_AUDIT_DIR")
+                if visual_audit_dir:
+                    capture_visual_audit(window, Path(visual_audit_dir))
             except Exception:
                 logger.exception("GUI startup smoke failed")
                 app.exit(1)

@@ -9,8 +9,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from pitchstems.gui_layout_policy import EditorLayoutPolicy
+
 
 def build_editor_page(window) -> QWidget:
+    policy = EditorLayoutPolicy(window_width=window.width())
     editor_page = QWidget()
     editor_layout = QVBoxLayout()
     editor_layout.setContentsMargins(12, 12, 12, 12)
@@ -31,7 +34,7 @@ def build_editor_page(window) -> QWidget:
     editor_body = QHBoxLayout()
     editor_body.setSpacing(10)
     editor_side_panel = QWidget()
-    editor_side_panel.setMinimumWidth(300)
+    editor_side_panel.setMinimumWidth(policy.harmony_panel_min_width)
     editor_side_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
     editor_side = QVBoxLayout()
     editor_side.setContentsMargins(0, 0, 0, 0)
@@ -79,7 +82,7 @@ def build_editor_page(window) -> QWidget:
     editor_side_panel.setLayout(editor_side)
 
     track_mix_panel = QWidget()
-    track_mix_panel.setMinimumWidth(280)
+    track_mix_panel.setMinimumWidth(policy.track_panel_min_width)
     track_mix_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
     track_mix_layout = QVBoxLayout()
     track_mix_layout.setContentsMargins(0, 0, 0, 0)

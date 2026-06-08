@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 from pitchstems.preflight import run_preflight
@@ -54,3 +55,24 @@ def test_preflight_reports_missing_native_ml_packages(monkeypatch) -> None:
     assert not report.ok
     assert any(check.name == "Basic Pitch" and not check.ok for check in report.checks)
     assert any(check.name == "BS-RoFormer native backend" and check.ok for check in report.checks)
+
+
+def test_preflight_reports_unwritable_output_root(monkeypatch, tmp_path: Path) -> None:
+    def fake_write_text(self: Path, text: str, encoding: str = "utf-8") -> int:
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(Path, "write_text", fake_write_text)
+    monkeypatch.setattr("pitchstems.preflight.require_ffmpeg", lambda: "ffmpeg")
+
+    report = run_preflight(require_ml=False, output_root=tmp_path)
+
+    assert not report.ok
+    assert "Output directory" in report.failure_summary()
+
+
+def test_preflight_can_skip_model_registry_check_when_ml_not_required(monkeypatch) -> None:
+    monkeypatch.setattr("pitchstems.preflight.require_ffmpeg", lambda: "ffmpeg")
+
+    report = run_preflight(require_ml=False, model_key="bs_roformer_sw")
+
+    assert report.ok

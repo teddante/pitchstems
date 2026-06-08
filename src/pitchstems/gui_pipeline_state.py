@@ -2,21 +2,27 @@ from __future__ import annotations
 
 from pitchstems.acceleration import onnxruntime_status, torch_status
 from pitchstems.gui_options import default_midi_checked, device_label, optional_frequency
+from pitchstems.gui_pipeline_model import PipelinePageModel
 from pitchstems.model_catalog import model_choice
 from pitchstems.separation import SeparationOptions
 from pitchstems.transcription import MidiOptions
 
 
 def set_processing_state(window, busy: bool) -> None:
-    window.drop_zone.setEnabled(not busy)
-    window.run_full.setEnabled(not busy)
-    window.run_midi.setEnabled((not busy) and window.current_result is not None)
-    window.cancel_button.setEnabled(busy)
-    window.stem.setEnabled(not busy)
-    window.bs_device.setEnabled(not busy)
-    window.generate_midi.setEnabled(not busy)
+    model = PipelinePageModel(
+        busy=busy,
+        has_result=window.current_result is not None,
+        generate_midi=window.generate_midi.isChecked(),
+    )
+    window.drop_zone.setEnabled(model.drop_zone_enabled)
+    window.run_full.setEnabled(model.run_full_enabled)
+    window.run_midi.setEnabled(model.run_midi_enabled)
+    window.cancel_button.setEnabled(model.cancel_enabled)
+    window.stem.setEnabled(model.settings_enabled)
+    window.bs_device.setEnabled(model.settings_enabled)
+    window.generate_midi.setEnabled(model.settings_enabled)
     for checkbox in window.midi_stem_checks.values():
-        checkbox.setEnabled(not busy and window.generate_midi.isChecked())
+        checkbox.setEnabled(model.midi_stem_checks_enabled)
     for widget in [
         window.onset_threshold,
         window.frame_threshold,
@@ -33,7 +39,7 @@ def set_processing_state(window, busy: bool) -> None:
         window.create_zip,
         window.open_when_done,
     ]:
-        widget.setEnabled(not busy)
+        widget.setEnabled(model.settings_enabled)
     if not busy:
         window.refresh_midi_stem_checks()
 

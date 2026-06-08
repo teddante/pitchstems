@@ -61,6 +61,13 @@ def test_start_full_processing_rejects_invalid_audio_path(tmp_path: Path) -> Non
     assert window.logs == ["Choose an audio file, not a folder."]
 
 
+def test_native_process_jobs_are_opt_in(monkeypatch) -> None:
+    monkeypatch.delenv("PITCHSTEMS_NATIVE_PROCESS_JOBS", raising=False)
+    assert gui_processing.use_native_process_jobs() is False
+    monkeypatch.setenv("PITCHSTEMS_NATIVE_PROCESS_JOBS", "1")
+    assert gui_processing.use_native_process_jobs() is True
+
+
 def test_cancel_processing_requests_active_worker_and_updates_activity() -> None:
     window = DummyWindow()
     token = window.worker_jobs.start()
