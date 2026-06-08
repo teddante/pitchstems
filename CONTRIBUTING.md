@@ -16,7 +16,7 @@ python -m pip install -e ".[dev]"
 For full local audio processing, install the optional GUI/ML extras:
 
 ```powershell
-python -m pip install -e ".[gui,cpu]"
+python -m pip install -c constraints\windows-cpu.txt -e ".[gui,cpu]"
 ```
 
 On Windows with an NVIDIA GPU, use:
@@ -39,6 +39,9 @@ Run these before opening a pull request:
 The project check also runs `python -m pip check` so broken installed
 dependency metadata is caught before review. It also runs Git whitespace checks
 for the working tree, staged changes, and branch diff when `main` is available.
+When adding a module to mypy or coverage gates, keep the change small: add
+focused tests first, add the module to the gate, then run `.\scripts\check.ps1`.
+Do not lower coverage thresholds to make unrelated work pass.
 
 For a focused branch whitespace check, run:
 
@@ -57,6 +60,8 @@ When changing separation, transcription, project packaging, or editor timeline
 loading, run a short real-audio smoke through the CLI, reopen the generated
 `.pitchstems` project in the GUI, and confirm stems, MIDI, combined MIDI,
 manifest, timeline playback, and optional ZIP export are present.
+When dependency files change, run `python -m pip_audit` in the constrained dev
+environment or inspect the dependency-audit workflow result before merging.
 
 See [AGENTS.md](AGENTS.md) for the solo-development branch, commit, pull
 request, release, and approval workflow used by AI-assisted development.

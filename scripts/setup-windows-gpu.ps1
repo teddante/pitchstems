@@ -24,7 +24,7 @@ Invoke-Checked "Creating virtual environment..." { & py -3.10 -m venv .venv }
 Invoke-Checked "Installing latest pip..." { & .\.venv\Scripts\python -m pip install -U pip }
 
 Invoke-Checked "Installing PitchStems with Windows GPU dependencies..." {
-    & .\.venv\Scripts\python -m pip install -e ".[win-gpu,gui,dev]"
+    & .\.venv\Scripts\python -m pip install -c $gpuConstraints -e ".[win-gpu,gui,dev]"
 }
 
 Invoke-Checked "Removing default CPU ML wheels..." {

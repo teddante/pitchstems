@@ -1,0 +1,38 @@
+name: Dependency Audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "pyproject.toml"
+      - "constraints/**"
+      - ".github/workflows/dependency-audit.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "41 6 * * 2"
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    name: Python dependency audit
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install audited environment
+        run: |
+          python -m pip install -U pip
+          python -m pip install -c constraints/windows-cpu.txt -e ".[cpu,dev]"
+
+      - name: Run pip-audit
+        run: python -m pip_audit

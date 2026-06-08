@@ -52,6 +52,7 @@ cpu = [
 dev = [
   "build>=1.2",
   "mypy>=1.15",
+  "pip-audit>=2.9",
   "pytest>=8.0",
   "pytest-cov>=6.0",
   "ruff>=0.6",
@@ -79,6 +80,9 @@ python_version = "3.10"
 files = [
   "src/pitchstems/editor_models.py",
   "src/pitchstems/gui_jobs.py",
+  "src/pitchstems/input_validation.py",
+  "src/pitchstems/pipeline.py",
+  "src/pitchstems/preflight.py",
   "src/pitchstems/project_store.py",
   "src/pitchstems/recent_projects.py",
   "src/pitchstems/time_format.py",

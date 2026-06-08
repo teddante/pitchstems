@@ -93,6 +93,9 @@ Invoke-Checked "Running tests..." {
     & $python @pythonArgs -m pytest `
         --cov=pitchstems.editor_models `
         --cov=pitchstems.gui_jobs `
+        --cov=pitchstems.input_validation `
+        --cov=pitchstems.preflight `
+        --cov=pitchstems.pipeline `
         --cov=pitchstems.project_store `
         --cov=pitchstems.recent_projects `
         --cov=pitchstems.time_format `

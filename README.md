@@ -50,7 +50,7 @@ CPU-oriented install:
 py -3.10 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -U pip
-python -m pip install -e ".[cpu,gui]"
+python -m pip install -c constraints\windows-cpu.txt -e ".[cpu,gui]"
 ```
 
 Windows NVIDIA GPU install:
@@ -169,11 +169,16 @@ python -m pip check
 git diff --check main...HEAD
 ```
 
+For reproducible Windows installs, use the constraints files in `constraints/`
+with the matching extra. Refresh constraints only after
+`.\scripts\check.ps1 -GuiSmoke -Build` and `python -m pip check` pass.
+
 Validation tiers:
 
 - Fast source check: `.\scripts\check.ps1`
 - GUI/package check: `.\scripts\check.ps1 -GuiSmoke -Build`
 - GPU/runtime check after setup or ML dependency changes: `.\scripts\check.ps1 -Gpu`
+- Dependency security audit: `python -m pip_audit`
 - Manual real-audio smoke when changing separation/transcription behavior:
 
 ```powershell

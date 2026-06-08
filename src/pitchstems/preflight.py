@@ -33,13 +33,13 @@ def run_preflight(require_ml: bool = True, requested_device: str | None = None) 
     except Exception as exc:
         checks.append(PreflightCheck("FFmpeg", False, str(exc)))
 
-    if requested_device == "cuda":
+    if requested_device and requested_device.startswith("cuda"):
         status = torch_status()
         checks.append(
             PreflightCheck(
                 "PyTorch CUDA",
                 bool(status.installed and status.cuda_available),
-                status.device_name if status.cuda_available else "CUDA is not available to PyTorch",
+                status.device_name or "CUDA is not available to PyTorch",
             )
         )
 
