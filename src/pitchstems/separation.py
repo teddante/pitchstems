@@ -172,9 +172,16 @@ def separate_stems(
 
     produced = sorted(path for path in output_dir.glob("*.wav") if path.resolve() not in before)
     stems = _dedupe_stems([StemResult(name=_guess_stem_name(path), path=path) for path in produced])
+    if not stems:
+        raise RuntimeError(
+            "BS-RoFormer did not produce any stems. "
+            "Check the selected model, device, and native backend logs."
+        )
     if options.selected_stem:
         requested = options.selected_stem.lower()
         stems = [stem for stem in stems if stem.name.lower() == requested]
+        if not stems:
+            raise RuntimeError(f"BS-RoFormer did not produce requested stem: {options.selected_stem}")
     return stems
 
 

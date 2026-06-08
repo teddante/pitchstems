@@ -139,6 +139,36 @@ def save_project_manifest(
     return manifest_path
 
 
+def save_failed_project_manifest(
+    project_dir: Path,
+    source_audio: Path | None,
+    normalized_audio: Path | None,
+    error: str,
+) -> Path:
+    project_dir = project_dir.expanduser().resolve()
+    project_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = project_manifest_path(project_dir)
+    manifest = {
+        "format": "pitchstems-project",
+        "format_version": PROJECT_FORMAT_VERSION,
+        "created_at": _now(),
+        "updated_at": _now(),
+        "name": project_dir.name.removesuffix(".pitchstems"),
+        "status": "failed",
+        "last_error": error,
+        "source_audio": _relative_or_absolute(project_dir, source_audio),
+        "normalized_audio": _relative_or_absolute(project_dir, normalized_audio),
+        "stems": [],
+        "midi_files": [],
+        "combined_midi": None,
+        "zip_path": None,
+        "settings": {},
+        "editor": {},
+    }
+    _write_json_atomic(manifest_path, manifest)
+    return manifest_path
+
+
 def load_pipeline_result(path: Path) -> PipelineResult:
     manifest_path = find_project_manifest(path)
     project_dir = manifest_path.parent

@@ -10,7 +10,13 @@ from typing import Callable
 
 from pitchstems.audio import normalize_to_wav
 from pitchstems.midi import combine_midi_tracks
-from pitchstems.project_store import PROJECT_FILENAME, load_project_manifest, save_project_manifest
+from pitchstems.preflight import run_preflight
+from pitchstems.project_store import (
+    PROJECT_FILENAME,
+    load_project_manifest,
+    save_failed_project_manifest,
+    save_project_manifest,
+)
 from pitchstems.separation import SeparationOptions, StemResult, separate_stems
 from pitchstems.transcription import MidiOptions, MidiResult, transcribe_stem_to_midi
 
@@ -52,6 +58,13 @@ def process_audio_file(
     if not input_path.exists():
         raise FileNotFoundError(input_path)
 
+    report = run_preflight(
+        require_ml=True,
+        requested_device=separation_options.device if separation_options else None,
+    )
+    if not report.ok:
+        raise RuntimeError(f"Preflight failed: {report.failure_summary()}")
+
     input_stem = _safe_stem(input_path.stem)
     project_dir = _project_dir(output_root, input_path)
     audio_dir = project_dir / "audio"
@@ -63,6 +76,8 @@ def process_audio_file(
     for directory in [audio_dir, work_dir, stems_dir, midi_dir, export_dir]:
         directory.mkdir(parents=True, exist_ok=True)
 
+    project_source_audio: Path | None = None
+    normalized_audio = work_dir / f"{input_stem}.wav"
     try:
         project_source_audio = _copy_source_audio(input_path, audio_dir)
         _raise_if_cancelled(cancelled)
@@ -71,7 +86,7 @@ def process_audio_file(
             log("Audio prep: FFmpeg -> stereo 44.1 kHz PCM WAV for native BS-RoFormer.")
             if cancelled is not None:
                 log("Cancellation will take effect between native model stages.")
-        normalized_audio = normalize_to_wav(project_source_audio, work_dir / f"{input_stem}.wav")
+        normalized_audio = normalize_to_wav(project_source_audio, normalized_audio)
         _raise_if_cancelled(cancelled)
 
         stems = separate_stems(
@@ -134,6 +149,9 @@ def process_audio_file(
         return result
     except PipelineCancelledError:
         _remove_new_project_dir(project_dir, output_root)
+        raise
+    except Exception as exc:
+        save_failed_project_manifest(project_dir, project_source_audio, normalized_audio, str(exc))
         raise
 
 

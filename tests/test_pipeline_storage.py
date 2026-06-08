@@ -1,5 +1,7 @@
+import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from zipfile import ZipFile
 
 import pytest
@@ -19,6 +21,15 @@ from pitchstems.pipeline import (
 from pitchstems.project_store import save_project_manifest
 from pitchstems.separation import StemResult
 from pitchstems.transcription import MidiResult
+
+
+@pytest.fixture(autouse=True)
+def _pass_pipeline_preflight(monkeypatch) -> None:
+    monkeypatch.setattr(
+        pipeline,
+        "run_preflight",
+        lambda **_kwargs: SimpleNamespace(ok=True, failure_summary=lambda: ""),
+    )
 
 
 def test_zip_project_outputs_packages_canonical_assets_without_export_copies(tmp_path: Path) -> None:
@@ -598,6 +609,54 @@ def test_full_pipeline_packages_once_after_final_manifest(tmp_path: Path, monkey
         manifest = archive.read("pitchstems.project.json").decode("utf-8")
     assert '"source_audio": "audio/source.mp3"' in manifest
     assert '"zip_path": "source_pitchstems.zip"' in manifest
+
+
+def test_full_pipeline_fails_before_project_creation_when_preflight_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = tmp_path / "song.wav"
+    source.write_bytes(b"audio")
+    monkeypatch.setattr(
+        pipeline,
+        "run_preflight",
+        lambda **_kwargs: SimpleNamespace(
+            ok=False,
+            failure_summary=lambda: "FFmpeg: missing",
+        ),
+        raising=False,
+    )
+
+    with pytest.raises(RuntimeError, match="Preflight failed: FFmpeg: missing"):
+        pipeline.process_audio_file(source, tmp_path / "out")
+
+    assert not list((tmp_path / "out").glob("*.pitchstems"))
+
+
+def test_failed_full_pipeline_writes_failed_manifest(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "song.wav"
+    source.write_bytes(b"audio")
+
+    def fake_normalize(_input_path, output_path):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"wav")
+        return output_path
+
+    monkeypatch.setattr(pipeline, "normalize_to_wav", fake_normalize)
+    monkeypatch.setattr(
+        pipeline,
+        "separate_stems",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("native failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="native failed"):
+        pipeline.process_audio_file(source, tmp_path / "out")
+
+    manifests = list((tmp_path / "out").glob("*.pitchstems/pitchstems.project.json"))
+    assert manifests
+    manifest = json.loads(manifests[0].read_text(encoding="utf-8"))
+    assert manifest["status"] == "failed"
+    assert "native failed" in manifest["last_error"]
 
 
 def test_full_pipeline_cancellation_removes_partial_new_project(
