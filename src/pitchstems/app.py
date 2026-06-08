@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import queue
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -155,6 +156,7 @@ def main() -> int:
             self.chord_note_filter_context = None
             self.current_chord_base_weights: dict[int, float] = {}
             self.current_harmony_context: HarmonyContext | None = None
+            self.harmony_refresh_gate = gui_harmony_flow.HarmonyRefreshGate()
             self.current_theory_analysis: TheoryAnalysis | None = None
             self.current_chord_gap_analysis: ChordGapAnalysis | None = None
             self.updating_chord_note_filter = False
@@ -832,6 +834,7 @@ def main() -> int:
             seconds: float,
             save: bool = True,
             seek_players: bool = True,
+            force_harmony_refresh: bool = False,
         ) -> None:
             if self.editor_project is not None:
                 seconds = max(0.0, min(seconds, max(self.editor_project.duration, 0.0)))
@@ -841,14 +844,14 @@ def main() -> int:
             self.timeline_slider.blockSignals(False)
             self.editor_position.setText(format_time(seconds))
             self.timeline.set_position(seconds)
-            self.refresh_current_harmony(seconds)
+            self.refresh_current_harmony(seconds, force=force_harmony_refresh)
             if seek_players:
                 self.seek_audio_players(seconds)
             if save:
                 self.request_editor_state_save()
 
         def set_editor_selection(self, selection: tuple[float, float] | None) -> None:
-            self.refresh_current_harmony(self.timeline.position)
+            self.refresh_current_harmony(self.timeline.position, force=True)
             self.refresh_chord_actions()
             if selection is None:
                 self.statusBar().showMessage("Timeline selection cleared.", 3000)
@@ -861,7 +864,7 @@ def main() -> int:
 
         def clear_editor_selection(self) -> None:
             self.timeline.clear_selection()
-            self.refresh_current_harmony(self.timeline.position)
+            self.refresh_current_harmony(self.timeline.position, force=True)
 
         def set_chord_context_text(self, text: str) -> None:
             self.chord_context.setText(text)
@@ -1015,14 +1018,15 @@ def main() -> int:
 
         def handle_min_note_evidence_changed(self, value: int) -> None:
             self.min_note_evidence_label.setText(f"Min note evidence: {value}%")
-            self.refresh_current_harmony(self.timeline.position)
+            self.refresh_current_harmony(self.timeline.position, force=True)
 
         def handle_notation_spelling_changed(self, *_args) -> None:
             self.timeline.set_note_name_formatter(self.display_note_name)
-            self.refresh_current_harmony(self.timeline.position)
+            self.refresh_current_harmony(self.timeline.position, force=True)
 
-        def refresh_current_harmony(self, seconds: float) -> None:
-            gui_harmony_flow.refresh_current_harmony(self, seconds)
+        def refresh_current_harmony(self, seconds: float, force: bool = False) -> None:
+            if self.harmony_refresh_gate.should_refresh(seconds, time.monotonic(), force=force):
+                gui_harmony_flow.refresh_current_harmony(self, seconds)
 
         def update_harmony_context(
             self,

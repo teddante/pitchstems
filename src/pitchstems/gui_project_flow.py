@@ -4,6 +4,7 @@ from pathlib import Path
 
 from pitchstems.app_logging import logs_dir
 from pitchstems.file_opening import open_folder
+from pitchstems.input_validation import validate_audio_input
 from pitchstems.project_store import PROJECT_FILENAME, load_pipeline_result
 from pitchstems.recent_projects import (
     normalize_recent_project_paths,
@@ -84,6 +85,11 @@ def pick_audio(window) -> None:
 
 
 def set_audio_path(window, path: Path) -> None:
+    error = validate_audio_input(path)
+    if error:
+        window.append_log(error)
+        window.statusBar().showMessage(error, 5000)
+        return
     window.drop_zone.set_audio_file(path)
     window.reset_stage_state(path)
 

@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from pitchstems.input_validation import validate_audio_input
 from pitchstems.notation import pitch_class_for_name
 
 
@@ -69,15 +70,23 @@ class DropZone(QLabel):
         return f"...\\{tail}"
 
     def dragEnterEvent(self, event) -> None:
-        if event.mimeData().hasUrls():
+        urls = event.mimeData().urls()
+        if urls and urls[0].isLocalFile():
             event.acceptProposedAction()
 
     def dropEvent(self, event) -> None:
         urls = event.mimeData().urls()
-        if urls:
-            self.set_audio_file(Path(urls[0].toLocalFile()))
-            if self.on_path_changed:
-                self.on_path_changed(self.path)
+        if not urls or not urls[0].isLocalFile():
+            return
+        path = Path(urls[0].toLocalFile())
+        error = validate_audio_input(path)
+        if error:
+            self.setText(error)
+            self.setToolTip(error)
+            return
+        self.set_audio_file(path)
+        if self.on_path_changed:
+            self.on_path_changed(self.path)
 
 
 class NoWheelComboBox(QComboBox):

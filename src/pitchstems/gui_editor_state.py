@@ -41,6 +41,7 @@ def refresh_editor_project_from_chord_edits(
     window.timeline.selected_chord = selected_chord
     window.timeline.redraw()
     window.refresh_detected_chord_list()
+    window.refresh_current_harmony(window.timeline.position, force=True)
     window.save_editor_state()
 
 
@@ -120,7 +121,7 @@ def refresh_visible_tracks(window) -> None:
         if checkbox.isChecked()
     }
     window.timeline.set_visible_tracks(visible)
-    window.refresh_current_harmony(window.timeline.position)
+    window.refresh_current_harmony(window.timeline.position, force=True)
     window.save_editor_state()
 
 

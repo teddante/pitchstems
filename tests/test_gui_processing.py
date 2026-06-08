@@ -43,6 +43,24 @@ class DummyWindow:
         self.logs.append(message)
 
 
+class _InvalidInputWindow:
+    def __init__(self, path: Path) -> None:
+        self.worker = None
+        self.drop_zone = type("DropZone", (), {"path": path})()
+        self.logs: list[str] = []
+
+    def append_log(self, message: str) -> None:
+        self.logs.append(message)
+
+
+def test_start_full_processing_rejects_invalid_audio_path(tmp_path: Path) -> None:
+    window = _InvalidInputWindow(tmp_path)
+
+    gui_processing.start_full_processing(window)
+
+    assert window.logs == ["Choose an audio file, not a folder."]
+
+
 def test_cancel_processing_requests_active_worker_and_updates_activity() -> None:
     window = DummyWindow()
     token = window.worker_jobs.start()

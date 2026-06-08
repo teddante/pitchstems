@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from pitchstems.editor_project import active_notes_at, analyze_chord_at, analyze_chord_region
 from pitchstems.harmony_inspector import (
     chord_base_pitch_weights as inspector_chord_base_pitch_weights,
@@ -11,6 +13,21 @@ from pitchstems.harmony_inspector import (
 )
 from pitchstems import harmony_panel
 from pitchstems.time_format import format_time
+
+
+@dataclass
+class HarmonyRefreshGate:
+    min_interval_seconds: float = 0.25
+    last_refresh_seconds: float | None = None
+
+    def should_refresh(self, position_seconds: float, now_seconds: float, force: bool = False) -> bool:
+        if force or self.last_refresh_seconds is None:
+            self.last_refresh_seconds = now_seconds
+            return True
+        if now_seconds - self.last_refresh_seconds >= self.min_interval_seconds:
+            self.last_refresh_seconds = now_seconds
+            return True
+        return False
 
 
 def refresh_current_harmony(window, seconds: float) -> None:
@@ -161,9 +178,9 @@ def handle_chord_note_filter_changed(window, item) -> None:
         window.chord_note_overrides.pop(pitch_class, None)
     else:
         window.chord_note_overrides[pitch_class] = state
-    window.refresh_current_harmony(window.timeline.position)
+    window.refresh_current_harmony(window.timeline.position, force=True)
 
 
 def reset_chord_note_filter(window) -> None:
     window.chord_note_overrides = {}
-    window.refresh_current_harmony(window.timeline.position)
+    window.refresh_current_harmony(window.timeline.position, force=True)

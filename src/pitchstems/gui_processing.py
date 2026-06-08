@@ -14,6 +14,7 @@ from pitchstems.pipeline import (
 )
 from pitchstems.separation import SeparationOptions, StemResult
 from pitchstems.gui_shutdown import CANCELLING_AFTER_STAGE_MESSAGE, begin_auxiliary_shutdown
+from pitchstems.input_validation import validate_audio_input
 from pitchstems.transcription import MidiOptions
 
 
@@ -45,6 +46,10 @@ def start_full_processing(window) -> None:
         return
     if not window.drop_zone.path:
         window.append_log("Drop an audio file first.")
+        return
+    error = validate_audio_input(window.drop_zone.path)
+    if error:
+        window.append_log(error)
         return
     token = start_worker_token(window)
     midi_stems = window.selected_midi_stems()

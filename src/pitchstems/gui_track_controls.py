@@ -181,7 +181,7 @@ def add_track_control_row(window, track, editor_state: dict) -> None:
         )
     )
     analysis_check.setToolTip("Include this track's generated MIDI notes in the Harmony Inspector sample.")
-    analysis_check.toggled.connect(lambda *_args: window.refresh_current_harmony(window.timeline.position))
+    analysis_check.toggled.connect(lambda *_args: window.refresh_current_harmony(window.timeline.position, force=True))
     analysis_check.toggled.connect(lambda *_args: window.save_editor_state())
     analysis_check.toggled.connect(lambda *_args: window.refresh_timeline_track_summaries())
     window.track_analysis_checks[track.name] = analysis_check
