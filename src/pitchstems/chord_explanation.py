@@ -1,3 +1,10 @@
+"""Compatibility exports for chord explanation internals.
+
+The implementation still lives in ``pitchstems.chord_analysis`` so public imports
+can stabilize before a larger mechanical extraction. Do not add new explanation
+logic here; move the implementation from ``chord_analysis`` first.
+"""
+
 from __future__ import annotations
 
 from pitchstems.chord_analysis import (

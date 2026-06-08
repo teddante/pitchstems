@@ -87,6 +87,7 @@ def pick_audio(window) -> None:
 def set_audio_path(window, path: Path) -> None:
     error = validate_audio_input(path)
     if error:
+        window.drop_zone.reset_prompt()
         window.append_log(error)
         window.statusBar().showMessage(error, 5000)
         return

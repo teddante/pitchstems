@@ -38,3 +38,45 @@ def test_drop_zone_project_label_uses_bounded_project_text(tmp_path: Path) -> No
     assert "Project" in widget.text()
     assert "example.pitchstems" in widget.text()
     assert str(source) in widget.toolTip()
+
+
+class _Url:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+    def isLocalFile(self) -> bool:
+        return True
+
+    def toLocalFile(self) -> str:
+        return str(self.path)
+
+
+class _MimeData:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+    def urls(self):
+        return [_Url(self.path)]
+
+
+class _DropEvent:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+    def mimeData(self):
+        return _MimeData(self.path)
+
+
+def test_drop_zone_invalid_drop_clears_previous_audio_path(tmp_path: Path) -> None:
+    _app()
+    widget = DropZone()
+    valid = tmp_path / "song.wav"
+    invalid = tmp_path / "notes.txt"
+    valid.write_bytes(b"RIFF")
+    invalid.write_text("not audio", encoding="utf-8")
+    widget.set_audio_file(valid)
+
+    widget.dropEvent(_DropEvent(invalid))
+
+    assert widget.path is None
+    assert "Unsupported audio file type" in widget.text()

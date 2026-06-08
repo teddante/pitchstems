@@ -5,6 +5,7 @@ import logging
 import wave
 from bisect import bisect_right
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 
 from mido import MidiFile, tick2second
@@ -84,11 +85,11 @@ class EditorProject:
     chords: list[ChordRegion]
     duration: float
 
-    @property
+    @cached_property
     def note_index(self) -> NoteIndex:
         return NoteIndex(self.notes)
 
-    @property
+    @cached_property
     def chord_index(self) -> ChordIndex:
         return ChordIndex(self.chords, self.duration)
 

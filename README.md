@@ -181,6 +181,8 @@ Validation tiers:
 - Dependency security audit: `python -m pip_audit`
 - Manual real-audio smoke when changing separation/transcription behavior:
 
+See `docs/architecture/quality-gate-roadmap.md` for the current typed/coverage surface and known gaps.
+
 ```powershell
 pitchstems "C:\path\to\short-audio.mp3" --output-dir "C:\path\to\pitchstems-smoke" --midi-policy pitched
 pitchstems-gui

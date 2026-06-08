@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 from dataclasses import dataclass
 
 from pitchstems.acceleration import onnxruntime_status, torch_status
@@ -24,6 +25,11 @@ class PreflightReport:
     def failure_summary(self) -> str:
         failures = [f"{check.name}: {check.detail}" for check in self.checks if not check.ok]
         return "; ".join(failures)
+
+
+def _module_check(name: str, module_name: str) -> PreflightCheck:
+    found = importlib.util.find_spec(module_name) is not None
+    return PreflightCheck(name, found, "installed" if found else f"`{module_name}` missing")
 
 
 def run_preflight(require_ml: bool = True, requested_device: str | None = None) -> PreflightReport:
@@ -52,4 +58,6 @@ def run_preflight(require_ml: bool = True, requested_device: str | None = None) 
                 ", ".join(ort.providers) if ort.installed else "ONNX Runtime is not installed",
             )
         )
+        checks.append(_module_check("Basic Pitch", "basic_pitch"))
+        checks.append(_module_check("BS-RoFormer native backend", "bs_roformer"))
     return PreflightReport(checks)

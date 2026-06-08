@@ -78,6 +78,7 @@ def process_audio_file(
 
     project_source_audio: Path | None = None
     normalized_audio = work_dir / f"{input_stem}.wav"
+    project_manifest_written = False
     try:
         project_source_audio = _copy_source_audio(input_path, audio_dir)
         _raise_if_cancelled(cancelled)
@@ -123,9 +124,6 @@ def process_audio_file(
                 log("Skipping MIDI transcription.")
             zip_path = project_dir / f"{input_stem}_pitchstems.zip" if create_zip else None
 
-        if log:
-            log(f"Done: {zip_path or project_dir}")
-
         result = PipelineResult(
             project_dir=project_dir,
             normalized_audio=normalized_audio,
@@ -144,14 +142,18 @@ def process_audio_file(
             midi_policy=midi_policy,
             create_zip=create_zip,
         )
+        project_manifest_written = True
         if zip_path:
             _zip_project_outputs(project_dir, stems, midi_files, combined_midi, zip_path)
+        if log:
+            log(f"Done: {zip_path or project_dir}")
         return result
     except PipelineCancelledError:
         _remove_new_project_dir(project_dir, output_root)
         raise
     except Exception as exc:
-        save_failed_project_manifest(project_dir, project_source_audio, normalized_audio, str(exc))
+        if not project_manifest_written:
+            save_failed_project_manifest(project_dir, project_source_audio, normalized_audio, str(exc))
         raise
 
 

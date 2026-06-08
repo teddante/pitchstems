@@ -611,6 +611,40 @@ def test_full_pipeline_packages_once_after_final_manifest(tmp_path: Path, monkey
     assert '"zip_path": "source_pitchstems.zip"' in manifest
 
 
+def test_full_pipeline_zip_failure_preserves_success_manifest(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "song.wav"
+    source.write_bytes(b"audio")
+
+    def fake_normalize(_input_path, output_path):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"wav")
+        return output_path
+
+    def fake_separate(_audio_path, stems_dir, **_kwargs):
+        stem_path = stems_dir / "song_bass.wav"
+        stem_path.parent.mkdir(parents=True, exist_ok=True)
+        stem_path.write_bytes(b"stem")
+        return [StemResult("bass", stem_path)]
+
+    monkeypatch.setattr(pipeline, "normalize_to_wav", fake_normalize)
+    monkeypatch.setattr(pipeline, "separate_stems", fake_separate)
+    monkeypatch.setattr(
+        pipeline,
+        "_zip_project_outputs",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("zip failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="zip failed"):
+        pipeline.process_audio_file(source, tmp_path / "out", generate_midi=False, create_zip=True)
+
+    manifests = list((tmp_path / "out").glob("*.pitchstems/pitchstems.project.json"))
+    assert len(manifests) == 1
+    manifest = json.loads(manifests[0].read_text(encoding="utf-8"))
+    assert manifest.get("status") != "failed"
+    assert manifest["stems"] == [{"name": "bass", "stem_id": "bass", "path": "stems/song_bass.wav"}]
+    assert manifest["midi_files"] == []
+
+
 def test_full_pipeline_fails_before_project_creation_when_preflight_fails(
     tmp_path: Path,
     monkeypatch,

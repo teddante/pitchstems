@@ -1,11 +1,14 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from pitchstems.pipeline import PipelineResult
 from pitchstems.project_store import (
     PROJECT_FILENAME,
     load_pipeline_result,
     load_project_manifest,
+    save_failed_project_manifest,
     save_project_manifest,
     _write_json_atomic,
 )
@@ -103,6 +106,20 @@ def test_manifest_saves_and_loads_stem_ids(tmp_path: Path) -> None:
     assert manifest["midi_files"][0]["stem_id"] == "vocals-lead"
     assert loaded.stems == [StemResult("Vocals Lead", stem, "vocals-lead")]
     assert loaded.midi_files == [MidiResult("Vocals Lead", midi, "vocals-lead")]
+
+
+def test_load_pipeline_result_rejects_failed_manifest_with_last_error(tmp_path: Path) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    source = project_dir / "audio" / "song.wav"
+    normalized = project_dir / "work" / "song.wav"
+    source.parent.mkdir(parents=True)
+    normalized.parent.mkdir(parents=True)
+    source.write_bytes(b"source")
+    normalized.write_bytes(b"wav")
+    save_failed_project_manifest(project_dir, source, normalized, "native failed")
+
+    with pytest.raises(ValueError, match="Project processing failed: native failed"):
+        load_pipeline_result(project_dir)
 
 
 def test_write_json_atomic_replaces_existing_manifest_without_temp_file(tmp_path: Path) -> None:

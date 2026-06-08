@@ -87,6 +87,43 @@ def test_editor_project_exposes_query_indexes(tmp_path: Path) -> None:
     assert project.chord_index.gap_at(1.5) == (1.0, 2.0)
 
 
+def test_editor_project_reuses_query_indexes(tmp_path: Path, monkeypatch) -> None:
+    import pitchstems.editor_project as editor_project_module
+
+    note = NoteEvent("piano", 0.0, 1.0, 60, 90)
+    project = EditorProject(
+        project_dir=tmp_path,
+        source_audio=tmp_path / "song.wav",
+        tracks=[EditorTrack("piano", tmp_path / "piano.wav")],
+        notes=[note],
+        chords=[ChordRegion(0.0, 1.0, "C", 0.8)],
+        duration=1.0,
+    )
+    note_index_calls = 0
+    chord_index_calls = 0
+
+    class CountingNoteIndex:
+        def __init__(self, notes):
+            nonlocal note_index_calls
+            note_index_calls += 1
+            self.notes = notes
+
+    class CountingChordIndex:
+        def __init__(self, chords, duration):
+            nonlocal chord_index_calls
+            chord_index_calls += 1
+            self.chords = chords
+            self.duration = duration
+
+    monkeypatch.setattr(editor_project_module, "NoteIndex", CountingNoteIndex)
+    monkeypatch.setattr(editor_project_module, "ChordIndex", CountingChordIndex)
+
+    assert project.note_index is project.note_index
+    assert project.chord_index is project.chord_index
+    assert note_index_calls == 1
+    assert chord_index_calls == 1
+
+
 def test_build_editor_project_skips_missing_or_corrupt_midi(tmp_path: Path) -> None:
     normalized = tmp_path / "work" / "song.wav"
     stem_path = tmp_path / "stems" / "song_bass.wav"

@@ -28,3 +28,29 @@ def test_preflight_reports_cuda_request_without_cuda(monkeypatch) -> None:
 
     assert not report.ok
     assert any(check.name == "PyTorch CUDA" and not check.ok for check in report.checks)
+
+
+def test_preflight_reports_missing_native_ml_packages(monkeypatch) -> None:
+    import importlib.util
+
+    real_find_spec = importlib.util.find_spec
+    monkeypatch.setattr("pitchstems.preflight.require_ffmpeg", lambda: "ffmpeg")
+    monkeypatch.setattr(
+        "pitchstems.preflight.onnxruntime_status",
+        lambda: SimpleNamespace(installed=True, providers=["CPUExecutionProvider"]),
+    )
+
+    def fake_find_spec(module_name: str):
+        if module_name == "basic_pitch":
+            return None
+        if module_name == "bs_roformer":
+            return object()
+        return real_find_spec(module_name)
+
+    monkeypatch.setattr(importlib.util, "find_spec", fake_find_spec)
+
+    report = run_preflight(require_ml=True)
+
+    assert not report.ok
+    assert any(check.name == "Basic Pitch" and not check.ok for check in report.checks)
+    assert any(check.name == "BS-RoFormer native backend" and check.ok for check in report.checks)

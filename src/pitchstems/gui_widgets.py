@@ -81,8 +81,11 @@ class DropZone(QLabel):
         path = Path(urls[0].toLocalFile())
         error = validate_audio_input(path)
         if error:
+            self.path = None
             self.setText(error)
             self.setToolTip(error)
+            if self.on_path_changed:
+                self.on_path_changed(None)
             return
         self.set_audio_file(path)
         if self.on_path_changed:

@@ -174,6 +174,10 @@ def load_pipeline_result(path: Path) -> PipelineResult:
     project_dir = manifest_path.parent
     manifest = _migrate_manifest(_read_json(manifest_path))
     _validate_manifest(manifest_path, manifest)
+    if manifest.get("status") == "failed":
+        last_error = manifest.get("last_error")
+        detail = f": {last_error}" if isinstance(last_error, str) and last_error else ""
+        raise ValueError(f"Project processing failed{detail}")
 
     from pitchstems.pipeline import PipelineResult
 
