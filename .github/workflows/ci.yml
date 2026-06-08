@@ -31,39 +31,8 @@ jobs:
           python -m pip install -U pip
           python -m pip install -e ".[dev,gui]"
 
-      - name: Check Git whitespace
+      - name: Run project checks
         shell: pwsh
-        run: |
-          if ("${{ github.event_name }}" -eq "pull_request") {
-            git diff --check "${{ github.event.pull_request.base.sha }}...HEAD"
-          } elseif ("${{ github.event.before }}" -match "^0+$") {
-            git diff --check HEAD
-          } else {
-            git diff --check "${{ github.event.before }}...HEAD"
-          }
-
-      - name: Lint
-        run: python -m ruff check src tests
-
-      - name: Test
-        run: python -m pytest
-
-      - name: Compile
-        run: python -m compileall src
-
-      - name: Check installed package metadata
-        run: python -m pip check
-
-      - name: GUI smoke
         env:
           QT_QPA_PLATFORM: offscreen
-        run: |
-          @'
-          from PySide6.QtWidgets import QApplication
-          QApplication.exec = lambda self: 0
-          from pitchstems.app import main
-          raise SystemExit(main())
-          '@ | python -
-
-      - name: Build package
-        run: python -m build
+        run: .\scripts\check.ps1 -GuiSmoke -Build
