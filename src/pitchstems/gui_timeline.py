@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
-import re
 
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QColor, QBrush, QFontMetrics, QImage, QPainter, QPen, QPixmap
@@ -9,6 +8,7 @@ from PySide6.QtWidgets import QApplication, QGraphicsScene, QGraphicsView
 
 from pitchstems.editor_project import ChordRegion, EditorProject, midi_note_name
 from pitchstems.gui_track_controls import TRACK_CONTROL_MIN_HEIGHT
+from pitchstems.timeline_chord_geometry import compact_chord_label, snap_seconds_to_timeline_targets
 from pitchstems.time_format import format_time
 
 
@@ -23,12 +23,6 @@ def _track_color(stem_name: str) -> QColor:
         "instrumental": "#14b8a6",
     }
     return QColor(palette.get(stem_name.lower(), "#475569"))
-
-
-def compact_chord_label(label: str) -> str:
-    match = re.match(r"\s*([A-G](?:#|b)?)", label)
-    return match.group(1) if match else label.strip()[:2]
-
 
 class TimelineView(QGraphicsView):
     def __init__(self) -> None:
@@ -1032,21 +1026,16 @@ class TimelineView(QGraphicsView):
     def _snap_seconds(self, seconds: float, ignored_chord: ChordRegion) -> tuple[float, float]:
         if self.project is None:
             return seconds, 0.0
-        threshold = max(0.035, 10 / self.pixels_per_second)
-        targets = [0.0, self.project.duration, self.position]
-        if self.selection_start is not None:
-            targets.append(self.selection_start)
-        if self.selection_end is not None:
-            targets.append(self.selection_end)
-        for chord in self.project.chords:
-            if chord == ignored_chord:
-                continue
-            targets.extend([chord.start, chord.end])
-        nearest = min(targets, key=lambda target: abs(target - seconds), default=seconds)
-        delta = nearest - seconds
-        if abs(delta) <= threshold:
-            return nearest, delta
-        return seconds, 0.0
+        return snap_seconds_to_timeline_targets(
+            seconds=seconds,
+            duration=self.project.duration,
+            position=self.position,
+            selection_start=self.selection_start,
+            selection_end=self.selection_end,
+            chords=self.project.chords,
+            ignored_chord=ignored_chord,
+            pixels_per_second=self.pixels_per_second,
+        )
 
     def _chord_at_event(self, event) -> ChordRegion | None:
         if self.project is None:
@@ -1107,4 +1096,3 @@ class TimelineView(QGraphicsView):
             self.ruler_height <= point_y <= self.chord_height
             or self.ruler_height <= viewport_y <= self.chord_height
         )
-

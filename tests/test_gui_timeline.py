@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 from pitchstems.editor_project import ChordRegion, EditorProject, EditorTrack, NoteEvent  # noqa: E402
 from pitchstems.gui_track_controls import TRACK_CONTROL_MIN_HEIGHT  # noqa: E402
 from pitchstems.gui_timeline import TimelineView, compact_chord_label  # noqa: E402
+from pitchstems.timeline_chord_geometry import snap_seconds_to_timeline_targets  # noqa: E402
 
 
 def _app() -> QApplication:
@@ -88,6 +89,35 @@ def test_tiny_chord_labels_fall_back_to_root_name(tmp_path: Path) -> None:
     assert compact_chord_label("Gmaj9(no3)") == "G"
     assert compact_chord_label("Bb7/D") == "Bb"
     assert view._chord_label_for_width("F#m7b5", 10) == "F#"
+
+
+def test_timeline_chord_geometry_snaps_to_nearby_targets() -> None:
+    ignored = ChordRegion(1.0, 2.0, "C", 0.8)
+    nearby = ChordRegion(2.5, 3.25, "G", 0.8)
+
+    snapped, delta = snap_seconds_to_timeline_targets(
+        seconds=2.47,
+        duration=4.0,
+        position=1.5,
+        selection_start=0.75,
+        selection_end=3.5,
+        chords=[ignored, nearby],
+        ignored_chord=ignored,
+        pixels_per_second=100,
+    )
+
+    assert snapped == 2.5
+    assert delta == pytest.approx(0.03)
+    assert snap_seconds_to_timeline_targets(
+        seconds=2.35,
+        duration=4.0,
+        position=1.5,
+        selection_start=0.75,
+        selection_end=3.5,
+        chords=[ignored, nearby],
+        ignored_chord=ignored,
+        pixels_per_second=100,
+    ) == (2.35, 0.0)
 
 
 def test_chord_drag_preview_draws_lightweight_feedback(tmp_path: Path) -> None:
