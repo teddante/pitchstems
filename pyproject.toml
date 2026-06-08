@@ -79,6 +79,9 @@ python_version = "3.10"
 files = [
   "src/pitchstems/editor_models.py",
   "src/pitchstems/gui_jobs.py",
+  "src/pitchstems/project_store.py",
+  "src/pitchstems/recent_projects.py",
+  "src/pitchstems/time_format.py",
 ]
 warn_unused_configs = true
 disallow_untyped_defs = true

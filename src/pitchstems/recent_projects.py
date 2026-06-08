@@ -6,11 +6,13 @@ from typing import Iterable
 from pitchstems.project_store import PROJECT_FILENAME
 
 
-def normalize_recent_project_paths(value) -> list[Path]:
-    if isinstance(value, str):
+def normalize_recent_project_paths(value: Iterable[object] | str | None) -> list[Path]:
+    if value is None:
+        raw_paths: list[object] = []
+    elif isinstance(value, str):
         raw_paths = [value]
     else:
-        raw_paths = list(value or [])
+        raw_paths = list(value)
     paths: list[Path] = []
     seen: set[str] = set()
     for raw_path in raw_paths:

@@ -7,10 +7,13 @@ import threading
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 from pitchstems.separation import SeparationOptions, StemResult
 from pitchstems.transcription import MidiOptions, MidiResult
+
+if TYPE_CHECKING:
+    from pitchstems.pipeline import PipelineResult
 
 
 PROJECT_FILENAME = "pitchstems.project.json"
@@ -37,7 +40,7 @@ def find_project_manifest(path: Path) -> Path:
 
 
 def save_project_manifest(
-    result,
+    result: PipelineResult,
     separation_options: SeparationOptions | None = None,
     midi_options: MidiOptions | None = None,
     midi_stems: set[str] | None = None,
@@ -128,7 +131,7 @@ def save_project_manifest(
     return manifest_path
 
 
-def load_pipeline_result(path: Path):
+def load_pipeline_result(path: Path) -> PipelineResult:
     manifest_path = find_project_manifest(path)
     project_dir = manifest_path.parent
     manifest = _migrate_manifest(_read_json(manifest_path))
@@ -297,16 +300,16 @@ _MANIFEST_MIGRATIONS: dict[int, ManifestMigration] = {
 }
 
 
-def _dataclass_dict(value) -> dict[str, Any]:
+def _dataclass_dict(value: Any) -> dict[str, Any]:
     if value is None:
         return {}
     if not is_dataclass(value):
         return {}
-    data = asdict(value)
+    data = asdict(cast(Any, value))
     return {key: _jsonable(item) for key, item in data.items() if key != "choice"}
 
 
-def _jsonable(value):
+def _jsonable(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)
     if isinstance(value, tuple):
