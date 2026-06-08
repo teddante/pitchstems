@@ -55,8 +55,52 @@ def test_zip_project_outputs_packages_canonical_assets_without_export_copies(tmp
             "midi/bass.mid",
             "midi/song_combined.mid",
             "pitchstems.project.json",
-            "stems/song_bass.wav",
+            "stems/bass.wav",
         ]
+
+
+def test_midi_rerun_sanitizes_stem_output_names(tmp_path: Path, monkeypatch) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    stem_path = project_dir / "stems" / "unsafe.wav"
+    stem_path.parent.mkdir(parents=True)
+    stem_path.write_bytes(b"stem")
+
+    def fake_transcribe(stem_name, _audio_path, output_dir, **_kwargs):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        midi_path = output_dir / "unsafe.mid"
+        midi_path.write_bytes(b"MThd")
+        return pipeline.MidiResult(stem=stem_name, path=midi_path)
+
+    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", fake_transcribe)
+
+    def fake_combine(_midi, path):
+        path.write_bytes(b"MThd")
+        return path
+
+    monkeypatch.setattr(
+        pipeline,
+        "combine_midi_tracks",
+        fake_combine,
+    )
+
+    result = pipeline.process_midi_from_stems(
+        project_dir=project_dir,
+        input_stem="song",
+        normalized_audio=None,
+        source_audio=stem_path,
+        stems=[pipeline.StemResult(name="../Vocals:Lead", path=stem_path)],
+        midi_policy="all",
+        create_zip=True,
+    )
+
+    assert result.midi_files[0].path.relative_to(project_dir).parts[:2] == (
+        "midi",
+        "vocals-lead",
+    )
+    assert (project_dir / "export" / "vocals-lead.mid").exists()
+    with ZipFile(result.zip_path) as archive:
+        assert "midi/vocals-lead.mid" in archive.namelist()
+        assert all(".." not in Path(name).parts for name in archive.namelist())
 
 
 def test_remove_export_stem_copies_only_deletes_known_duplicate_stems(tmp_path: Path) -> None:

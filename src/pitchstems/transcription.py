@@ -29,6 +29,13 @@ class MidiOptions:
 class MidiResult:
     stem: str
     path: Path
+    stem_id: str | None = None
+
+    @property
+    def safe_key(self) -> str:
+        from pitchstems.separation import safe_stem_key
+
+        return self.stem_id or safe_stem_key(self.stem)
 
 
 class TranscriptionDependencyError(RuntimeError):

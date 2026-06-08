@@ -61,17 +61,48 @@ def test_save_and_load_project_manifest_round_trip(tmp_path: Path) -> None:
     assert manifest_path == project_dir / PROJECT_FILENAME
     assert loaded.project_dir == project_dir
     assert loaded.normalized_audio == normalized
-    assert loaded.stems == [StemResult("bass", stem)]
-    assert loaded.midi_files == [MidiResult("bass", midi)]
+    assert loaded.stems == [StemResult("bass", stem, "bass")]
+    assert loaded.midi_files == [MidiResult("bass", midi, "bass")]
     assert loaded.combined_midi == combined
     assert loaded.zip_path == zip_path
     assert loaded.source_audio == tmp_path / "source.mp3"
+    assert manifest["stems"][0]["stem_id"] == "bass"
+    assert manifest["midi_files"][0]["stem_id"] == "bass"
     assert manifest["editor"]["chord_overrides"] == [
         {"start": 10.0, "end": 12.0, "label": "Gmaj9", "confidence": 0.93}
     ]
     assert manifest["editor"]["chord_removals"] == [{"start": 8.0, "end": 9.5}]
     assert manifest["editor"]["track_analysis_enabled"] == {"bass": True}
     assert manifest["editor"]["notation_spelling"] == "flat"
+
+
+def test_manifest_saves_and_loads_stem_ids(tmp_path: Path) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    normalized = project_dir / "work" / "song.wav"
+    source = project_dir / "audio" / "song.wav"
+    stem = project_dir / "stems" / "vocals.wav"
+    midi = project_dir / "midi" / "vocals-lead" / "x.mid"
+    for path in [normalized, source, stem, midi]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("placeholder", encoding="utf-8")
+    result = PipelineResult(
+        project_dir=project_dir,
+        normalized_audio=normalized,
+        stems=[StemResult("Vocals Lead", stem, "vocals-lead")],
+        midi_files=[MidiResult("Vocals Lead", midi, "vocals-lead")],
+        combined_midi=None,
+        zip_path=None,
+        source_audio=source,
+    )
+
+    save_project_manifest(result)
+    manifest = load_project_manifest(result.project_dir)
+    loaded = load_pipeline_result(result.project_dir)
+
+    assert manifest["stems"][0]["stem_id"] == "vocals-lead"
+    assert manifest["midi_files"][0]["stem_id"] == "vocals-lead"
+    assert loaded.stems == [StemResult("Vocals Lead", stem, "vocals-lead")]
+    assert loaded.midi_files == [MidiResult("Vocals Lead", midi, "vocals-lead")]
 
 
 def test_write_json_atomic_replaces_existing_manifest_without_temp_file(tmp_path: Path) -> None:
@@ -261,6 +292,54 @@ def test_load_project_manifest_rejects_blank_stem_and_midi_names(tmp_path: Path)
         assert "invalid stem entry at index 0" in str(exc)
     else:
         raise AssertionError("Expected blank generated asset name to be rejected")
+
+
+def test_load_project_manifest_rejects_unsafe_stem_and_midi_names(tmp_path: Path) -> None:
+    manifest_path = tmp_path / PROJECT_FILENAME
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "format": "pitchstems-project",
+                "format_version": 2,
+                "normalized_audio": "work/source.wav",
+                "stems": [{"name": "../vocals", "path": "stems/vocals.wav"}],
+                "midi_files": [{"stem": "lead:guitar", "path": "midi/guitar.mid"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        load_project_manifest(manifest_path)
+    except ValueError as exc:
+        assert "unsafe stem name" in str(exc)
+    else:
+        raise AssertionError("Expected unsafe generated asset names to be rejected")
+
+
+def test_load_project_manifest_rejects_names_that_collapse_to_fallback_key(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / PROJECT_FILENAME
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "format": "pitchstems-project",
+                "format_version": 2,
+                "normalized_audio": "work/source.wav",
+                "stems": [{"name": "___", "path": "stems/stem.wav"}],
+                "midi_files": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        load_project_manifest(manifest_path)
+    except ValueError as exc:
+        assert "unsafe stem name" in str(exc)
+    else:
+        raise AssertionError("Expected fallback-only generated asset name to be rejected")
 
 
 def test_load_project_manifest_rejects_malformed_optional_paths(tmp_path: Path) -> None:

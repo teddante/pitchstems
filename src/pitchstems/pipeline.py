@@ -187,21 +187,21 @@ def process_midi_from_stems(
             midi = transcribe_stem_to_midi(
                 stem.name,
                 stem.path,
-                staged_midi_dir / stem.name,
+                staged_midi_dir / stem.safe_key,
                 skip_percussion=skip_percussion,
                 options=midi_options,
                 log=log,
             )
             if midi:
-                midi_files.append(midi)
+                midi_files.append(MidiResult(midi.stem, midi.path, stem.safe_key))
             _raise_if_cancelled(cancelled)
 
         staged_combined_midi = combine_midi_tracks(midi_files, staged_export_dir / f"{input_stem}_combined.mid")
         for midi in midi_files:
-            shutil.copy2(midi.path, staged_export_dir / f"{midi.stem}.mid")
+            shutil.copy2(midi.path, staged_export_dir / f"{midi.safe_key}.mid")
 
         final_midi_files = [
-            MidiResult(midi.stem, midi_dir / midi.path.relative_to(staged_midi_dir))
+            MidiResult(midi.stem, midi_dir / midi.path.relative_to(staged_midi_dir), midi.safe_key)
             for midi in midi_files
         ]
         combined_midi = None
@@ -210,7 +210,7 @@ def process_midi_from_stems(
         staged_export_paths = list(staged_export_dir.iterdir())
 
         generated_export_midi = {f"{input_stem}_combined.mid"} | {
-            f"{stem.name}.mid"
+            f"{stem.safe_key}.mid"
             for stem in stems
         }
         _raise_if_cancelled(cancelled)
@@ -320,10 +320,10 @@ def _zip_project_outputs(
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
         for stem in stems:
             if stem.path.is_file():
-                archive.write(stem.path, Path("stems") / stem.path.name)
+                archive.write(stem.path, Path("stems") / f"{stem.safe_key}{stem.path.suffix.lower() or '.wav'}")
         for midi in midi_files:
             if midi.path.is_file():
-                archive.write(midi.path, Path("midi") / f"{midi.stem}.mid")
+                archive.write(midi.path, Path("midi") / f"{midi.safe_key}.mid")
         if combined_midi and combined_midi.is_file():
             archive.write(combined_midi, Path("midi") / combined_midi.name)
         manifest = project_dir / "pitchstems.project.json"

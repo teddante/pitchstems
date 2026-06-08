@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, cast
 
-from pitchstems.separation import SeparationOptions, StemResult
+from pitchstems.separation import SeparationOptions, StemResult, safe_stem_key
 from pitchstems.transcription import MidiOptions, MidiResult
 
 if TYPE_CHECKING:
@@ -75,11 +75,19 @@ def save_project_manifest(
             "source_audio": _relative_or_absolute(project_dir, source_audio),
             "normalized_audio": _relative_or_absolute(project_dir, result.normalized_audio),
             "stems": [
-                {"name": stem.name, "path": _relative_or_absolute(project_dir, stem.path)}
+                {
+                    "name": stem.name,
+                    "stem_id": stem.safe_key,
+                    "path": _relative_or_absolute(project_dir, stem.path),
+                }
                 for stem in result.stems
             ],
             "midi_files": [
-                {"stem": midi.stem, "path": _relative_or_absolute(project_dir, midi.path)}
+                {
+                    "stem": midi.stem,
+                    "stem_id": midi.safe_key,
+                    "path": _relative_or_absolute(project_dir, midi.path),
+                }
                 for midi in result.midi_files
             ],
             "combined_midi": _relative_or_absolute(project_dir, result.combined_midi),
@@ -143,11 +151,19 @@ def load_pipeline_result(path: Path) -> PipelineResult:
         project_dir=project_dir,
         normalized_audio=_resolve_project_path(project_dir, manifest.get("normalized_audio")),
         stems=[
-            StemResult(name=item["name"], path=_resolve_project_path(project_dir, item["path"]))
+            StemResult(
+                name=item["name"],
+                path=_resolve_project_path(project_dir, item["path"]),
+                stem_id=item.get("stem_id"),
+            )
             for item in manifest.get("stems", [])
         ],
         midi_files=[
-            MidiResult(stem=item["stem"], path=_resolve_project_path(project_dir, item["path"]))
+            MidiResult(
+                stem=item["stem"],
+                path=_resolve_project_path(project_dir, item["path"]),
+                stem_id=item.get("stem_id"),
+            )
             for item in manifest.get("midi_files", [])
         ],
         combined_midi=_optional_project_path(project_dir, manifest.get("combined_midi")),
@@ -190,6 +206,7 @@ def _validate_manifest(path: Path, manifest: dict[str, Any]) -> None:
             or not _non_empty_string(item.get("path"))
         ):
             raise ValueError(f"{path} has an invalid stem entry at index {index}")
+        _validate_safe_display_name(path, item["name"], "stem name")
         _validate_project_path_value(path, project_dir, item["path"], f"stems[{index}].path")
     for index, item in enumerate(manifest.get("midi_files", [])):
         if (
@@ -198,6 +215,7 @@ def _validate_manifest(path: Path, manifest: dict[str, Any]) -> None:
             or not _non_empty_string(item.get("path"))
         ):
             raise ValueError(f"{path} has an invalid MIDI entry at index {index}")
+        _validate_safe_display_name(path, item["stem"], "MIDI stem name")
         _validate_project_path_value(path, project_dir, item["path"], f"midi_files[{index}].path")
     _validate_project_path_value(path, project_dir, manifest["normalized_audio"], "normalized_audio")
     for field_name in ("source_audio", "combined_midi", "zip_path"):
@@ -241,6 +259,19 @@ def _validate_project_path_value(
 
 def _non_empty_string(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip())
+
+
+def _validate_safe_display_name(path: Path, value: str, label: str) -> None:
+    invalid_characters = set('<>:"/\\|?*')
+    key = safe_stem_key(value)
+    if (
+        not value.strip()
+        or value in {".", ".."}
+        or any(part in {".", ".."} for part in Path(value).parts)
+        or any(character in invalid_characters or ord(character) < 32 for character in value)
+        or (key == "stem" and value.strip().lower() != "stem")
+    ):
+        raise ValueError(f"{path} has unsafe {label}: {value}")
 
 
 def _migrate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:

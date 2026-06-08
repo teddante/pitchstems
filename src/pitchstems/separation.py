@@ -63,6 +63,25 @@ class SeparationOptions:
 class StemResult:
     name: str
     path: Path
+    stem_id: str | None = None
+
+    @property
+    def safe_key(self) -> str:
+        return self.stem_id or safe_stem_key(self.name)
+
+
+def safe_stem_key(value: str) -> str:
+    cleaned = []
+    previous_dash = False
+    for character in value.strip().lower():
+        if character.isalnum():
+            cleaned.append(character)
+            previous_dash = False
+        elif not previous_dash:
+            cleaned.append("-")
+            previous_dash = True
+    key = "".join(cleaned).strip("-")
+    return key or "stem"
 
 
 class SeparationDependencyError(RuntimeError):
