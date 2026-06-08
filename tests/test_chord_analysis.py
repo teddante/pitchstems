@@ -26,3 +26,15 @@ def test_detect_chords_returns_shared_chord_region_type() -> None:
 
     assert chords
     assert isinstance(chords[0], ChordRegion)
+
+
+def test_chord_naming_module_exposes_public_helpers() -> None:
+    from pitchstems.chord_naming import (
+        chord_pitch_classes_for_label,
+        chord_tones_for_label,
+        display_chord_label,
+    )
+
+    assert display_chord_label("Cmaj7") == "Cmaj7"
+    assert chord_pitch_classes_for_label("Cmaj7") == [0, 4, 7, 11]
+    assert chord_tones_for_label("Cmaj7") == ["C", "E", "G", "B"]
