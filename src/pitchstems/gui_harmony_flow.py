@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pitchstems.editor_project import active_notes_at, analyze_chord_at, analyze_chord_region
+from pitchstems.editor_project import analyze_chord_at, analyze_chord_region
 from pitchstems.harmony_inspector import (
     chord_base_pitch_weights as inspector_chord_base_pitch_weights,
     chord_note_constraints as inspector_chord_note_constraints,
@@ -56,8 +56,10 @@ def refresh_current_harmony(window, seconds: float) -> None:
     if selection is not None:
         start, end = selection
         required, excluded = window.chord_note_constraints()
+        overlapping_notes = set(window.editor_project.note_index.overlapping(start, end))
+        region_analysis_notes = [note for note in analysis_notes if note in overlapping_notes]
         analysis = analyze_chord_region(
-            analysis_notes,
+            region_analysis_notes,
             start,
             end,
             required_pitch_classes=required,
@@ -90,14 +92,16 @@ def refresh_current_harmony(window, seconds: float) -> None:
         return
 
     required, excluded = window.chord_note_constraints()
+    active_index_notes = set(window.editor_project.note_index.active_at(seconds))
+    point_analysis_notes = [note for note in analysis_notes if note in active_index_notes]
     analysis = analyze_chord_at(
-        analysis_notes,
+        point_analysis_notes,
         seconds,
         required_pitch_classes=required,
         excluded_pitch_classes=excluded,
         scoring_options=scoring_options,
     )
-    active_notes = active_notes_at(analysis_notes, seconds)
+    active_notes = sorted(point_analysis_notes, key=lambda note: (note.pitch, note.stem))
     window.refresh_current_theory(source_notes, seconds)
     chord = window.display_chord(analysis.label)
     window.current_chord.setText(f"Harmony: {chord}  (score {analysis.confidence:.0%})")

@@ -950,26 +950,7 @@ def main() -> int:
                 if end - start >= 0.05:
                     return start, end
                 return None
-            position = self.timeline.position
-            sorted_chords = sorted(self.editor_project.chords, key=lambda chord: (chord.start, chord.end))
-            for chord in sorted_chords:
-                if chord.start <= position < chord.end:
-                    return None
-            previous = max(
-                (chord for chord in sorted_chords if chord.end <= position),
-                key=lambda chord: chord.end,
-                default=None,
-            )
-            next_chord = min(
-                (chord for chord in sorted_chords if chord.start >= position),
-                key=lambda chord: chord.start,
-                default=None,
-            )
-            start = previous.end if previous is not None else 0.0
-            end = next_chord.start if next_chord is not None else self.editor_project.duration
-            if end - start < 0.05:
-                return None
-            return start, end
+            return self.editor_project.chord_index.gap_at(self.timeline.position)
 
         def set_gap_analysis(self, analysis: ChordGapAnalysis | None) -> None:
             harmony_panel.set_gap_analysis(self, analysis)

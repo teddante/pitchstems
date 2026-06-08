@@ -5,7 +5,10 @@ from mido import Message, MetaMessage, MidiFile, MidiTrack
 import pytest
 
 from pitchstems.editor_project import (
+    ChordRegion,
     ChordScoringOptions,
+    EditorProject,
+    EditorTrack,
     NoteEvent,
     active_notes_at,
     analyze_chord,
@@ -63,6 +66,25 @@ def test_build_editor_project_uses_audio_duration_when_midi_is_empty(tmp_path: P
     assert project.duration == 2.25
     assert project.tracks[0].audio_path == stem_path
     assert project.notes == []
+
+
+def test_editor_project_exposes_query_indexes(tmp_path: Path) -> None:
+    note = NoteEvent("piano", 0.0, 1.0, 60, 90)
+    chords = [
+        ChordRegion(0.0, 1.0, "C", 0.8),
+        ChordRegion(2.0, 3.0, "G", 0.8),
+    ]
+    project = EditorProject(
+        project_dir=tmp_path,
+        source_audio=tmp_path / "song.wav",
+        tracks=[EditorTrack("piano", tmp_path / "piano.wav")],
+        notes=[note],
+        chords=chords,
+        duration=4.0,
+    )
+
+    assert project.note_index.active_at(0.5) == [note]
+    assert project.chord_index.gap_at(1.5) == (1.0, 2.0)
 
 
 def test_build_editor_project_skips_missing_or_corrupt_midi(tmp_path: Path) -> None:

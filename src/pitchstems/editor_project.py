@@ -31,6 +31,7 @@ from pitchstems.chord_analysis import (
     partial_harmony_hints,
 )
 from pitchstems.editor_models import ChordRegion, NoteEvent
+from pitchstems.editor_query import ChordIndex, NoteIndex
 from pitchstems.pipeline import PipelineResult
 
 
@@ -82,6 +83,14 @@ class EditorProject:
     notes: list[NoteEvent]
     chords: list[ChordRegion]
     duration: float
+
+    @property
+    def note_index(self) -> NoteIndex:
+        return NoteIndex(self.notes)
+
+    @property
+    def chord_index(self) -> ChordIndex:
+        return ChordIndex(self.chords, self.duration)
 
 
 def build_editor_project(result: PipelineResult) -> EditorProject:

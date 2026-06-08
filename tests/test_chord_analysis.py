@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from pitchstems.chord_analysis import (
+    analyze_chord_region,
     analyze_chord,
     chord_tones_for_label,
     detect_chords,
     midi_note_name,
 )
+from pitchstems.editor_models import NoteEvent
 
 
 def test_chord_analysis_module_exposes_core_chord_helpers() -> None:
@@ -38,3 +40,18 @@ def test_chord_naming_module_exposes_public_helpers() -> None:
     assert display_chord_label("Cmaj7") == "Cmaj7"
     assert chord_pitch_classes_for_label("Cmaj7") == [0, 4, 7, 11]
     assert chord_tones_for_label("Cmaj7") == ["C", "E", "G", "B"]
+
+
+def test_weighted_chord_analysis_keeps_existing_cmaj7_behavior() -> None:
+    notes = [
+        NoteEvent("piano", 0.0, 1.0, 60, 100),
+        NoteEvent("piano", 0.0, 1.0, 64, 90),
+        NoteEvent("piano", 0.0, 1.0, 67, 90),
+        NoteEvent("piano", 0.0, 1.0, 71, 70),
+    ]
+
+    analysis = analyze_chord_region(notes, 0.0, 1.0)
+
+    assert analysis.label == "Cmaj7"
+    assert analysis.candidates[0][0] == "Cmaj7"
+    assert analysis.candidate_explanations["Cmaj7"]
