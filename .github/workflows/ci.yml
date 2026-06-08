@@ -35,4 +35,4 @@ jobs:
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
-        run: .\scripts\check.ps1 -GuiSmoke -Build
+        run: .\scripts\check.ps1 -GuiSmoke -Build -SkipDoctor

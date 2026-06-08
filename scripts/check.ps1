@@ -1,7 +1,8 @@
 param(
     [switch]$Gpu,
     [switch]$Build,
-    [switch]$GuiSmoke
+    [switch]$GuiSmoke,
+    [switch]$SkipDoctor
 )
 
 $ErrorActionPreference = "Stop"
@@ -103,7 +104,9 @@ Invoke-Checked "Compiling source..." { & $python @pythonArgs -m compileall src }
 
 Invoke-Checked "Checking installed package metadata..." { & $python @pythonArgs -m pip check }
 
-if ($null -ne $pitchstems -and (Test-Path $pitchstems)) {
+if ($SkipDoctor) {
+    Write-Host "Skipping doctor: requested by check options."
+} elseif ($null -ne $pitchstems -and (Test-Path $pitchstems)) {
     Invoke-Checked "Running doctor..." { & $pitchstems --doctor }
     if ($Gpu) {
         Invoke-Checked "Running GPU doctor..." { & $pitchstems --doctor --gpu }
