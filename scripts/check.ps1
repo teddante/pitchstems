@@ -6,14 +6,32 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$python = Join-Path $PSScriptRoot "..\.venv\Scripts\python.exe"
-$pitchstems = Join-Path $PSScriptRoot "..\.venv\Scripts\pitchstems.exe"
+$venvPython = Join-Path $PSScriptRoot "..\.venv\Scripts\python.exe"
+$venvPitchstems = Join-Path $PSScriptRoot "..\.venv\Scripts\pitchstems.exe"
 
-if (-not (Test-Path $python)) {
-    $python = "py"
-    $pythonArgs = @("-3.10")
-} else {
+if (Test-Path $venvPython) {
+    $python = $venvPython
     $pythonArgs = @()
+} else {
+    $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
+    if ($null -ne $pythonCommand) {
+        $python = $pythonCommand.Source
+        $pythonArgs = @()
+    } else {
+        $python = "py"
+        $pythonArgs = @("-3.10")
+    }
+}
+
+if (Test-Path $venvPitchstems) {
+    $pitchstems = $venvPitchstems
+} else {
+    $pitchstemsCommand = Get-Command pitchstems -ErrorAction SilentlyContinue
+    if ($null -ne $pitchstemsCommand) {
+        $pitchstems = $pitchstemsCommand.Source
+    } else {
+        $pitchstems = $null
+    }
 }
 
 function Invoke-Checked {
@@ -82,7 +100,7 @@ Invoke-Checked "Compiling source..." { & $python @pythonArgs -m compileall src }
 
 Invoke-Checked "Checking installed package metadata..." { & $python @pythonArgs -m pip check }
 
-if (Test-Path $pitchstems) {
+if ($null -ne $pitchstems -and (Test-Path $pitchstems)) {
     Invoke-Checked "Running doctor..." { & $pitchstems --doctor }
     if ($Gpu) {
         Invoke-Checked "Running GPU doctor..." { & $pitchstems --doctor --gpu }
