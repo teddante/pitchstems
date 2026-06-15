@@ -13,6 +13,7 @@ from pitchstems.editor_loader import EditorLoadResult
 from pitchstems.pipeline import PipelineResult
 from pitchstems.project_store import save_project_manifest
 from pitchstems.separation import StemResult
+from pitchstems.harmony_report import current_chord_analysis_report
 from pitchstems.transcription import MidiResult
 
 
@@ -90,7 +91,7 @@ def run_project_smoke(window) -> None:
     window.chord_list.setCurrentRow(0)
     window.assign_selected_chord_to_selection()
     _assert(bool(window.manual_chords), "assign chord from inspector to timeline selection")
-    report = window.current_chord_analysis_report()
+    report = current_chord_analysis_report(window)
     _assert("Harmony Inspector Calculation" in report, "harmony report title")
     _assert("MIDI Energy Evidence" in report, "harmony report evidence section")
     note_item = window.note_filter_list.item(0)

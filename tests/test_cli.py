@@ -8,14 +8,7 @@ from pitchstems.pipeline import PipelineResult
 from pitchstems.separation import SeparationOptions
 
 
-def test_cli_quality_reaches_pipeline_without_default_separation_options(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    source = tmp_path / "song.wav"
-    source.write_bytes(b"RIFF")
-    captured: dict[str, object] = {}
-
+def _capture_process_audio_file(captured: dict[str, object]):
     def fake_process_audio_file(audio_file: Path, output_dir: Path, **kwargs):
         captured.update(kwargs)
         return PipelineResult(
@@ -28,7 +21,18 @@ def test_cli_quality_reaches_pipeline_without_default_separation_options(
             source_audio=audio_file,
         )
 
-    monkeypatch.setattr(cli, "process_audio_file", fake_process_audio_file)
+    return fake_process_audio_file
+
+
+def test_cli_quality_reaches_pipeline_without_default_separation_options(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "song.wav"
+    source.write_bytes(b"RIFF")
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(cli, "process_audio_file", _capture_process_audio_file(captured))
     monkeypatch.setattr(sys, "argv", ["pitchstems", str(source), "--quality", "song-6-stem"])
 
     assert cli.main() == 0
@@ -42,19 +46,7 @@ def test_cli_explicit_model_builds_separation_options(monkeypatch, tmp_path: Pat
     source.write_bytes(b"RIFF")
     captured: dict[str, object] = {}
 
-    def fake_process_audio_file(audio_file: Path, output_dir: Path, **kwargs):
-        captured.update(kwargs)
-        return PipelineResult(
-            project_dir=output_dir / "song.pitchstems",
-            normalized_audio=output_dir / "song.pitchstems" / "work" / "song.wav",
-            stems=[],
-            midi_files=[],
-            combined_midi=None,
-            zip_path=None,
-            source_audio=audio_file,
-        )
-
-    monkeypatch.setattr(cli, "process_audio_file", fake_process_audio_file)
+    monkeypatch.setattr(cli, "process_audio_file", _capture_process_audio_file(captured))
     monkeypatch.setattr(sys, "argv", ["pitchstems", str(source), "--model", "bs_roformer_sw"])
 
     assert cli.main() == 0

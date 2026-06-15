@@ -32,6 +32,38 @@ def _pass_pipeline_preflight(monkeypatch) -> None:
     )
 
 
+def _write_file(path: Path, content: bytes = b"placeholder") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+    return path
+
+
+def _fake_normalize(_input_path, output_path):
+    return _write_file(output_path, b"wav")
+
+
+def _fake_separate(
+    _audio_path,
+    output_dir,
+    **_kwargs,
+) -> list[StemResult]:
+    return [StemResult("bass", _write_file(output_dir / "source_bass.wav", b"stem"))]
+
+
+def _fake_song_separate(
+    _audio_path,
+    output_dir,
+    **_kwargs,
+) -> list[StemResult]:
+    return [StemResult("bass", _write_file(output_dir / "song_bass.wav", b"stem"))]
+
+
+def _fake_transcribe(stem_name, _audio_path, output_dir, **_kwargs):
+    midi_path = output_dir / f"{stem_name}.mid"
+    _write_midi(midi_path, 40)
+    return MidiResult(stem_name, midi_path)
+
+
 def test_zip_project_outputs_packages_canonical_assets_without_export_copies(tmp_path: Path) -> None:
     project_dir = tmp_path / "song.pitchstems"
     stems_dir = project_dir / "stems"
@@ -168,12 +200,7 @@ def test_midi_rerun_zip_includes_current_manifest(tmp_path: Path, monkeypatch) -
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"placeholder")
 
-    def fake_transcribe(stem_name, _audio_path, output_dir, **_kwargs):
-        midi_path = output_dir / f"{stem_name}.mid"
-        _write_midi(midi_path, 40)
-        return MidiResult(stem_name, midi_path)
-
-    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", fake_transcribe)
+    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", _fake_transcribe)
 
     result = process_midi_from_stems(
         project_dir=project_dir,
@@ -212,12 +239,7 @@ def test_midi_rerun_result_preserves_existing_source_audio(tmp_path: Path, monke
         )
     )
 
-    def fake_transcribe(stem_name, _audio_path, output_dir, **_kwargs):
-        midi_path = output_dir / f"{stem_name}.mid"
-        _write_midi(midi_path, 40)
-        return MidiResult(stem_name, midi_path)
-
-    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", fake_transcribe)
+    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", _fake_transcribe)
 
     result = process_midi_from_stems(
         project_dir=project_dir,
@@ -354,12 +376,7 @@ def test_midi_rerun_keeps_unrelated_export_midi_files(tmp_path: Path, monkeypatc
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"old")
 
-    def fake_transcribe(stem_name, _audio_path, output_dir, **_kwargs):
-        midi_path = output_dir / f"{stem_name}.mid"
-        _write_midi(midi_path, 40)
-        return MidiResult(stem_name, midi_path)
-
-    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", fake_transcribe)
+    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", _fake_transcribe)
 
     result = process_midi_from_stems(
         project_dir=project_dir,
@@ -384,12 +401,7 @@ def test_midi_rerun_clears_stale_midi_preview_cache(tmp_path: Path, monkeypatch)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"old")
 
-    def fake_transcribe(stem_name, _audio_path, output_dir, **_kwargs):
-        midi_path = output_dir / f"{stem_name}.mid"
-        _write_midi(midi_path, 40)
-        return MidiResult(stem_name, midi_path)
-
-    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", fake_transcribe)
+    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", _fake_transcribe)
 
     process_midi_from_stems(
         project_dir=project_dir,
@@ -413,11 +425,6 @@ def test_midi_rerun_does_not_fail_if_preview_cache_cleanup_is_locked(
     stem_path.parent.mkdir(parents=True, exist_ok=True)
     stem_path.write_bytes(b"old")
 
-    def fake_transcribe(stem_name, _audio_path, output_dir, **_kwargs):
-        midi_path = output_dir / f"{stem_name}.mid"
-        _write_midi(midi_path, 40)
-        return MidiResult(stem_name, midi_path)
-
     real_remove_staging_dir = pipeline._remove_staging_dir
 
     def locked_preview_cache(path, project_root=None):
@@ -425,7 +432,7 @@ def test_midi_rerun_does_not_fail_if_preview_cache_cleanup_is_locked(
             raise PermissionError("preview in use")
         return real_remove_staging_dir(path, project_root)
 
-    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", fake_transcribe)
+    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", _fake_transcribe)
     monkeypatch.setattr(pipeline, "_remove_staging_dir", locked_preview_cache)
 
     result = process_midi_from_stems(
@@ -449,12 +456,7 @@ def test_midi_rerun_cancellation_preserves_existing_outputs(tmp_path: Path, monk
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"old")
 
-    def fake_transcribe(stem_name, _audio_path, output_dir, **_kwargs):
-        midi_path = output_dir / f"{stem_name}.mid"
-        _write_midi(midi_path, 40)
-        return MidiResult(stem_name, midi_path)
-
-    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", fake_transcribe)
+    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", _fake_transcribe)
 
     with pytest.raises(pipeline.PipelineCancelledError):
         process_midi_from_stems(
@@ -532,11 +534,6 @@ def test_midi_rerun_restores_previous_outputs_if_replacement_fails(
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"old")
 
-    def fake_transcribe(stem_name, _audio_path, output_dir, **_kwargs):
-        midi_path = output_dir / f"{stem_name}.mid"
-        _write_midi(midi_path, 40)
-        return MidiResult(stem_name, midi_path)
-
     real_move = pipeline.shutil.move
 
     def flaky_move(source, destination, *args, **kwargs):
@@ -544,7 +541,7 @@ def test_midi_rerun_restores_previous_outputs_if_replacement_fails(
             raise OSError("simulated replace failure")
         return real_move(source, destination, *args, **kwargs)
 
-    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", fake_transcribe)
+    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", _fake_transcribe)
     monkeypatch.setattr(pipeline.shutil, "move", flaky_move)
 
     try:
@@ -573,22 +570,6 @@ def test_full_pipeline_packages_once_after_final_manifest(tmp_path: Path, monkey
     input_path.write_bytes(b"audio")
     zip_calls = 0
 
-    def fake_normalize(_input_path, output_path):
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(b"wav")
-        return output_path
-
-    def fake_separate(_audio_path, output_dir, **_kwargs):
-        stem_path = output_dir / "source_bass.wav"
-        stem_path.parent.mkdir(parents=True, exist_ok=True)
-        stem_path.write_bytes(b"stem")
-        return [StemResult("bass", stem_path)]
-
-    def fake_transcribe(stem_name, _audio_path, output_dir, **_kwargs):
-        midi_path = output_dir / f"{stem_name}.mid"
-        _write_midi(midi_path, 40)
-        return MidiResult(stem_name, midi_path)
-
     real_zip_project_outputs = pipeline._zip_project_outputs
 
     def counting_zip(*args, **kwargs):
@@ -596,9 +577,9 @@ def test_full_pipeline_packages_once_after_final_manifest(tmp_path: Path, monkey
         zip_calls += 1
         return real_zip_project_outputs(*args, **kwargs)
 
-    monkeypatch.setattr(pipeline, "normalize_to_wav", fake_normalize)
-    monkeypatch.setattr(pipeline, "separate_stems", fake_separate)
-    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", fake_transcribe)
+    monkeypatch.setattr(pipeline, "normalize_to_wav", _fake_normalize)
+    monkeypatch.setattr(pipeline, "separate_stems", _fake_separate)
+    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", _fake_transcribe)
     monkeypatch.setattr(pipeline, "_zip_project_outputs", counting_zip)
 
     result = process_audio_file(input_path, tmp_path / "out", midi_stems={"bass"}, create_zip=True)
@@ -615,19 +596,8 @@ def test_full_pipeline_zip_failure_preserves_success_manifest(tmp_path: Path, mo
     source = tmp_path / "song.wav"
     source.write_bytes(b"audio")
 
-    def fake_normalize(_input_path, output_path):
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(b"wav")
-        return output_path
-
-    def fake_separate(_audio_path, stems_dir, **_kwargs):
-        stem_path = stems_dir / "song_bass.wav"
-        stem_path.parent.mkdir(parents=True, exist_ok=True)
-        stem_path.write_bytes(b"stem")
-        return [StemResult("bass", stem_path)]
-
-    monkeypatch.setattr(pipeline, "normalize_to_wav", fake_normalize)
-    monkeypatch.setattr(pipeline, "separate_stems", fake_separate)
+    monkeypatch.setattr(pipeline, "normalize_to_wav", _fake_normalize)
+    monkeypatch.setattr(pipeline, "separate_stems", _fake_song_separate)
     monkeypatch.setattr(
         pipeline,
         "_zip_project_outputs",
@@ -671,12 +641,7 @@ def test_failed_full_pipeline_writes_failed_manifest(tmp_path: Path, monkeypatch
     source = tmp_path / "song.wav"
     source.write_bytes(b"audio")
 
-    def fake_normalize(_input_path, output_path):
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(b"wav")
-        return output_path
-
-    monkeypatch.setattr(pipeline, "normalize_to_wav", fake_normalize)
+    monkeypatch.setattr(pipeline, "normalize_to_wav", _fake_normalize)
     monkeypatch.setattr(
         pipeline,
         "separate_stems",
@@ -701,20 +666,13 @@ def test_full_pipeline_cancellation_removes_partial_new_project(
     input_path.write_bytes(b"audio")
     should_cancel = False
 
-    def fake_normalize(_input_path, output_path):
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(b"wav")
-        return output_path
-
     def fake_separate(_audio_path, output_dir, **_kwargs):
         nonlocal should_cancel
-        stem_path = output_dir / "source_bass.wav"
-        stem_path.parent.mkdir(parents=True, exist_ok=True)
-        stem_path.write_bytes(b"stem")
+        stem_path = _write_file(output_dir / "source_bass.wav", b"stem")
         should_cancel = True
         return [StemResult("bass", stem_path)]
 
-    monkeypatch.setattr(pipeline, "normalize_to_wav", fake_normalize)
+    monkeypatch.setattr(pipeline, "normalize_to_wav", _fake_normalize)
     monkeypatch.setattr(pipeline, "separate_stems", fake_separate)
 
     with pytest.raises(pipeline.PipelineCancelledError):
@@ -737,19 +695,8 @@ def test_full_pipeline_logs_deferred_cancellation_boundary(
     input_path.write_bytes(b"audio")
     messages: list[str] = []
 
-    def fake_normalize(_input_path, output_path):
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(b"wav")
-        return output_path
-
-    def fake_separate(_audio_path, output_dir, **_kwargs):
-        stem_path = output_dir / "source_bass.wav"
-        stem_path.parent.mkdir(parents=True, exist_ok=True)
-        stem_path.write_bytes(b"stem")
-        return [StemResult("bass", stem_path)]
-
-    monkeypatch.setattr(pipeline, "normalize_to_wav", fake_normalize)
-    monkeypatch.setattr(pipeline, "separate_stems", fake_separate)
+    monkeypatch.setattr(pipeline, "normalize_to_wav", _fake_normalize)
+    monkeypatch.setattr(pipeline, "separate_stems", _fake_separate)
 
     process_audio_file(
         input_path,
@@ -780,19 +727,8 @@ def test_pipeline_uses_bounded_safe_names_for_long_audio_files(tmp_path: Path, m
     input_path = tmp_path / f"{long_stem}.mp3"
     input_path.write_bytes(b"audio")
 
-    def fake_normalize(_input_path, output_path):
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(b"wav")
-        return output_path
-
-    def fake_separate(_audio_path, output_dir, **_kwargs):
-        stem_path = output_dir / "source_bass.wav"
-        stem_path.parent.mkdir(parents=True, exist_ok=True)
-        stem_path.write_bytes(b"stem")
-        return [StemResult("bass", stem_path)]
-
-    monkeypatch.setattr(pipeline, "normalize_to_wav", fake_normalize)
-    monkeypatch.setattr(pipeline, "separate_stems", fake_separate)
+    monkeypatch.setattr(pipeline, "normalize_to_wav", _fake_normalize)
+    monkeypatch.setattr(pipeline, "separate_stems", _fake_separate)
 
     result = process_audio_file(input_path, tmp_path / "out", generate_midi=False, create_zip=True)
     safe_stem = _safe_stem(input_path.stem)

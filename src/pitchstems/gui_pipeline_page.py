@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 
 from pitchstems.gui_helpers import section_label
 from pitchstems.gui_layout_policy import PipelineLayoutPolicy
-from pitchstems.transcription import DEFAULT_MIDI_OPTIONS
+from pitchstems.transcription import midi_option_spec
 
 
 def build_pipeline_page(window) -> QWidget:
@@ -107,48 +107,13 @@ def build_pipeline_page(window) -> QWidget:
     midi_grid = QGridLayout()
     midi_grid.setHorizontalSpacing(10)
     midi_grid.setVerticalSpacing(5)
-    grid_control(
-        midi_grid,
-        0,
-        0,
-        "Note starts",
-        f"default {DEFAULT_MIDI_OPTIONS.onset_threshold:.2f}",
-        window.onset_threshold,
-    )
-    grid_control(
-        midi_grid,
-        0,
-        1,
-        "Sustained notes",
-        f"default {DEFAULT_MIDI_OPTIONS.frame_threshold:.2f}",
-        window.frame_threshold,
-    )
-    grid_control(
-        midi_grid,
-        1,
-        0,
-        "Minimum note",
-        f"default {DEFAULT_MIDI_OPTIONS.minimum_note_length:g} ms",
-        window.minimum_note_length,
-    )
-    grid_control(
-        midi_grid,
-        1,
-        1,
-        "MIDI tempo",
-        f"default {DEFAULT_MIDI_OPTIONS.midi_tempo:g}",
-        window.midi_tempo,
-    )
-    grid_control(midi_grid, 2, 0, "Lowest note", "default off", window.minimum_frequency)
-    grid_control(midi_grid, 2, 1, "Highest note", "default off", window.maximum_frequency)
-    grid_control(
-        midi_grid,
-        3,
-        0,
-        "Check audio rate",
-        f"default {DEFAULT_MIDI_OPTIONS.sonification_samplerate:g}",
-        window.sonification_samplerate,
-    )
+    midi_grid_control(midi_grid, 0, 0, "onset_threshold", window.onset_threshold)
+    midi_grid_control(midi_grid, 0, 1, "frame_threshold", window.frame_threshold)
+    midi_grid_control(midi_grid, 1, 0, "minimum_note_length", window.minimum_note_length)
+    midi_grid_control(midi_grid, 1, 1, "midi_tempo", window.midi_tempo)
+    midi_grid_control(midi_grid, 2, 0, "minimum_frequency", window.minimum_frequency)
+    midi_grid_control(midi_grid, 2, 1, "maximum_frequency", window.maximum_frequency)
+    midi_grid_control(midi_grid, 3, 0, "sonification_samplerate", window.sonification_samplerate)
     midi_settings_layout.addLayout(midi_grid)
 
     midi_checks = QGridLayout()
@@ -205,6 +170,12 @@ def build_pipeline_page(window) -> QWidget:
     pipeline_page = QWidget()
     pipeline_page.setLayout(pipeline_layout)
     return pipeline_page
+
+
+def midi_grid_control(layout: QGridLayout, row: int, column: int, field: str, widget: QWidget) -> None:
+    spec = midi_option_spec(field)
+    grid_control(layout, row, column, spec.label, spec.default_hint(), widget)
+
 
 def grid_control(layout: QGridLayout, row: int, column: int, label: str, default: str, widget: QWidget) -> None:
     stack = QVBoxLayout()

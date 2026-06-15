@@ -29,6 +29,148 @@ DEFAULT_MIDI_OPTIONS = MidiOptions()
 
 
 @dataclass(frozen=True)
+class MidiOptionSpec:
+    field: str
+    label: str
+    cli_flag: str
+    help: str
+    default_suffix: str = ""
+    default_precision: int | None = None
+    default_when_none: str | None = None
+    checkbox_label: str | None = None
+    tooltip_detail: str = ""
+
+    def default_value(self) -> object:
+        return getattr(DEFAULT_MIDI_OPTIONS, self.field)
+
+    def default_label(self) -> str:
+        value = self.default_value()
+        if value is None:
+            return self.default_when_none or "off"
+        if isinstance(value, bool):
+            return "on" if value else "off"
+        if isinstance(value, float):
+            if self.default_precision is not None:
+                text = f"{value:.{self.default_precision}f}"
+            else:
+                text = f"{value:g}"
+        else:
+            text = str(value)
+        return f"{text}{self.default_suffix}"
+
+    def default_hint(self) -> str:
+        return f"default {self.default_label()}"
+
+    def checkbox_text(self) -> str:
+        label = self.checkbox_label or self.label
+        return f"{label} (default {self.default_label()})"
+
+    def gui_tooltip(self) -> str:
+        detail = f" {self.tooltip_detail}" if self.tooltip_detail else ""
+        return f"Basic Pitch default: {self.default_label()}.{detail}"
+
+
+MIDI_OPTION_SPECS: tuple[MidiOptionSpec, ...] = (
+    MidiOptionSpec(
+        "onset_threshold",
+        "Note starts",
+        "--onset-threshold",
+        "Basic Pitch onset confidence threshold.",
+        default_precision=2,
+        tooltip_detail="Higher means fewer detected note attacks; lower means more sensitive note starts.",
+    ),
+    MidiOptionSpec(
+        "frame_threshold",
+        "Sustained notes",
+        "--frame-threshold",
+        "Basic Pitch frame confidence threshold.",
+        default_precision=2,
+        tooltip_detail="Higher means stricter sustained-note detection; lower keeps more quiet/ambiguous frames.",
+    ),
+    MidiOptionSpec(
+        "minimum_note_length",
+        "Minimum note",
+        "--minimum-note-length",
+        "Basic Pitch minimum note length in milliseconds.",
+        default_suffix=" ms",
+        tooltip_detail="Notes shorter than this are filtered out.",
+    ),
+    MidiOptionSpec(
+        "minimum_frequency",
+        "Lowest note",
+        "--minimum-frequency",
+        "Basic Pitch minimum output frequency in Hz.",
+        default_when_none="off",
+        tooltip_detail="No lower frequency limit.",
+    ),
+    MidiOptionSpec(
+        "maximum_frequency",
+        "Highest note",
+        "--maximum-frequency",
+        "Basic Pitch maximum output frequency in Hz.",
+        default_when_none="off",
+        tooltip_detail="No upper frequency limit.",
+    ),
+    MidiOptionSpec(
+        "midi_tempo",
+        "MIDI tempo",
+        "--midi-tempo",
+        "Tempo written into generated MIDI files.",
+        default_suffix=" BPM",
+        tooltip_detail="This is MIDI metadata, not audio time-stretching.",
+    ),
+    MidiOptionSpec(
+        "melodia_trick",
+        "Melodia",
+        "--no-melodia-trick",
+        "Disable Basic Pitch's default melodia post-processing step.",
+        checkbox_label="Melodia post-processing",
+        tooltip_detail="Helps turn frame/onset predictions into cleaner note events.",
+    ),
+    MidiOptionSpec(
+        "multiple_pitch_bends",
+        "Pitch bends",
+        "--multiple-pitch-bends",
+        "Allow overlapping MIDI notes to carry separate pitch bends.",
+        checkbox_label="Separate pitch bends for overlapping notes",
+        tooltip_detail="Useful for expressive material, but can make MIDI more complex.",
+    ),
+    MidiOptionSpec(
+        "save_notes",
+        "Save notes",
+        "--no-save-notes",
+        "Do not save Basic Pitch note-event CSV files.",
+        checkbox_label="Save note-event CSV",
+    ),
+    MidiOptionSpec(
+        "save_model_outputs",
+        "Save model outputs",
+        "--save-model-outputs",
+        "Save Basic Pitch raw model outputs as NPZ files.",
+        checkbox_label="Save raw model output NPZ",
+        tooltip_detail="Technical/debug output: contours, onsets, and note activations.",
+    ),
+    MidiOptionSpec(
+        "sonify_midi",
+        "Render MIDI check audio",
+        "--sonify-midi",
+        "Render Basic Pitch MIDI back to audio for checking.",
+    ),
+    MidiOptionSpec(
+        "sonification_samplerate",
+        "Check audio rate",
+        "--sonification-samplerate",
+        "Sample rate for --sonify-midi output.",
+    ),
+)
+MIDI_OPTION_SPEC_BY_FIELD = {spec.field: spec for spec in MIDI_OPTION_SPECS}
+
+
+def midi_option_spec(field: str) -> MidiOptionSpec:
+    return MIDI_OPTION_SPEC_BY_FIELD[field]
+
+
+@dataclass(frozen=True)
 class MidiResult:
     stem: str
     path: Path

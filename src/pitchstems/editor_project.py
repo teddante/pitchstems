@@ -75,8 +75,6 @@ __all__ = [
 class EditorTrack:
     name: str
     audio_path: Path
-    muted: bool = False
-    solo: bool = False
 
 
 @dataclass(frozen=True)

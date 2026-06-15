@@ -4,17 +4,18 @@ from pitchstems.chord_detection import analyze_chord_at, analyze_chord_region, a
 from pitchstems.editor_project import (
     NoteEvent,
 )
+from pitchstems import gui_harmony_flow
 from pitchstems.midi_energy import active_notes_at, midi_velocity_energy, note_overlap_seconds
 from pitchstems.notation import pitch_class_for_name
 from pitchstems.time_format import format_time
 
 
 def current_chord_analysis_report(window) -> str:
-    source_notes = window.chord_analysis_notes()
-    context = window.chord_context_key(window.timeline.position)
-    window.current_chord_base_weights = window.chord_base_pitch_weights(source_notes, context)
-    analysis_notes = window.filtered_chord_analysis_notes(source_notes, context)
-    required, excluded = window.chord_note_constraints()
+    source_notes = gui_harmony_flow.chord_analysis_notes(window)
+    context = gui_harmony_flow.chord_context_key(window, window.timeline.position)
+    window.current_chord_base_weights = gui_harmony_flow.chord_base_pitch_weights(source_notes, context)
+    analysis_notes = gui_harmony_flow.filtered_chord_analysis_notes(window, source_notes, context)
+    required, excluded = gui_harmony_flow.chord_note_constraints(window)
     scoring_options = window.chord_scoring_options()
     selection_ranges = window.timeline.selection_ranges()
     if selection_ranges:

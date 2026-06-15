@@ -32,10 +32,6 @@ class ChordGapSuggestion:
     common_tone_support: float
     explanation: list[str] = field(default_factory=list)
 
-    @property
-    def voice_leading(self) -> float:
-        return self.pitch_class_movement
-
 
 @dataclass(frozen=True)
 class ChordGapAnalysis:
