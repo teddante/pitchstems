@@ -22,6 +22,10 @@ class PipelinePageModel:
         return (not self.busy) and self.has_result
 
     @property
+    def export_enabled(self) -> bool:
+        return (not self.busy) and self.has_result
+
+    @property
     def cancel_enabled(self) -> bool:
         return self.busy
 

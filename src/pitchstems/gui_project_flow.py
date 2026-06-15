@@ -192,6 +192,9 @@ def reset_stage_state(window, path: Path | None = None) -> None:
     window.hidden_track_status = None
     window.latest_output_dir = None
     window.run_midi.setEnabled(False)
+    window.export_button.setEnabled(False)
+    if getattr(window, "export_action", None) is not None:
+        window.export_action.setEnabled(False)
     window.separation_status.setText("Not run yet.")
     window.midi_status.setText("Run the full pipeline first, then MIDI can be rerun without separating again.")
     window.editor_summary.setText(EMPTY_EDITOR_SUMMARY)

@@ -132,7 +132,6 @@ def build_pipeline_page(window) -> QWidget:
     export_layout = QVBoxLayout()
     export_layout.setSpacing(8)
     export_layout.setContentsMargins(10, 8, 10, 8)
-    export_layout.addWidget(window.create_zip)
     export_layout.addWidget(window.open_when_done)
     export_group.setLayout(export_layout)
 

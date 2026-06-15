@@ -18,6 +18,9 @@ def set_processing_state(window, busy: bool) -> None:
     window.drop_zone.setEnabled(model.drop_zone_enabled)
     window.run_full.setEnabled(model.run_full_enabled)
     window.run_midi.setEnabled(model.run_midi_enabled)
+    window.export_button.setEnabled(model.export_enabled)
+    if getattr(window, "export_action", None) is not None:
+        window.export_action.setEnabled(model.export_enabled)
     window.cancel_button.setEnabled(model.cancel_enabled)
     window.model_select.setEnabled(model.settings_enabled)
     window.stem.setEnabled(model.settings_enabled)
@@ -38,7 +41,6 @@ def set_processing_state(window, busy: bool) -> None:
         window.save_model_outputs,
         window.sonify_midi,
         window.sonification_samplerate,
-        window.create_zip,
         window.open_when_done,
     ]:
         widget.setEnabled(model.settings_enabled)

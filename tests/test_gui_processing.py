@@ -7,7 +7,7 @@ import pitchstems.gui_processing as gui_processing
 import pitchstems.gui_shutdown as gui_shutdown
 from pitchstems.gui_jobs import EditorLoadJobState, MidiPreviewJobState, WorkerJobState
 from pitchstems.pipeline import PipelineCancelledError, PipelineResult
-from pitchstems.separation import StemResult
+from pitchstems.separation import SeparationOptions, StemResult
 from pitchstems.transcription import MidiOptions
 
 
@@ -59,6 +59,105 @@ def test_start_full_processing_rejects_invalid_audio_path(tmp_path: Path) -> Non
     gui_processing.start_full_processing(window)
 
     assert window.logs == ["Choose an audio file, not a folder."]
+
+
+class _Checked:
+    def __init__(self, checked: bool) -> None:
+        self._checked = checked
+
+    def isChecked(self) -> bool:
+        return self._checked
+
+
+class _Text:
+    def __init__(self, text: str) -> None:
+        self._text = text
+
+    def text(self) -> str:
+        return self._text
+
+
+class _CaptureThread:
+    def __init__(self, target, args, daemon) -> None:
+        self.target = target
+        self.args = args
+        self.daemon = daemon
+        self.started = False
+
+    def start(self) -> None:
+        self.started = True
+
+
+class _StartProcessingWindow:
+    def __init__(self, input_path: Path, output_root: Path) -> None:
+        self.worker = None
+        self.worker_jobs = WorkerJobState()
+        self.drop_zone = type("DropZone", (), {"path": input_path})()
+        self.output_dir = _Text(str(output_root))
+        self.generate_midi = _Checked(True)
+        self.current_result = None
+        self.current_stems: list[StemResult] = []
+        self.current_input_stem = None
+        self.processing_states: list[bool] = []
+        self.activities: list[str] = []
+        self.logs: list[str] = []
+
+    def selected_midi_stems(self) -> set[str]:
+        return {"bass"}
+
+    def selected_separation_options(self) -> SeparationOptions:
+        return SeparationOptions()
+
+    def selected_midi_options(self) -> MidiOptions:
+        return MidiOptions()
+
+    def set_processing_state(self, busy: bool) -> None:
+        self.processing_states.append(busy)
+
+    def begin_activity(self, message: str) -> None:
+        self.activities.append(message)
+
+    def append_log(self, message: str) -> None:
+        self.logs.append(message)
+
+
+def test_start_full_processing_requests_no_zip_from_gui(monkeypatch, tmp_path: Path) -> None:
+    input_path = tmp_path / "song.wav"
+    input_path.write_bytes(b"RIFF")
+    window = _StartProcessingWindow(input_path, tmp_path / "out")
+    monkeypatch.setattr(gui_processing.threading, "Thread", _CaptureThread)
+
+    gui_processing.start_full_processing(window)
+
+    assert isinstance(window.worker, _CaptureThread)
+    request = window.worker.args[2]
+    assert request.create_zip is False
+    assert window.worker.started is True
+
+
+def test_start_midi_processing_requests_no_zip_from_gui(monkeypatch, tmp_path: Path) -> None:
+    input_path = tmp_path / "song.wav"
+    input_path.write_bytes(b"RIFF")
+    window = _StartProcessingWindow(input_path, tmp_path / "out")
+    result = PipelineResult(
+        project_dir=tmp_path / "song.pitchstems",
+        normalized_audio=tmp_path / "song.pitchstems" / "work" / "song.wav",
+        stems=[StemResult("bass", tmp_path / "song.pitchstems" / "stems" / "bass.wav")],
+        midi_files=[],
+        combined_midi=None,
+        zip_path=None,
+    )
+    window.current_result = result
+    window.current_stems = result.stems
+    window.current_input_stem = "song"
+    monkeypatch.setattr(gui_processing.threading, "Thread", _CaptureThread)
+
+    gui_processing.start_midi_processing(window)
+
+    assert isinstance(window.worker, _CaptureThread)
+    request = window.worker.args[2]
+    assert request.create_zip is False
+    assert window.worker.started is True
 
 
 def test_cancel_processing_requests_active_worker_and_updates_activity() -> None:

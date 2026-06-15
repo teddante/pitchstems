@@ -60,7 +60,7 @@ def start_full_processing(window) -> None:
         generate_midi=window.generate_midi.isChecked() and bool(midi_stems),
         midi_options=window.selected_midi_options(),
         midi_stems=midi_stems,
-        create_zip=window.create_zip.isChecked(),
+        create_zip=False,
         cancelled=lambda token=token: window.worker_jobs.is_cancel_requested(token),
     )
 
@@ -84,7 +84,7 @@ def start_midi_processing(window) -> None:
         stems=list(window.current_stems),
         midi_options=window.selected_midi_options(),
         midi_stems=window.selected_midi_stems(),
-        create_zip=window.create_zip.isChecked(),
+        create_zip=False,
         cancelled=lambda token=token: window.worker_jobs.is_cancel_requested(token),
     )
 

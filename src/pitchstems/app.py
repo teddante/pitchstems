@@ -32,6 +32,7 @@ from pitchstems.harmony_inspector import (
 from pitchstems import harmony_panel
 from pitchstems import gui_harmony_dialogs
 from pitchstems import gui_harmony_flow
+from pitchstems import gui_export
 from pitchstems import gui_pipeline_state
 from pitchstems import gui_processing
 from pitchstems import gui_editor_load
@@ -288,11 +289,11 @@ def main() -> int:
             )
             self.sonification_samplerate.setEnabled(False)
 
-            self.create_zip = QCheckBox("Create ZIP export package")
-            self.create_zip.setChecked(False)
-            self.create_zip.setToolTip("Optional. Creates a shareable ZIP without duplicating stem WAVs inside the project folder.")
             self.open_when_done = QCheckBox("Open output folder when finished")
             self.open_when_done.setChecked(False)
+            self.export_button = QPushButton("Export...")
+            self.export_button.setEnabled(False)
+            self.export_action: QAction | None = None
 
             self.run_full = QPushButton("Run separation + MIDI")
             self.run_full.setObjectName("primaryAction")
@@ -455,6 +456,7 @@ def main() -> int:
 
             self.run_full.clicked.connect(self.start_full_processing)
             self.run_midi.clicked.connect(self.start_midi_processing)
+            self.export_button.clicked.connect(self.export_selected_files)
             self.cancel_button.clicked.connect(self.cancel_processing)
             self.play_button.clicked.connect(self.toggle_playback)
             self.stop_button.clicked.connect(self.stop_transport)
@@ -622,6 +624,7 @@ def main() -> int:
             layout.addWidget(self.editor_position)
             layout.addWidget(self.current_chord, 1)
             layout.addStretch(1)
+            layout.addWidget(self.export_button)
             layout.addWidget(self.cancel_button)
             layout.addWidget(self.run_midi)
             layout.addWidget(self.run_full)
@@ -659,6 +662,8 @@ def main() -> int:
             self.refresh_recent_projects_menu()
             file_menu.addSeparator()
             self._add_action(file_menu, "&Save Project", "Ctrl+S", self.save_project_now)
+            self.export_action = self._add_action(file_menu, "Export Selected Files...", None, self.export_selected_files)
+            self.export_action.setEnabled(False)
             self._add_action(file_menu, "Choose Output &Folder...", None, self.pick_output_dir)
             self._add_action(file_menu, "Open Output Folder", "Ctrl+E", self.open_latest_output)
             self._add_action(file_menu, "Open Logs Folder", None, self.open_logs_folder)
@@ -769,6 +774,9 @@ def main() -> int:
 
         def save_project_now(self) -> None:
             gui_project_flow.save_project_now(self)
+
+        def export_selected_files(self) -> None:
+            gui_export.export_selected_files(self)
 
         def pick_output_dir(self) -> None:
             gui_project_flow.pick_output_dir(self)

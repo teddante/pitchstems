@@ -25,6 +25,9 @@ def set_current_result(window, result, open_output: bool = True) -> None:
     window.removed_chord_ranges = []
     window.rendering_midi_previews.clear()
     window.run_midi.setEnabled(True)
+    window.export_button.setEnabled(True)
+    if getattr(window, "export_action", None) is not None:
+        window.export_action.setEnabled(True)
     window.separation_status.setText(f"Ready: {len(result.stems)} stems saved in {result.project_dir / 'stems'}")
     window.midi_status.setText(
         f"Ready: {len(result.midi_files)} MIDI files. Change Basic Pitch settings or MIDI stem ticks, then use Rerun MIDI only."
