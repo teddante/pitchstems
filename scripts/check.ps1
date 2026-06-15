@@ -87,6 +87,8 @@ Invoke-GitWhitespaceChecks
 
 Invoke-Checked "Running Ruff..." { & $python @pythonArgs -m ruff check src tests }
 
+Invoke-Checked "Running Vulture..." { & $python @pythonArgs -m vulture src tests --min-confidence 80 }
+
 Invoke-Checked "Running mypy..." { & $python @pythonArgs -m mypy }
 
 Invoke-Checked "Running tests..." {

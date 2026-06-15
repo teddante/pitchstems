@@ -64,7 +64,7 @@ def save_project_manifest(
     with _MANIFEST_LOCK:
         existing = _read_existing_manifest(manifest_path)
         created_at = existing.get("created_at") or _now()
-        source_audio = result.source_audio or _path_from_manifest(project_dir, existing.get("source_audio"))
+        source_audio = result.source_audio or _optional_project_path(project_dir, existing.get("source_audio"))
 
         manifest = {
             "format": "pitchstems-project",
@@ -431,12 +431,6 @@ def _resolve_project_path(project_dir: Path, value: str | None) -> Path:
 
 
 def _optional_project_path(project_dir: Path, value: str | None) -> Path | None:
-    if not value:
-        return None
-    return _resolve_project_path(project_dir, value)
-
-
-def _path_from_manifest(project_dir: Path, value: str | None) -> Path | None:
     if not value:
         return None
     return _resolve_project_path(project_dir, value)

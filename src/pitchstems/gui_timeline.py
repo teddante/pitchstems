@@ -7,6 +7,7 @@ from PySide6.QtGui import QColor, QBrush, QFontMetrics, QImage, QPainter, QPen, 
 from PySide6.QtWidgets import QApplication, QGraphicsScene, QGraphicsView
 
 from pitchstems.editor_project import ChordRegion, EditorProject, midi_note_name
+from pitchstems.gui_theme import TRACK_COLORS
 from pitchstems.gui_track_controls import TRACK_CONTROL_MIN_HEIGHT
 from pitchstems.timeline_chord_geometry import compact_chord_label, snap_seconds_to_timeline_targets
 from pitchstems.timeline_render_policy import TimelineRenderPolicy
@@ -14,16 +15,7 @@ from pitchstems.time_format import format_time
 
 
 def _track_color(stem_name: str) -> QColor:
-    palette = {
-        "vocals": "#0ea5e9",
-        "bass": "#22c55e",
-        "guitar": "#f59e0b",
-        "piano": "#8b5cf6",
-        "other": "#64748b",
-        "drums": "#ef4444",
-        "instrumental": "#14b8a6",
-    }
-    return QColor(palette.get(stem_name.lower(), "#475569"))
+    return QColor(TRACK_COLORS.get(stem_name.lower(), "#475569"))
 
 class TimelineView(QGraphicsView):
     def __init__(self) -> None:
@@ -79,7 +71,7 @@ class TimelineView(QGraphicsView):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
-        self.setStyleSheet("QGraphicsView { border: 1px solid #d1d5db; background: #f8fafc; }")
+        self.setStyleSheet("QGraphicsView { border: 1px solid #e2e8f0; background: #ffffff; border-radius: 6px; }")
         self.horizontalScrollBar().valueChanged.connect(self.update_sticky_labels)
         self.verticalScrollBar().valueChanged.connect(self.update_sticky_labels)
         self.horizontalScrollBar().valueChanged.connect(self.request_view_redraw)

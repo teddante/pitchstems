@@ -1,8 +1,8 @@
 # Quality Gate Roadmap
 
-PitchStems currently runs Ruff, mypy on a scoped set of hardened modules,
-pytest with focused coverage gates, compileall, pip check, doctor, GUI smoke,
-and package build in `scripts/check.ps1`.
+PitchStems currently runs Ruff, Vulture, mypy on a scoped set of hardened
+modules, pytest with focused coverage gates, compileall, pip check, doctor,
+GUI smoke, and package build in `scripts/check.ps1`.
 
 ## Current Typed Surface
 

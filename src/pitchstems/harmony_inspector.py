@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from pitchstems.editor_project import EditorProject, NoteEvent, midi_velocity_energy
-from pitchstems.notation import pitch_class_for_name, spelling_preference_from_label
+from pitchstems.editor_project import EditorProject, NoteEvent
+from pitchstems.midi_energy import point_pitch_energy, region_pitch_energy
+from pitchstems.notation import spelling_preference_from_label
 
 
 HarmonyContextKey = tuple[str, float] | tuple[str, float, float]
@@ -89,30 +90,13 @@ def chord_base_pitch_weights(
 ) -> dict[int, float]:
     if not notes:
         return {}
-    weights: dict[int, float] = {}
     if context[0] == "selection":
         _kind, start, end = context
-        for note in notes:
-            overlap = max(0.0, min(note.end, end) - max(note.start, start))
-            if overlap <= 0:
-                continue
-            weights[note.pitch % 12] = (
-                weights.get(note.pitch % 12, 0.0)
-                + overlap * midi_velocity_energy(note.velocity)
-            )
+        weights, _exact_pitch_weights = region_pitch_energy(notes, start, end)
     else:
         _kind, seconds = context
-        for note in notes:
-            if note.start <= seconds < note.end:
-                weights[note.pitch % 12] = (
-                    weights.get(note.pitch % 12, 0.0)
-                    + midi_velocity_energy(note.velocity)
-                )
+        weights, _exact_pitch_weights = point_pitch_energy(notes, seconds)
     if not weights:
         return {}
     maximum = max(weights.values())
     return {pitch_class: weight / maximum for pitch_class, weight in weights.items()}
-
-
-def pitch_class_for_weighted_note(note_name: str) -> int | None:
-    return pitch_class_for_name(note_name)

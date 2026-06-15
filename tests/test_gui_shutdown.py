@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from pitchstems.gui_jobs import EditorLoadJobState, MidiPreviewJobState, WorkerJobState
+from pitchstems.gui_processing import cancel_processing
 from pitchstems.gui_shutdown import request_window_close
 
 
@@ -30,6 +31,9 @@ class _Window:
 
     def set_activity_message(self, message: str) -> None:
         self.activities.append(message)
+
+    def cancel_processing(self) -> bool:
+        return cancel_processing(self)
 
 
 def test_request_window_close_allows_close_when_no_worker_is_alive() -> None:

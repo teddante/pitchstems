@@ -92,19 +92,21 @@ class DropZone(QLabel):
             self.on_path_changed(self.path)
 
 
-class NoWheelComboBox(QComboBox):
+class _NoWheelMixin:
     def wheelEvent(self, event) -> None:
         event.ignore()
 
 
-class NoWheelDoubleSpinBox(QDoubleSpinBox):
-    def wheelEvent(self, event) -> None:
-        event.ignore()
+class NoWheelComboBox(_NoWheelMixin, QComboBox):
+    pass
 
 
-class NoWheelSpinBox(QSpinBox):
-    def wheelEvent(self, event) -> None:
-        event.ignore()
+class NoWheelDoubleSpinBox(_NoWheelMixin, QDoubleSpinBox):
+    pass
+
+
+class NoWheelSpinBox(_NoWheelMixin, QSpinBox):
+    pass
 
 
 class PianoChordWidget(QWidget):

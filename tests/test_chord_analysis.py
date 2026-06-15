@@ -42,6 +42,16 @@ def test_chord_naming_module_exposes_public_helpers() -> None:
     assert chord_tones_for_label("Cmaj7") == ["C", "E", "G", "B"]
 
 
+def test_split_chord_modules_expose_public_surfaces() -> None:
+    from pitchstems.chord_detection import analyze_chord as analyze_from_detection
+    from pitchstems.chord_explanation import partial_harmony_hints
+    from pitchstems.chord_scoring import ChordScoringOptions
+
+    assert analyze_from_detection([60, 64, 67]).label == "C"
+    assert partial_harmony_hints({0, 7})
+    assert ChordScoringOptions(weak_note_floor=0.2).weak_note_floor == 0.2
+
+
 def test_weighted_chord_analysis_keeps_existing_cmaj7_behavior() -> None:
     notes = [
         NoteEvent("piano", 0.0, 1.0, 60, 100),

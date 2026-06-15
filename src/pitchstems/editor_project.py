@@ -12,25 +12,26 @@ from mido import MidiFile, tick2second
 
 from pitchstems.chord_analysis import (
     ChordAnalysis,
-    ChordScoringOptions,
     PITCH_NAMES,
-    PartialChordCandidate,
-    active_notes_at,
     alternate_chord_names_for_label,
-    analyze_chord,
-    analyze_chord_at,
-    analyze_chord_region,
     chord_bass_name_for_label,
     chord_pitch_classes_for_label,
     chord_tones_for_label,
-    detect_chords,
     display_chord_label,
     exact_chord_names_for_pitch_classes,
     identify_chord,
     midi_note_name,
-    midi_velocity_energy,
-    partial_harmony_hints,
 )
+from pitchstems.chord_detection import (
+    active_notes_at,
+    analyze_chord,
+    analyze_chord_at,
+    analyze_chord_region,
+    detect_chords,
+    midi_velocity_energy,
+)
+from pitchstems.chord_explanation import partial_harmony_hints
+from pitchstems.chord_scoring import ChordScoringOptions, PartialChordCandidate
 from pitchstems.editor_models import ChordRegion, NoteEvent
 from pitchstems.editor_query import ChordIndex, NoteIndex
 from pitchstems.pipeline import PipelineResult

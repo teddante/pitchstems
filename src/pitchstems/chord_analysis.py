@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 
 from pitchstems.chord_naming import (
     PITCH_NAMES,
-    _accepted_note_names,
     _chord_qualities,
     alternate_chord_names_for_label,
     chord_bass_name_for_label,
@@ -15,8 +14,16 @@ from pitchstems.chord_naming import (
     exact_chord_names_for_pitch_classes,
 )
 from pitchstems.editor_models import ChordRegion, NoteEvent
+from pitchstems.midi_energy import (
+    active_notes_at as energy_active_notes_at,
+    midi_velocity_energy as energy_midi_velocity_energy,
+    point_pitch_energy,
+    region_pitch_energy,
+)
 from pitchstems.notation import (
+    ACCEPTED_NOTE_NAMES,
     midi_note_name as spell_midi_note_name,
+    normalized_pitch_class_weights,
     pitch_class_for_name,
 )
 
@@ -130,15 +137,11 @@ def detect_chords(notes: list[NoteEvent], minimum_region: float = 0.18) -> list[
 
 
 def active_notes_at(notes: list[NoteEvent], seconds: float) -> list[NoteEvent]:
-    return sorted(
-        [note for note in notes if note.start <= seconds < note.end],
-        key=lambda note: (note.pitch, note.stem),
-    )
+    return energy_active_notes_at(notes, seconds)
 
 
 def midi_velocity_energy(velocity: int) -> float:
-    amplitude = max(0, min(velocity, 127)) / 127
-    return amplitude * amplitude
+    return energy_midi_velocity_energy(velocity)
 
 
 def analyze_chord_at(
@@ -149,13 +152,7 @@ def analyze_chord_at(
     scoring_options: ChordScoringOptions | None = None,
 ) -> ChordAnalysis:
     options = scoring_options or ChordScoringOptions()
-    active = active_notes_at(notes, seconds)
-    pitch_weights: dict[int, float] = {}
-    exact_pitch_weights: dict[int, float] = {}
-    for note in active:
-        weight = midi_velocity_energy(note.velocity)
-        pitch_weights[note.pitch % 12] = pitch_weights.get(note.pitch % 12, 0.0) + weight
-        exact_pitch_weights[note.pitch] = exact_pitch_weights.get(note.pitch, 0.0) + weight
+    pitch_weights, exact_pitch_weights = point_pitch_energy(notes, seconds)
 
     if pitch_weights and options.weak_note_floor > 0:
         max_weight = max(pitch_weights.values())
@@ -230,15 +227,7 @@ def analyze_chord_region(
     if end - start <= 0:
         return ChordAnalysis(None, 0.0, [], [])
 
-    pitch_weights: dict[int, float] = {}
-    exact_pitch_weights: dict[int, float] = {}
-    for note in notes:
-        overlap = max(0.0, min(note.end, end) - max(note.start, start))
-        if overlap <= 0:
-            continue
-        weight = overlap * midi_velocity_energy(note.velocity)
-        pitch_weights[note.pitch % 12] = pitch_weights.get(note.pitch % 12, 0.0) + weight
-        exact_pitch_weights[note.pitch] = exact_pitch_weights.get(note.pitch, 0.0) + weight
+    pitch_weights, exact_pitch_weights = region_pitch_energy(notes, start, end)
 
     if pitch_weights and options.weak_note_floor > 0:
         max_pitch_class_weight = max(pitch_weights.values())
@@ -650,14 +639,7 @@ def _score_root(
 
 
 def _normalized_note_weights(pitch_weights: dict[int, float]) -> list[tuple[str, float]]:
-    max_pitch_class_weight = max(pitch_weights.values())
-    return [
-        (PITCH_NAMES[pitch_class], weight / max_pitch_class_weight)
-        for pitch_class, weight in sorted(
-            pitch_weights.items(),
-            key=lambda item: (-item[1], item[0]),
-        )
-    ]
+    return normalized_pitch_class_weights(pitch_weights)
 
 
 def _score_weighted_root_candidates(
@@ -871,7 +853,7 @@ def _partial_shell_candidates_from_weights(
     for *_sort, candidate in suggestions:
         root_name = next(
             name
-            for name in sorted(_accepted_note_names(), key=len, reverse=True)
+            for name in sorted(ACCEPTED_NOTE_NAMES, key=len, reverse=True)
             if candidate.label.startswith(name)
         )
         root = pitch_class_for_name(root_name)

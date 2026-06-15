@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pitchstems.notation import (
+    ACCEPTED_NOTE_NAMES,
     DEFAULT_PITCH_NAMES,
     pitch_class_for_name,
     pitch_class_name,
@@ -28,7 +29,7 @@ def chord_tones_for_label(label: str, spelling_preference: str | None = "auto") 
     root_name = next(
         (
             name
-            for name in sorted(_accepted_note_names(), key=len, reverse=True)
+            for name in sorted(ACCEPTED_NOTE_NAMES, key=len, reverse=True)
             if base_label.startswith(name)
         ),
         None,
@@ -83,7 +84,7 @@ def chord_pitch_classes_for_label(label: str) -> list[int]:
     root_name = next(
         (
             name
-            for name in sorted(_accepted_note_names(), key=len, reverse=True)
+            for name in sorted(ACCEPTED_NOTE_NAMES, key=len, reverse=True)
             if base_label.startswith(name)
         ),
         None,
@@ -115,32 +116,6 @@ def chord_pitch_classes_for_label(label: str) -> list[int]:
         if pitch_class not in tones:
             tones.append(pitch_class)
     return tones
-
-
-def _accepted_note_names() -> tuple[str, ...]:
-    return (
-        "C#",
-        "Db",
-        "D#",
-        "Eb",
-        "E#",
-        "Fb",
-        "F#",
-        "Gb",
-        "G#",
-        "Ab",
-        "A#",
-        "Bb",
-        "B#",
-        "Cb",
-        "C",
-        "D",
-        "E",
-        "F",
-        "G",
-        "A",
-        "B",
-    )
 
 
 def _split_omitted_suffix(suffix: str) -> tuple[str, set[int]]:

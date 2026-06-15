@@ -10,7 +10,6 @@ class ModelChoice:
     kind: str
     architecture: str
     stems: list[str]
-    tasks: list[str]
     summary: str
     best_for: str
     quality_note: str
@@ -32,19 +31,6 @@ class ModelChoice:
         return f"{self.label}{suffix}"
 
 
-TASKS: dict[str, str] = {
-    "song_stems": "Vocals + instruments for MIDI",
-    "vocal_instrumental": "Vocals + backing track",
-    "cleanup": "Clean reverb first",
-}
-
-TASK_HELP: dict[str, str] = {
-    "song_stems": "This filters to BS-RoFormer methods that can create musical parts useful for MIDI.",
-    "vocal_instrumental": "This filters to BS-RoFormer vocal or backing-track methods.",
-    "cleanup": "This filters to BS-RoFormer repair methods before MIDI or further separation.",
-}
-
-
 MODEL_CHOICES: dict[str, ModelChoice] = {
     "bs_roformer_sw": ModelChoice(
         key="bs_roformer_sw",
@@ -52,7 +38,6 @@ MODEL_CHOICES: dict[str, ModelChoice] = {
         kind="native",
         architecture="Native BS-RoFormer",
         stems=["vocals", "drums", "bass", "guitar", "piano", "other", "instrumental"],
-        tasks=["song_stems", "vocal_instrumental"],
         summary="Native BS-RoFormer-SW inference for six-stem song separation.",
         best_for="The main PitchStems path: split a full song into MIDI-relevant parts.",
         quality_note="Recommended default in bs-roformer-infer. It uses the model config shipped by the model package.",
@@ -81,7 +66,6 @@ MODEL_CHOICES: dict[str, ModelChoice] = {
         kind="native",
         architecture="Native BS-RoFormer",
         stems=["vocals", "instrumental"],
-        tasks=["vocal_instrumental"],
         summary="Native BS-RoFormer vocal extraction focused on strong vocal quality.",
         best_for="When vocal clarity matters more than six separate instrument stems.",
         quality_note="Single vocal-specialist BS-RoFormer checkpoint from the native registry.",
@@ -101,7 +85,6 @@ MODEL_CHOICES: dict[str, ModelChoice] = {
         kind="native",
         architecture="Native BS-RoFormer",
         stems=["vocals", "instrumental"],
-        tasks=["vocal_instrumental"],
         summary="Native BS-RoFormer vocal model aimed at fuller vocal capture.",
         best_for="Vocals where harmonies or quiet phrases are being lost.",
         quality_note="Single vocal-specialist BS-RoFormer checkpoint from the native registry.",
@@ -120,7 +103,6 @@ MODEL_CHOICES: dict[str, ModelChoice] = {
         kind="native",
         architecture="Native BS-RoFormer",
         stems=["instrumental", "vocals"],
-        tasks=["vocal_instrumental"],
         summary="Native BS-RoFormer backing-track extraction.",
         best_for="When you mainly want the instrumental/backing track.",
         quality_note="Single instrumental-specialist BS-RoFormer checkpoint from the native registry.",
@@ -139,7 +121,6 @@ MODEL_CHOICES: dict[str, ModelChoice] = {
         kind="native",
         architecture="Native BS-RoFormer",
         stems=["dry", "wet", "instrumental"],
-        tasks=["cleanup"],
         summary="Native BS-RoFormer repair model for reducing reverb.",
         best_for="Drying a wet vocal or stem before MIDI conversion.",
         quality_note="Specialized repair checkpoint; its score is not comparable to music-stem SDR.",
@@ -153,14 +134,6 @@ MODEL_CHOICES: dict[str, ModelChoice] = {
         config_filename="deverb_bs_roformer_8_384dim_10depth_config.yaml",
     ),
 }
-
-
-def choices_for_task(task: str) -> list[ModelChoice]:
-    return [choice for choice in MODEL_CHOICES.values() if task in choice.tasks]
-
-
-def all_choices() -> list[ModelChoice]:
-    return list(MODEL_CHOICES.values())
 
 
 def model_choice(key: str) -> ModelChoice:

@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
 )
 
 from pitchstems.editor_state import editor_bool, editor_int
+from pitchstems.gui_helpers import clear_layout
+from pitchstems.gui_theme import TRACK_COLORS
 
 
 TRACK_CONTROL_MIN_HEIGHT = 96
@@ -67,10 +69,23 @@ def rebuild_track_controls(window, editor_state: dict) -> None:
     midi_volume = editor_state.get("track_midi_volume", {})
 
     window.track_control_top_spacer = QWidget()
+    window.track_control_top_spacer.setObjectName("trackControlHeader")
     window.track_control_top_spacer.setFixedHeight(int(window.timeline.chord_height))
     top_layout = QVBoxLayout()
     top_layout.setContentsMargins(8, 6, 8, 6)
     top_layout.setSpacing(4)
+    window.track_control_top_spacer.setStyleSheet(
+        """
+        QWidget#trackControlHeader {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+        }
+        QLabel, QPushButton {
+            border: 0;
+        }
+        """
+    )
     top_title_row = QHBoxLayout()
     top_title_row.setContentsMargins(0, 0, 0, 0)
     top_title_row.setSpacing(6)
@@ -112,33 +127,36 @@ def rebuild_track_controls(window, editor_state: dict) -> None:
 
 def add_track_control_row(window, track, editor_state: dict) -> None:
     note_count = window.track_note_counts.get(track.name, 0)
+    track_color = TRACK_COLORS.get(track.name.lower(), "#64748b")
     track_panel = QWidget()
     track_panel.setObjectName("trackControlRow")
     track_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
     track_panel.setStyleSheet(
-        """
-        QWidget#trackControlRow {
+        f"""
+        QWidget#trackControlRow {{
             background: #ffffff;
-            border-bottom: 1px solid #e2e8f0;
-        }
-        QLabel, QCheckBox, QSlider {
+            border: 1px solid #e2e8f0;
+            border-left: 3px solid {track_color};
+            border-radius: 6px;
+        }}
+        QLabel, QCheckBox, QSlider {{
             border: 0;
             background: transparent;
-        }
-        QCheckBox {
+        }}
+        QCheckBox {{
             color: #334155;
             font-size: 9px;
             spacing: 2px;
-        }
-        QSlider {
+        }}
+        QSlider {{
             min-height: 12px;
             max-height: 12px;
-        }
+        }}
         """
     )
     track_layout = QVBoxLayout()
-    track_layout.setContentsMargins(6, 2, 6, 2)
-    track_layout.setSpacing(1)
+    track_layout.setContentsMargins(10, 6, 8, 6)
+    track_layout.setSpacing(3)
 
     title_row = QHBoxLayout()
     title_row.setContentsMargins(0, 0, 0, 0)
@@ -299,11 +317,3 @@ def sync_track_control_panel(window) -> None:
         audio_widget.setVisible(visibility.audio_volume)
         midi_widget.setVisible(visibility.midi_volume)
     window.playback_controls_widget.adjustSize()
-
-
-def clear_layout(layout) -> None:
-    while layout.count():
-        item = layout.takeAt(0)
-        widget = item.widget()
-        if widget is not None:
-            widget.deleteLater()

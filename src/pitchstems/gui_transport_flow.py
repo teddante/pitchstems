@@ -3,7 +3,6 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from pitchstems.gui_transport import find_existing_midi_previews, loop_playback_start
 from pitchstems.midi_preview import render_midi_preview
 
 
@@ -20,14 +19,6 @@ def prepare_transport_players(window, result) -> None:
     if requested_midi:
         window.start_midi_preview_render(result, requested_midi)
     window.refresh_playback_mix()
-
-
-def clear_transport_players(window) -> None:
-    window.transport.clear_players()
-
-
-def transport_players(window):
-    return window.transport.players()
 
 
 def start_midi_preview_render(window, result, requested_stems: set[str] | None = None) -> None:
@@ -124,19 +115,6 @@ def attach_midi_preview_players(window, previews: dict[str, Path], finish_activi
         window.end_activity("MIDI preview audio ready")
 
 
-def refresh_playback_mix(window) -> None:
-    window.transport.refresh_mix()
-    window.apply_midi_transport_state()
-
-
-def midi_track_enabled(window, stem_name: str) -> bool:
-    return window.transport.midi_track_enabled(stem_name)
-
-
-def apply_midi_transport_state(window) -> None:
-    window.transport.apply_midi_transport_state(window.timeline.position)
-
-
 def toggle_playback(window) -> None:
     if window.transport.is_playing:
         window.pause_transport()
@@ -183,10 +161,6 @@ def stop_transport(window) -> None:
         window.set_editor_position_seconds(0.0, seek_players=False)
 
 
-def seek_audio_players(window, seconds: float) -> None:
-    window.transport.seek(seconds)
-
-
 def update_transport_position(window) -> None:
     master = window.transport_master_player()
     if master is None:
@@ -201,19 +175,3 @@ def update_transport_position(window) -> None:
             window.set_editor_position_seconds(start, save=False, seek_players=False)
             return
     window.set_editor_position_seconds(seconds, save=False, seek_players=False)
-
-
-def transport_master_player(window):
-    return window.transport.master_player()
-
-
-def resync_transport_players(window, master=None) -> None:
-    window.transport.resync(master)
-
-
-def loop_playback_start_seconds(window) -> float:
-    return loop_playback_start(window.timeline.position, window.timeline.selection_range())
-
-
-def existing_midi_previews(result) -> dict[str, Path]:
-    return find_existing_midi_previews(result)

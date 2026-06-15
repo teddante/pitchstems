@@ -23,7 +23,7 @@ from pitchstems.editor_project import (
 from pitchstems.editor_loader import EditorLoadResult
 from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
 from pitchstems.midi_preview import render_note_preview
-from pitchstems.model_catalog import model_choice
+from pitchstems.model_catalog import all_model_keys, model_choice
 from pitchstems.notation import pitch_class_for_name, pitch_class_name
 from pitchstems.pipeline import PipelineResult
 from pitchstems.harmony_inspector import (
@@ -42,6 +42,7 @@ from pitchstems import gui_project_flow
 from pitchstems import gui_shutdown
 from pitchstems import gui_transport_flow
 from pitchstems.gui_jobs import EditorLoadJobState, MidiPreviewJobState, WorkerJobState
+from pitchstems.gui_theme import pitchstems_stylesheet
 from pitchstems.gui_track_controls import rebuild_track_controls, sync_track_control_panel as sync_track_controls
 from pitchstems.separation import StemResult
 from pitchstems.theory import (
@@ -73,10 +74,13 @@ def main() -> int:
         from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
         from PySide6.QtWidgets import (
             QApplication,
+            QButtonGroup,
             QCheckBox,
             QComboBox,
             QDoubleSpinBox,
+            QFrame,
             QGridLayout,
+            QHBoxLayout,
             QLabel,
             QLineEdit,
             QListWidget,
@@ -109,6 +113,8 @@ def main() -> int:
     from pitchstems.gui_timeline import TimelineView
     from pitchstems.gui_transport import (
         TransportController,
+        find_existing_midi_previews,
+        loop_playback_start,
         reset_player_source,
         safe_qt_multimedia_call,
         start_player_source,
@@ -119,7 +125,6 @@ def main() -> int:
             super().__init__()
             self.setWindowTitle("PitchStems")
             self.resize(1220, 780)
-            self.choice = model_choice("bs_roformer_sw")
             self.log_path = log_path
             self.logger = logger
             self.messages: queue.Queue[object] = queue.Queue()
@@ -198,6 +203,12 @@ def main() -> int:
             self.processing_tabs = QTabWidget()
             self.processing_tabs.setDocumentMode(True)
 
+            self.model_select = NoWheelComboBox()
+            for model_key in all_model_keys():
+                choice = model_choice(model_key)
+                self.model_select.addItem(choice.display_label, model_key)
+            self.model_select.setToolTip("Choose the native BS-RoFormer model used for separation.")
+
             self.bs_device = NoWheelComboBox()
             self.bs_device.addItem("Auto: CUDA if available", None)
             self.bs_device.addItem("Force CUDA GPU", "cuda:0")
@@ -252,6 +263,7 @@ def main() -> int:
             self.open_when_done.setChecked(False)
 
             self.run_full = QPushButton("Run separation + MIDI")
+            self.run_full.setObjectName("primaryAction")
             self.run_midi = QPushButton("Rerun MIDI only")
             self.run_midi.setEnabled(False)
             self.cancel_button = QPushButton("Cancel")
@@ -314,10 +326,6 @@ def main() -> int:
             self.timeline.on_chord_selected = self.show_timeline_chord_status
             self.timeline.on_redraw_started = self.begin_timeline_redraw
             self.timeline.on_redraw_finished = self.finish_timeline_redraw
-            self.timeline_slider = QSlider(Qt.Horizontal)
-            self.timeline_slider.setRange(0, 0)
-            self.timeline_slider.setEnabled(False)
-            self.timeline_slider.setVisible(False)
             self.playback_controls = QVBoxLayout()
             self.playback_controls.setSpacing(0)
             self.playback_controls.setContentsMargins(0, 0, 0, 0)
@@ -375,7 +383,9 @@ def main() -> int:
             self.chord_preview_output.setVolume(0.85)
             self.chord_preview_player.setAudioOutput(self.chord_preview_output)
             self.play_button = QPushButton("Play")
+            self.play_button.setObjectName("transportPrimary")
             self.stop_button = QPushButton("Stop")
+            self.stop_button.setObjectName("transportIcon")
             self.stop_button.setEnabled(False)
             self.fit_song_button = QPushButton("Fit Song")
             self.fit_song_button.setEnabled(False)
@@ -386,13 +396,11 @@ def main() -> int:
             self.main_tabs = QTabWidget()
             self.main_tabs.addTab(pipeline_page, "Pipeline")
             self.main_tabs.addTab(editor_page, "Editor")
+            self.main_tabs.tabBar().hide()
+            self.main_tabs.currentChanged.connect(self.sync_workspace_nav)
 
-            root = QWidget()
-            root_layout = QVBoxLayout()
-            root_layout.setContentsMargins(0, 0, 0, 0)
-            root_layout.addWidget(self.main_tabs)
-            root.setLayout(root_layout)
-            self.setCentralWidget(root)
+            self.workspace_nav_buttons: dict[str, QPushButton] = {}
+            self.setCentralWidget(self.build_workspace_shell())
             self.create_menus()
             self.activity_label = QLabel("Ready")
             self.activity_label.setMinimumWidth(180)
@@ -434,9 +442,9 @@ def main() -> int:
             self.min_note_evidence_slider.valueChanged.connect(self.handle_min_note_evidence_changed)
             self.chord_list.itemDoubleClicked.connect(self.preview_chord_item)
             self.chord_list.currentItemChanged.connect(self.handle_chord_selection_changed)
-            self.timeline_slider.valueChanged.connect(self.set_editor_position)
             self.timeline.verticalScrollBar().valueChanged.connect(self.sync_track_control_scroll)
             self.playback_scroll.verticalScrollBar().valueChanged.connect(self.sync_timeline_scroll)
+            self.model_select.currentIndexChanged.connect(self.refresh_model_details)
             self.bs_device.currentIndexChanged.connect(self.refresh_model_details)
             self.generate_midi.toggled.connect(self.refresh_midi_stem_checks)
             self.sonify_midi.toggled.connect(self.sonification_samplerate.setEnabled)
@@ -460,54 +468,6 @@ def main() -> int:
                 return
             self.save_editor_state()
             super().closeEvent(event)
-
-        @property
-        def worker_token(self) -> int:
-            return self.worker_jobs.next_token
-
-        @worker_token.setter
-        def worker_token(self, value: int) -> None:
-            self.worker_jobs.next_token = value
-
-        @property
-        def active_worker_token(self) -> int | None:
-            return self.worker_jobs.active_token
-
-        @active_worker_token.setter
-        def active_worker_token(self, value: int | None) -> None:
-            self.worker_jobs.active_token = value
-
-        @property
-        def editor_load_worker(self) -> threading.Thread | None:
-            return self.editor_load_jobs.worker
-
-        @editor_load_worker.setter
-        def editor_load_worker(self, value: threading.Thread | None) -> None:
-            self.editor_load_jobs.worker = value
-
-        @property
-        def editor_load_token(self) -> int:
-            return self.editor_load_jobs.token
-
-        @editor_load_token.setter
-        def editor_load_token(self, value: int) -> None:
-            self.editor_load_jobs.token = value
-
-        @property
-        def editor_load_activity_tokens(self) -> set[int]:
-            return self.editor_load_jobs.activity_tokens
-
-        @property
-        def midi_preview_token(self) -> int:
-            return self.midi_preview_jobs.token
-
-        @midi_preview_token.setter
-        def midi_preview_token(self, value: int) -> None:
-            self.midi_preview_jobs.token = value
-
-        @property
-        def midi_preview_workers(self) -> dict[tuple[Path, str], tuple[int, threading.Thread]]:
-            return self.midi_preview_jobs.workers
 
         def begin_activity(self, message: str, busy: bool = True) -> None:
             self.activity_depth += 1
@@ -558,6 +518,106 @@ def main() -> int:
             self.activity_label.setText(message)
             self.statusBar().showMessage(message)
             QApplication.processEvents()
+
+        def build_workspace_shell(self) -> QWidget:
+            root = QWidget()
+            root.setObjectName("appShell")
+            root_layout = QHBoxLayout()
+            root_layout.setContentsMargins(0, 0, 0, 0)
+            root_layout.setSpacing(0)
+
+            rail = QFrame()
+            rail.setObjectName("sideRail")
+            rail.setFixedWidth(90)
+            rail_layout = QVBoxLayout()
+            rail_layout.setContentsMargins(8, 10, 6, 10)
+            rail_layout.setSpacing(6)
+
+            brand = QLabel("PitchStems")
+            brand.setObjectName("brandTitle")
+            brand.setAlignment(Qt.AlignCenter)
+            rail_layout.addWidget(brand)
+            rail_layout.addSpacing(14)
+
+            self.workspace_nav_group = QButtonGroup(self)
+            self.workspace_nav_group.setExclusive(True)
+            for label, tab_index in (
+                ("Pipeline", 0),
+                ("Editor", 1),
+            ):
+                button = QPushButton(label)
+                button.setObjectName("navButton")
+                button.setCheckable(True)
+                button.clicked.connect(lambda checked=False, index=tab_index: self.main_tabs.setCurrentIndex(index))
+                self.workspace_nav_group.addButton(button)
+                rail_layout.addWidget(button)
+                self.workspace_nav_buttons[label] = button
+            rail_layout.addStretch(1)
+
+            help_button = QPushButton("Help")
+            help_button.setObjectName("navButton")
+            help_button.clicked.connect(self.show_timeline_controls)
+            rail_layout.addWidget(help_button)
+            rail.setLayout(rail_layout)
+
+            workspace = QWidget()
+            workspace_layout = QVBoxLayout()
+            workspace_layout.setContentsMargins(12, 10, 12, 0)
+            workspace_layout.setSpacing(10)
+            workspace_layout.addWidget(self.build_top_bar())
+            workspace_layout.addWidget(self.build_project_strip())
+            workspace_layout.addWidget(self.main_tabs, 1)
+            workspace.setLayout(workspace_layout)
+
+            root_layout.addWidget(rail)
+            root_layout.addWidget(workspace, 1)
+            root.setLayout(root_layout)
+            self.sync_workspace_nav(self.main_tabs.currentIndex())
+            return root
+
+        def build_top_bar(self) -> QWidget:
+            bar = QFrame()
+            bar.setObjectName("topBar")
+            layout = QHBoxLayout()
+            layout.setContentsMargins(12, 8, 12, 8)
+            layout.setSpacing(8)
+            layout.addWidget(self.play_button)
+            layout.addWidget(self.stop_button)
+            layout.addWidget(self.fit_song_button)
+            position_label = QLabel("Position")
+            position_label.setObjectName("eyebrow")
+            layout.addWidget(position_label)
+            layout.addWidget(self.editor_position)
+            layout.addWidget(self.current_chord, 1)
+            layout.addStretch(1)
+            layout.addWidget(self.cancel_button)
+            layout.addWidget(self.run_midi)
+            layout.addWidget(self.run_full)
+            bar.setLayout(layout)
+            return bar
+
+        def build_project_strip(self) -> QWidget:
+            strip = QFrame()
+            strip.setObjectName("projectStrip")
+            layout = QHBoxLayout()
+            layout.setContentsMargins(12, 8, 12, 8)
+            layout.setSpacing(10)
+            project_label = QLabel("Project")
+            project_label.setObjectName("eyebrow")
+            layout.addWidget(project_label)
+            layout.addWidget(self.editor_summary, 1)
+            status_label = QLabel("Status")
+            status_label.setObjectName("eyebrow")
+            layout.addWidget(status_label)
+            layout.addWidget(self.separation_status)
+            strip.setLayout(layout)
+            return strip
+
+        def sync_workspace_nav(self, index: int) -> None:
+            target = "Pipeline" if index == 0 else "Editor"
+            button = self.workspace_nav_buttons.get(target)
+            if button is not None:
+                button.setChecked(True)
 
         def create_menus(self) -> None:
             file_menu = self.menuBar().addMenu("&File")
@@ -616,6 +676,8 @@ def main() -> int:
             menu.addAction(action)
             return action
 
+        # Thin slot adapters keep Qt connections and cross-module callbacks on MainWindow
+        # while the behavior lives in focused gui_* modules.
         def refresh_recent_projects_menu(self) -> None:
             gui_project_flow.refresh_recent_projects_menu(self)
 
@@ -691,8 +753,8 @@ def main() -> int:
         def start_midi_processing(self) -> None:
             gui_processing.start_midi_processing(self)
 
-        def cancel_processing(self) -> None:
-            gui_processing.cancel_processing(self)
+        def cancel_processing(self) -> bool:
+            return gui_processing.cancel_processing(self)
 
         def start_worker_token(self) -> int:
             return gui_processing.start_worker_token(self)
@@ -737,9 +799,6 @@ def main() -> int:
         def refresh_detected_chord_list(self) -> None:
             gui_editor_load.refresh_detected_chord_list(self)
 
-        def set_editor_position(self, value: int) -> None:
-            self.set_editor_position_seconds(value / 1000)
-
         def refresh_playback_controls(self, editor_state: dict) -> None:
             rebuild_track_controls(self, editor_state)
 
@@ -770,13 +829,13 @@ def main() -> int:
             gui_transport_flow.prepare_transport_players(self, result)
 
         def clear_transport_players(self) -> None:
-            gui_transport_flow.clear_transport_players(self)
+            self.transport.clear_players()
 
         def transport_players(self) -> list[QMediaPlayer]:
-            return gui_transport_flow.transport_players(self)
+            return self.transport.players()
 
         def find_existing_midi_previews(self, result: PipelineResult) -> dict[str, Path]:
-            return gui_transport_flow.existing_midi_previews(result)
+            return find_existing_midi_previews(result)
 
         def start_midi_preview_render(
             self,
@@ -795,13 +854,14 @@ def main() -> int:
             gui_transport_flow.attach_midi_preview_players(self, previews, finish_activity)
 
         def refresh_playback_mix(self) -> None:
-            gui_transport_flow.refresh_playback_mix(self)
+            self.transport.refresh_mix()
+            self.apply_midi_transport_state()
 
         def midi_track_enabled(self, stem_name: str) -> bool:
-            return gui_transport_flow.midi_track_enabled(self, stem_name)
+            return self.transport.midi_track_enabled(stem_name)
 
         def apply_midi_transport_state(self) -> None:
-            gui_transport_flow.apply_midi_transport_state(self)
+            self.transport.apply_midi_transport_state(self.timeline.position)
 
         def toggle_playback(self) -> None:
             gui_transport_flow.toggle_playback(self)
@@ -816,19 +876,19 @@ def main() -> int:
             gui_transport_flow.stop_transport(self)
 
         def seek_audio_players(self, seconds: float) -> None:
-            gui_transport_flow.seek_audio_players(self, seconds)
+            self.transport.seek(seconds)
 
         def update_transport_position(self) -> None:
             gui_transport_flow.update_transport_position(self)
 
         def transport_master_player(self) -> QMediaPlayer | None:
-            return gui_transport_flow.transport_master_player(self)
+            return self.transport.master_player()
 
         def resync_transport_players(self, master: QMediaPlayer | None = None) -> None:
-            gui_transport_flow.resync_transport_players(self, master)
+            self.transport.resync(master)
 
         def loop_playback_start_seconds(self) -> float:
-            return gui_transport_flow.loop_playback_start_seconds(self)
+            return loop_playback_start(self.timeline.position, self.timeline.selection_range())
 
         def set_editor_position_seconds(
             self,
@@ -839,10 +899,6 @@ def main() -> int:
         ) -> None:
             if self.editor_project is not None:
                 seconds = max(0.0, min(seconds, max(self.editor_project.duration, 0.0)))
-            value = int(seconds * 1000)
-            self.timeline_slider.blockSignals(True)
-            self.timeline_slider.setValue(value)
-            self.timeline_slider.blockSignals(False)
             self.editor_position.setText(format_time(seconds))
             self.timeline.set_position(seconds)
             self.refresh_current_harmony(seconds, force=force_harmony_refresh)
@@ -1236,6 +1292,7 @@ def main() -> int:
         return spin
 
     app = QApplication([])
+    app.setStyleSheet(pitchstems_stylesheet())
     window = MainWindow()
     window.show()
     smoke_mode = os.environ.get("PITCHSTEMS_GUI_SMOKE")

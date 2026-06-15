@@ -6,6 +6,29 @@ from dataclasses import dataclass
 SHARP_PITCH_NAMES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
 FLAT_PITCH_NAMES = ("C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B")
 DEFAULT_PITCH_NAMES = ("C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B")
+ACCEPTED_NOTE_NAMES = (
+    "C#",
+    "Db",
+    "D#",
+    "Eb",
+    "E#",
+    "Fb",
+    "F#",
+    "Gb",
+    "G#",
+    "Ab",
+    "A#",
+    "Bb",
+    "B#",
+    "Cb",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "A",
+    "B",
+)
 LETTERS = ("C", "D", "E", "F", "G", "A", "B")
 NATURAL_PITCH_CLASSES = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
 NOTE_NAME_TO_PITCH_CLASS = {
@@ -66,6 +89,16 @@ def pitch_class_name(pitch_class: int, preference: str | None = "auto") -> str:
 def midi_note_name(pitch: int, preference: str | None = "auto") -> str:
     octave = pitch // 12 - 1
     return f"{pitch_class_name(pitch, preference)}{octave}"
+
+
+def normalized_pitch_class_weights(totals: dict[int, float]) -> list[tuple[str, float]]:
+    max_total = max(totals.values(), default=0.0)
+    if max_total <= 0:
+        return []
+    return [
+        (DEFAULT_PITCH_NAMES[pitch_class], weight / max_total)
+        for pitch_class, weight in sorted(totals.items(), key=lambda item: (-item[1], item[0]))
+    ]
 
 
 def split_chord_label(label: str) -> ChordLabelParts | None:

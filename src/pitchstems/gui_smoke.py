@@ -30,6 +30,7 @@ def run_startup_smoke(window) -> None:
     _assert(not window.stop_button.isEnabled(), "stop disabled before playback")
     _assert(not window.fit_song_button.isEnabled(), "fit disabled before project load")
     _assert(window.editor_position.text() == "00:00.000", "initial editor position")
+    _assert(not hasattr(window, "timeline_slider"), "no hidden timeline slider")
     _assert(window.drop_zone.maximumHeight() > 1000, "drop zone can grow with content")
     _assert(window.note_filter_list.maximumHeight() > 1000, "note evidence list can grow")
     _assert(window.piano_chord_view.maximumHeight() > 1000, "piano view can grow")
@@ -38,6 +39,9 @@ def run_startup_smoke(window) -> None:
     _assert(window.run_full.isEnabled(), "run button enabled")
     _assert(not window.run_midi.isEnabled(), "rerun midi disabled before project load")
     _assert(window.generate_midi.isChecked(), "generate MIDI default")
+    _assert(set(window.workspace_nav_buttons) == {"Pipeline", "Editor"}, "workspace nav maps to real pages")
+    _assert(window.model_select.count() >= 2, "GUI model selector populated")
+    _assert(window.model_title.text(), "model title displayed")
     _assert(window.processing_tabs.count() == 2, "pipeline processing tabs")
     _assert(window.processing_tabs.tabText(0) == "Basic Pitch", "basic pitch tab")
     _assert(window.processing_tabs.tabText(1) == "Runtime", "runtime tab")
@@ -66,7 +70,6 @@ def run_project_smoke(window) -> None:
 
     _assert(window.current_result is not None, "current result after project open")
     _assert(window.timeline.project is window.editor_project, "timeline project attached")
-    _assert(window.timeline_slider.isEnabled(), "timeline slider enabled")
     _assert(window.fit_song_button.isEnabled(), "fit song enabled")
     _assert(window.run_midi.isEnabled(), "rerun midi enabled after project load")
     _assert("bass" in window.track_analysis_checks, "bass chord analysis control")
@@ -153,7 +156,7 @@ def run_project_smoke(window) -> None:
     window.play_button.setText("Pause")
     window.stop_button.setEnabled(True)
     window.transport_timer.start(80)
-    window.active_worker_token = 7
+    window.worker_jobs.active_token = 7
     window.open_project_manifest(second_manifest_path)
     _wait_for(
         lambda: window.current_result is not None
@@ -161,7 +164,7 @@ def run_project_smoke(window) -> None:
         and window.editor_project is not None,
         "second editor project load",
     )
-    _assert(window.active_worker_token is None, "project open invalidates active worker")
+    _assert(window.worker_jobs.active_token is None, "project open invalidates active worker")
     _assert(not window.transport.is_playing, "project open stops old transport")
     _assert(not window.transport_timer.isActive(), "project open stops old transport timer")
     _assert(window.play_button.text() == "Play", "project open resets play button")
@@ -171,7 +174,7 @@ def run_project_smoke(window) -> None:
     _assert(set(window.timeline.visible_tracks) == {"piano"}, "timeline visible tracks switched")
     _assert(window.timeline.selection_range() is None, "timeline selection reset on project switch")
     active_project_dir = window.current_result.project_dir
-    window.active_worker_token = 10
+    window.worker_jobs.active_token = 10
     window.messages.put(
         (
             "RESULT",
@@ -187,30 +190,30 @@ def run_project_smoke(window) -> None:
         )
     )
     window.flush_messages()
-    window.active_worker_token = None
+    window.worker_jobs.active_token = None
     _assert(window.current_result.project_dir == active_project_dir, "stale worker result ignored")
     activity_label = window.activity_label.text()
     window.messages.put(("ENABLE_PROCESS", 9))
     window.flush_messages()
     _assert(window.activity_label.text() == activity_label, "stale worker completion ignored")
     stale_preview = active_project_dir / "editor" / "midi-preview" / "piano_midi_preview.wav"
-    window.messages.put(("MIDI_PREVIEWS", window.midi_preview_token - 1, active_project_dir, {"piano"}, {"piano": stale_preview}))
+    window.messages.put(("MIDI_PREVIEWS", window.midi_preview_jobs.token - 1, active_project_dir, {"piano"}, {"piano": stale_preview}))
     window.flush_messages()
     _assert("piano" not in window.transport.midi_preview_paths, "stale MIDI preview ignored")
-    stale_token = window.midi_preview_token - 1
-    current_token = window.midi_preview_token
+    stale_token = window.midi_preview_jobs.token - 1
+    current_token = window.midi_preview_jobs.token
     current_worker = _FakeWorker(alive=True)
     worker_key = (active_project_dir, "piano")
-    window.midi_preview_workers[worker_key] = (stale_token, _FakeWorker(alive=True))
+    window.midi_preview_jobs.workers[worker_key] = (stale_token, _FakeWorker(alive=True))
     _assert(
         not window._midi_preview_worker_running(active_project_dir, "piano"),
         "stale MIDI preview worker does not block current project",
     )
-    window.midi_preview_workers[worker_key] = (current_token, current_worker)
+    window.midi_preview_jobs.workers[worker_key] = (current_token, current_worker)
     window.messages.put(("MIDI_PREVIEWS", stale_token, active_project_dir, {"piano"}, {"piano": stale_preview}))
     window.flush_messages()
     _assert(
-        window.midi_preview_workers.get(worker_key) == (current_token, current_worker),
+        window.midi_preview_jobs.workers.get(worker_key) == (current_token, current_worker),
         "stale MIDI preview completion does not clear current worker",
     )
     stale_loaded = EditorLoadResult(
@@ -221,7 +224,7 @@ def run_project_smoke(window) -> None:
         manual_chords=[],
         removed_chord_ranges=[],
     )
-    window.finish_editor_project_load(window.editor_load_token - 1, stale_loaded)
+    window.finish_editor_project_load(window.editor_load_jobs.token - 1, stale_loaded)
     _assert(window.activity_label.text() == activity_label, "stale editor load leaves activity label alone")
 
     window.reset_stage_state()

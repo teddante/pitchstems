@@ -6,7 +6,7 @@ from pathlib import Path
 from pitchstems.doctor import format_checks, run_checks
 from pitchstems.model_catalog import all_model_keys, model_choice
 from pitchstems.pipeline import process_audio_file
-from pitchstems.separation import download_model, profile_keys
+from pitchstems.separation import download_model, model_key_for_profile, profile_keys
 from pitchstems.separation import SeparationOptions
 from pitchstems.transcription import MidiOptions
 
@@ -76,17 +76,12 @@ def main() -> int:
     if not args.audio_file:
         parser.error("audio_file is required unless --doctor or --download-model is used")
 
-    model_key = args.model or "bs_roformer_sw"
+    separation_options = _separation_options(args)
+    model_key = separation_options.model_key if separation_options else model_key_for_profile(args.quality)
     choice = model_choice(model_key)
     selected_stem = args.stem
     if selected_stem and selected_stem.lower() not in {stem.lower() for stem in choice.stems}:
         parser.error(f"--stem {selected_stem!r} is not supported by --model {model_key}. Valid stems: {', '.join(choice.stems)}")
-    separation_options = SeparationOptions(
-        model_key=model_key,
-        selected_stem=selected_stem,
-        device=_bs_device(args.bs_device),
-        device_ids=tuple(args.bs_device_id) if args.bs_device_id else None,
-    )
     midi_options = MidiOptions(
         onset_threshold=args.onset_threshold,
         frame_threshold=args.frame_threshold,
@@ -123,6 +118,18 @@ def _bs_device(device: str) -> str | None:
     if device == "cpu":
         return "cpu"
     return None
+
+
+def _separation_options(args: argparse.Namespace) -> SeparationOptions | None:
+    explicit_device = args.bs_device != "auto" or bool(args.bs_device_id)
+    if not (args.model or args.stem or explicit_device):
+        return None
+    return SeparationOptions(
+        model_key=args.model or model_key_for_profile(args.quality),
+        selected_stem=args.stem,
+        device=_bs_device(args.bs_device),
+        device_ids=tuple(args.bs_device_id) if args.bs_device_id else None,
+    )
 
 
 if __name__ == "__main__":

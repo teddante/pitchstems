@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import queue
 import threading
 from dataclasses import dataclass
@@ -40,10 +39,6 @@ class MidiRunRequest:
     midi_stems: set[str]
     create_zip: bool
     cancelled: Callable[[], bool]
-
-
-def use_native_process_jobs() -> bool:
-    return os.environ.get("PITCHSTEMS_NATIVE_PROCESS_JOBS") == "1"
 
 
 def start_full_processing(window) -> None:

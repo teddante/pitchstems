@@ -2,13 +2,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from pitchstems.chord_analysis import (
-    PITCH_NAMES,
-    chord_pitch_classes_for_label,
-    midi_velocity_energy,
-)
+from pitchstems.chord_analysis import chord_pitch_classes_for_label
 from pitchstems.editor_models import ChordRegion, NoteEvent
+from pitchstems.midi_energy import (
+    active_notes_at,
+    midi_velocity_energy,
+    note_overlap_seconds,
+    point_pitch_energy,
+    region_pitch_energy,
+)
 from pitchstems.notation import (
+    ACCEPTED_NOTE_NAMES,
+    normalized_pitch_class_weights,
     pitch_class_for_name,
     pitch_class_name,
     scale_label,
@@ -230,13 +235,12 @@ def analyze_theory_at(
     chords: list[ChordRegion],
     seconds: float,
 ) -> TheoryAnalysis:
-    active_notes = [note for note in notes if note.start <= seconds < note.end]
+    active_notes = active_notes_at(notes, seconds)
     active_chords = [chord for chord in chords if chord.start <= seconds < chord.end]
-    totals = {}
+    totals, _exact_pitch_weights = point_pitch_energy(notes, seconds)
     bass_totals = {}
     for note in active_notes:
         weight = midi_velocity_energy(note.velocity)
-        _add_pitch_weight(totals, note.pitch % 12, weight)
         if note.pitch < 60:
             _add_pitch_weight(bass_totals, note.pitch % 12, weight)
     return _analyze_evidence(totals, bass_totals, active_chords)
@@ -250,14 +254,13 @@ def analyze_theory_region(
 ) -> TheoryAnalysis:
     if end <= start:
         return _analyze_evidence({}, {}, [])
-    totals = {}
+    totals, _exact_pitch_weights = region_pitch_energy(notes, start, end)
     bass_totals = {}
     for note in notes:
-        overlap = max(0.0, min(note.end, end) - max(note.start, start))
+        overlap = note_overlap_seconds(note, start, end)
         if overlap <= 0:
             continue
         weight = overlap * midi_velocity_energy(note.velocity)
-        _add_pitch_weight(totals, note.pitch % 12, weight)
         if note.pitch < 60:
             _add_pitch_weight(bass_totals, note.pitch % 12, weight)
     active_chords = [
@@ -540,13 +543,7 @@ def _suggested_note_groups(
 
 
 def _normalized_note_weights(totals: dict[int, float]) -> list[tuple[str, float]]:
-    max_total = max(totals.values(), default=0.0)
-    if max_total <= 0:
-        return []
-    return [
-        (PITCH_NAMES[pitch_class], totals[pitch_class] / max_total)
-        for pitch_class in sorted(totals, key=lambda item: totals[item], reverse=True)
-    ]
+    return normalized_pitch_class_weights(totals)
 
 
 def _chord_root_totals(chords: list[ChordRegion]) -> dict[int, float]:
@@ -563,7 +560,7 @@ def _chord_root(label: str) -> int | None:
     root_name = next(
         (
             name
-            for name in sorted(_accepted_note_names(), key=len, reverse=True)
+            for name in sorted(ACCEPTED_NOTE_NAMES, key=len, reverse=True)
             if base_label.startswith(name)
         ),
         None,
@@ -578,7 +575,7 @@ def _chord_suffix(label: str) -> str:
     root_name = next(
         (
             name
-            for name in sorted(_accepted_note_names(), key=len, reverse=True)
+            for name in sorted(ACCEPTED_NOTE_NAMES, key=len, reverse=True)
             if base_label.startswith(name)
         ),
         "",
@@ -594,7 +591,7 @@ def spelling_preference_from_scale_label(label: str) -> str:
     root = next(
         (
             name
-            for name in sorted(_accepted_note_names(), key=len, reverse=True)
+            for name in sorted(ACCEPTED_NOTE_NAMES, key=len, reverse=True)
             if label.startswith(name)
         ),
         "",
@@ -604,32 +601,6 @@ def spelling_preference_from_scale_label(label: str) -> str:
     if "#" in root:
         return "sharp"
     return "auto"
-
-
-def _accepted_note_names() -> tuple[str, ...]:
-    return (
-        "C#",
-        "Db",
-        "D#",
-        "Eb",
-        "E#",
-        "Fb",
-        "F#",
-        "Gb",
-        "G#",
-        "Ab",
-        "A#",
-        "Bb",
-        "B#",
-        "Cb",
-        "C",
-        "D",
-        "E",
-        "F",
-        "G",
-        "A",
-        "B",
-    )
 
 
 def _add_pitch_weight(totals: dict[int, float], pitch_class: int, weight: float) -> None:

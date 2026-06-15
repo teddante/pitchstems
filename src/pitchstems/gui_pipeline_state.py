@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pitchstems.acceleration import onnxruntime_status, torch_status
+from pitchstems.gui_helpers import clear_layout
 from pitchstems.gui_options import default_midi_checked, device_label, optional_frequency
 from pitchstems.gui_pipeline_model import PipelinePageModel
 from pitchstems.model_catalog import model_choice
@@ -18,6 +19,7 @@ def set_processing_state(window, busy: bool) -> None:
     window.run_full.setEnabled(model.run_full_enabled)
     window.run_midi.setEnabled(model.run_midi_enabled)
     window.cancel_button.setEnabled(model.cancel_enabled)
+    window.model_select.setEnabled(model.settings_enabled)
     window.stem.setEnabled(model.settings_enabled)
     window.bs_device.setEnabled(model.settings_enabled)
     window.generate_midi.setEnabled(model.settings_enabled)
@@ -44,8 +46,8 @@ def set_processing_state(window, busy: bool) -> None:
         window.refresh_midi_stem_checks()
 
 
-def selected_model_key(_window) -> str:
-    return "bs_roformer_sw"
+def selected_model_key(window) -> str:
+    return window.model_select.currentData() or "bs_roformer_sw"
 
 
 def selected_separation_options(window) -> SeparationOptions:
@@ -90,7 +92,7 @@ def refresh_midi_stem_checks(window, *_args) -> None:
     saved_stem = window.stem.currentData()
     previous = {stem: checkbox.isChecked() for stem, checkbox in window.midi_stem_checks.items()}
     window.midi_stem_checks.clear()
-    _clear_layout(window.midi_stems_layout)
+    clear_layout(window.midi_stems_layout)
 
     for index, stem_name in enumerate(choice.stems):
         checkbox = QCheckBox(stem_name)
@@ -126,6 +128,9 @@ def refresh_model_details(window, *_args) -> None:
     window.model_facts.setText(
         f"Best for: {choice.best_for}\n"
         f"Creates: {', '.join(choice.stems)}\n"
+        f"Quality: {choice.quality_note}\n"
+        f"Speed: {choice.speed_note}\n"
+        f"Acceleration: {choice.gpu_note}\n"
         f"Evidence: {choice.score_summary}"
     )
     window.model_runtime.setText(
@@ -138,11 +143,3 @@ def refresh_model_details(window, *_args) -> None:
         f"Config: {choice.config_filename or 'provided by registry'}\n"
         f"Calls: bs_roformer.inference.proc_folder -> basic_pitch.inference.predict_and_save"
     )
-
-
-def _clear_layout(layout) -> None:
-    while layout.count():
-        item = layout.takeAt(0)
-        widget = item.widget()
-        if widget is not None:
-            widget.deleteLater()

@@ -2,12 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from pitchstems.chord_analysis import (
-    ChordAnalysis,
-    ChordScoringOptions,
-    analyze_chord_region,
-    chord_pitch_classes_for_label,
-)
+from pitchstems.chord_analysis import ChordAnalysis, chord_pitch_classes_for_label
+from pitchstems.chord_detection import analyze_chord_region
+from pitchstems.chord_scoring import ChordScoringOptions
 from pitchstems.editor_models import ChordRegion, NoteEvent
 from pitchstems.scale_analysis import TheoryAnalysis, analyze_theory_region
 from pitchstems.theory_helpers import (

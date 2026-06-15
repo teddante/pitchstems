@@ -4,8 +4,9 @@ from pathlib import Path
 
 from pitchstems.app_logging import logs_dir
 from pitchstems.file_opening import open_folder
-from pitchstems.input_validation import validate_audio_input
 from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
+from pitchstems.gui_helpers import clear_layout
+from pitchstems.input_validation import validate_audio_input
 from pitchstems.project_store import PROJECT_FILENAME, load_pipeline_result
 from pitchstems.recent_projects import (
     normalize_recent_project_paths,
@@ -194,8 +195,6 @@ def reset_stage_state(window, path: Path | None = None) -> None:
     window.separation_status.setText("Not run yet.")
     window.midi_status.setText("Run the full pipeline first, then MIDI can be rerun without separating again.")
     window.editor_summary.setText(EMPTY_EDITOR_SUMMARY)
-    window.timeline_slider.setRange(0, 0)
-    window.timeline_slider.setEnabled(False)
     window.fit_song_button.setEnabled(False)
     window.inspect_chord_button.setEnabled(False)
     window.inspect_theory_button.setEnabled(False)
@@ -211,7 +210,7 @@ def reset_stage_state(window, path: Path | None = None) -> None:
     window.track_visibility_checks.clear()
     window.track_note_counts.clear()
     window.editor_track_visibility = {}
-    _clear_layout(window.playback_controls)
+    clear_layout(window.playback_controls)
     window.chord_list.clear()
     window.refresh_chord_keyboard()
     window.timeline.set_project(None)
@@ -235,11 +234,3 @@ def open_folder_path(window, target: Path, label: str) -> None:
         window.statusBar().showMessage(f"Could not open {label}. See logs for details.", 6000)
         return
     window.statusBar().showMessage(f"Opened {label}: {opened}", 3000)
-
-
-def _clear_layout(layout) -> None:
-    while layout.count():
-        item = layout.takeAt(0)
-        widget = item.widget()
-        if widget is not None:
-            widget.deleteLater()

@@ -22,18 +22,7 @@ class SeparationProfile:
     models: list[str]
 
 
-SEPARATION_PROFILES: dict[str, SeparationProfile] = {
-    "song-6-stem": SeparationProfile(
-        key="song-6-stem",
-        label="Native BS-RoFormer SW",
-        description="Native BS-RoFormer-SW six-stem model.",
-        best_for="Stem-to-MIDI workflows where guitar and piano should be separate.",
-        expected_stems=["vocals", "drums", "bass", "guitar", "piano", "other", "instrumental"],
-        speed="Slow",
-        quality="High multi-stem target",
-        models=["roformer-model-bs-roformer-sw-by-jarredou"],
-    ),
-}
+DEFAULT_PROFILE_KEY = "song-6-stem"
 
 LEGACY_PROFILE_ALIASES = {
     "best": "song-6-stem",
@@ -43,7 +32,7 @@ LEGACY_PROFILE_ALIASES = {
 }
 
 PROFILE_MODEL_ALIASES = {
-    "song-6-stem": "bs_roformer_sw",
+    DEFAULT_PROFILE_KEY: "bs_roformer_sw",
 }
 
 
@@ -129,8 +118,7 @@ def separate_stems(
         ) from exc
 
     if options is None:
-        profile_key = get_profile(profile).key
-        options = SeparationOptions(model_key=PROFILE_MODEL_ALIASES.get(profile_key, "bs_roformer_sw"))
+        options = SeparationOptions(model_key=model_key_for_profile(profile))
 
     choice = options.choice
     model_dir = download_model(choice.key, log=log)
@@ -187,11 +175,27 @@ def separate_stems(
 
 def get_profile(profile: str) -> SeparationProfile:
     key = LEGACY_PROFILE_ALIASES.get(profile, profile)
-    return SEPARATION_PROFILES.get(key, SEPARATION_PROFILES["song-6-stem"])
+    if key not in PROFILE_MODEL_ALIASES:
+        key = DEFAULT_PROFILE_KEY
+    choice = model_choice(PROFILE_MODEL_ALIASES[key])
+    return SeparationProfile(
+        key=key,
+        label=choice.label,
+        description=choice.summary,
+        best_for=choice.best_for,
+        expected_stems=choice.stems,
+        speed=choice.speed_note,
+        quality=choice.quality_note,
+        models=[choice.native_model_id],
+    )
+
+
+def model_key_for_profile(profile: str) -> str:
+    return PROFILE_MODEL_ALIASES.get(get_profile(profile).key, "bs_roformer_sw")
 
 
 def profile_keys() -> list[str]:
-    return list(SEPARATION_PROFILES)
+    return list(PROFILE_MODEL_ALIASES)
 
 
 def _model_cache_dir() -> Path:

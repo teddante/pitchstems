@@ -1,18 +1,16 @@
 from __future__ import annotations
 
-import importlib.util
 from dataclasses import dataclass
 from pathlib import Path
 
 from pitchstems.acceleration import onnxruntime_status, torch_status
 from pitchstems.audio import require_ffmpeg
-
-
-@dataclass(frozen=True)
-class PreflightCheck:
-    name: str
-    ok: bool
-    detail: str
+from pitchstems.runtime_checks import (
+    RuntimeCheck as PreflightCheck,
+    module_check,
+    onnxruntime_check,
+    torch_cuda_check,
+)
 
 
 @dataclass(frozen=True)
@@ -26,11 +24,6 @@ class PreflightReport:
     def failure_summary(self) -> str:
         failures = [f"{check.name}: {check.detail}" for check in self.checks if not check.ok]
         return "; ".join(failures)
-
-
-def _module_check(name: str, module_name: str) -> PreflightCheck:
-    found = importlib.util.find_spec(module_name) is not None
-    return PreflightCheck(name, found, "installed" if found else f"`{module_name}` missing")
 
 
 def _output_directory_check(output_root: Path) -> PreflightCheck:
@@ -74,26 +67,12 @@ def run_preflight(
         checks.append(_output_directory_check(output_root))
 
     if requested_device and requested_device.startswith("cuda"):
-        status = torch_status()
-        checks.append(
-            PreflightCheck(
-                "PyTorch CUDA",
-                bool(status.installed and status.cuda_available),
-                status.device_name or "CUDA is not available to PyTorch",
-            )
-        )
+        checks.append(torch_cuda_check(torch_status()))
 
     if require_ml:
-        ort = onnxruntime_status()
-        checks.append(
-            PreflightCheck(
-                "ONNX Runtime",
-                bool(ort.installed),
-                ", ".join(ort.providers) if ort.installed else "ONNX Runtime is not installed",
-            )
-        )
-        checks.append(_module_check("Basic Pitch", "basic_pitch"))
-        checks.append(_module_check("BS-RoFormer native backend", "bs_roformer"))
+        checks.append(onnxruntime_check(onnxruntime_status()))
+        checks.append(module_check("Basic Pitch", "basic_pitch"))
+        checks.append(module_check("BS-RoFormer native backend", "bs_roformer"))
         if model_key:
             checks.append(_model_registry_check(model_key))
     return PreflightReport(checks)

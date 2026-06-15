@@ -11,6 +11,7 @@ def test_default_midi_checked_excludes_unpitched_or_mix_stems() -> None:
     assert default_midi_checked("bass") is True
     assert default_midi_checked("drums") is False
     assert default_midi_checked("Drum") is False
+    assert default_midi_checked("kick") is False
     assert default_midi_checked("wet") is False
 
 

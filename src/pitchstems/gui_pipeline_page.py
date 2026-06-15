@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from pitchstems.gui_helpers import section_label
 from pitchstems.gui_layout_policy import PipelineLayoutPolicy
 
 
@@ -46,6 +47,14 @@ def build_pipeline_page(window) -> QWidget:
     selected_panel = QVBoxLayout()
     selected_panel.setSpacing(8)
     selected_panel.addWidget(section_label("Controls"))
+
+    model_group = QGroupBox("Separation model")
+    model_layout = QVBoxLayout()
+    model_layout.setSpacing(8)
+    model_layout.setContentsMargins(10, 8, 10, 8)
+    model_layout.addWidget(window.model_title)
+    model_layout.addWidget(window.model_select)
+    model_group.setLayout(model_layout)
 
     runtime_group = QGroupBox("BS-RoFormer runtime")
     runtime_layout = QVBoxLayout()
@@ -139,6 +148,7 @@ def build_pipeline_page(window) -> QWidget:
     window.processing_tabs.addTab(midi_settings_tab, "Basic Pitch")
     window.processing_tabs.addTab(runtime_tab, "Runtime")
 
+    selected_panel.addWidget(model_group)
     selected_panel.addWidget(stem_group)
     selected_panel.addWidget(midi_group)
     selected_panel.addWidget(window.processing_tabs, 1)
@@ -149,30 +159,16 @@ def build_pipeline_page(window) -> QWidget:
     main_row.addLayout(separation_panel, 3)
     main_row.addLayout(selected_panel, 2)
 
-    action_row = QHBoxLayout()
-    action_row.addStretch(1)
-    action_row.addWidget(window.cancel_button)
-    action_row.addWidget(window.run_midi)
-    action_row.addWidget(window.run_full)
-
     pipeline_layout = QVBoxLayout()
     pipeline_layout.setContentsMargins(12, 12, 12, 12)
     pipeline_layout.setSpacing(10)
     pipeline_layout.addWidget(window.drop_zone)
     pipeline_layout.addLayout(output_row)
     pipeline_layout.addLayout(main_row, 1)
-    pipeline_layout.addLayout(action_row)
     pipeline_layout.addWidget(window.log, 1)
     pipeline_page = QWidget()
     pipeline_page.setLayout(pipeline_layout)
     return pipeline_page
-
-
-def section_label(text: str) -> QLabel:
-    label = QLabel(text)
-    label.setStyleSheet("font-weight: 700; color: #374151; margin-top: 8px;")
-    return label
-
 
 def grid_control(layout: QGridLayout, row: int, column: int, label: str, default: str, widget: QWidget) -> None:
     stack = QVBoxLayout()

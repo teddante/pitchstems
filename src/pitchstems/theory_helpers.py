@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from pitchstems.chord_analysis import (
-    chord_pitch_classes_for_label,
-    exact_chord_names_for_pitch_classes,
-    midi_velocity_energy,
-)
+from pitchstems.chord_analysis import chord_pitch_classes_for_label, exact_chord_names_for_pitch_classes
 from pitchstems.editor_models import ChordRegion, NoteEvent
+from pitchstems.midi_energy import total_region_energy
+from pitchstems.time_format import format_time
+
+report_time = format_time
 
 
 def diatonic_chord_labels(analysis: Any) -> list[str]:
@@ -108,20 +108,8 @@ def next_chord(chords: list[ChordRegion], seconds: float) -> ChordRegion | None:
 
 
 def region_energy(notes: list[NoteEvent], start: float, end: float) -> float:
-    total = 0.0
-    for note in notes:
-        overlap = max(0.0, min(note.end, end) - max(note.start, start))
-        if overlap > 0:
-            total += overlap * midi_velocity_energy(note.velocity)
-    return total
+    return total_region_energy(notes, start, end)
 
 
 def fit_clamp(value: float) -> float:
     return max(0.0, min(1.0, value))
-
-
-def report_time(seconds: float) -> str:
-    seconds = max(0.0, seconds)
-    minutes = int(seconds // 60)
-    remainder = seconds - minutes * 60
-    return f"{minutes:02d}:{remainder:06.3f}"

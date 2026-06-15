@@ -3,12 +3,12 @@ from __future__ import annotations
 from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
-    QLabel,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
+from pitchstems.gui_helpers import section_label
 from pitchstems.gui_layout_policy import EditorLayoutPolicy
 
 
@@ -18,18 +18,6 @@ def build_editor_page(window) -> QWidget:
     editor_layout = QVBoxLayout()
     editor_layout.setContentsMargins(12, 12, 12, 12)
     editor_layout.setSpacing(10)
-    editor_layout.addWidget(window.editor_summary)
-
-    transport_row = QHBoxLayout()
-    transport_row.setSpacing(8)
-    transport_row.addWidget(window.play_button)
-    transport_row.addWidget(window.stop_button)
-    transport_row.addWidget(window.fit_song_button)
-    transport_row.addWidget(QLabel("Position"))
-    transport_row.addWidget(window.editor_position)
-    transport_row.addWidget(window.current_chord)
-    transport_row.addStretch(1)
-    editor_layout.addLayout(transport_row)
 
     editor_body = QHBoxLayout()
     editor_body.setSpacing(10)
@@ -90,15 +78,9 @@ def build_editor_page(window) -> QWidget:
     track_mix_layout.addWidget(window.playback_scroll, 1)
     track_mix_panel.setLayout(track_mix_layout)
 
-    editor_body.addWidget(editor_side_panel)
     editor_body.addWidget(track_mix_panel)
     editor_body.addWidget(window.timeline, 1)
+    editor_body.addWidget(editor_side_panel)
     editor_layout.addLayout(editor_body, 1)
     editor_page.setLayout(editor_layout)
     return editor_page
-
-
-def section_label(text: str) -> QLabel:
-    label = QLabel(text)
-    label.setStyleSheet("font-weight: 700; color: #374151; margin-top: 8px;")
-    return label

@@ -1,12 +1,10 @@
 from __future__ import annotations
 
+from pitchstems.chord_detection import analyze_chord_at, analyze_chord_region
 from pitchstems.editor_project import (
     NoteEvent,
-    active_notes_at,
-    analyze_chord_at,
-    analyze_chord_region,
-    midi_velocity_energy,
 )
+from pitchstems.midi_energy import active_notes_at, midi_velocity_energy, note_overlap_seconds
 from pitchstems.notation import pitch_class_for_name
 from pitchstems.time_format import format_time
 
@@ -152,7 +150,7 @@ def chord_selection_evidence_rows(
     rows: list[str] = []
     totals: dict[int, float] = {}
     for note in sorted(notes, key=lambda item: (item.stem, item.start, item.pitch)):
-        overlap = max(0.0, min(note.end, end) - max(note.start, start))
+        overlap = note_overlap_seconds(note, start, end)
         if overlap <= 0:
             continue
         velocity_energy = midi_velocity_energy(note.velocity)

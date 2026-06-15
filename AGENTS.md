@@ -9,8 +9,19 @@ PitchStems is a solo-developer, local-first desktop app. Work quickly, keep the 
 - Use focused checks while iterating; run the full project check before asking to commit, push, open a PR, merge, tag, or release.
 - Avoid ceremony that does not reduce risk, save time, or clarify the work.
 - Optimize for useful progress per minute: keep context reads focused, batch independent inspections, avoid repeated slow commands, and choose the lightest check that proves the current change.
+- Treat token and output volume as part of efficiency: summarize large visual/user inputs once, keep progress updates phase-level, batch related edits when safe, and avoid repeating long issue lists in goals and final summaries.
 - Keep generated audio, stems, MIDI, exports, model weights, and user files out of git.
 - Preserve the local-first posture and GPU-capable Windows workflow.
+
+## Context And Output Efficiency
+
+- Prefer bounded evidence over broad dumps. Use targeted `rg`, small file slices, `git diff --stat`, and per-file diffs only when they answer the current question.
+- Keep command output short by default: cap search/list output, use concise test modes where available, and inspect failures before rerunning.
+- Match commands to the active shell. In this Windows repo, prefer PowerShell-native commands or small Python helpers over Bash syntax that will need retrying.
+- For repeated audits, reuse or create a small bounded script/helper for import graphs, module size counts, and duplicate-signal scans instead of rebuilding fragile one-off shell pipelines.
+- When reviewing Codex threads or tool history, avoid including raw outputs unless needed; cap per-item output and do not re-ingest large inline images or base64 blobs after they have been summarized.
+- For long implementation turns, report progress by phase: context gathered, edits underway, verification, and result. Avoid one update per tiny hunk unless the user needs that granularity.
+- Run focused checks while iterating, especially `ruff`/targeted tests after import or test edits and focused `mypy` after new shared types/protocols. Then run one full required check once the diff is stable, and rerun it after production edits that could affect the result.
 
 ## Git And Autonomy
 
