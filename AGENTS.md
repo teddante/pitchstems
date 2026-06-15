@@ -4,7 +4,8 @@ PitchStems is a solo-developer, local-first desktop app. Work quickly, keep the 
 
 ## Working Style
 
-- Keep `main` stable and use short-lived `feature/*` or `fix/*` branches for meaningful work.
+- Keep `main` stable and commit directly to `main` by default to save time and tokens.
+- Use short-lived branches, issues, or PRs only when explicitly requested, when remote collaboration/review is needed, or when risk is high enough that isolating the work clearly reduces danger.
 - Prefer small, reversible changes that can be tested and explained.
 - Use focused checks while iterating; run the full project check before asking to commit, push, open a PR, merge, tag, or release.
 - Avoid ceremony that does not reduce risk, save time, or clarify the work.
@@ -25,9 +26,9 @@ PitchStems is a solo-developer, local-first desktop app. Work quickly, keep the 
 
 ## Git And Autonomy
 
-The agent may inspect, edit, test, branch, stage, commit, push branches, and open/update pull requests when the change is coherent, checks pass, and the action is the normal efficient next step.
+The agent may inspect, edit, test, stage, commit, and push directly to `main` when the change is coherent, checks pass, and the action is the normal efficient next step.
 
-Prefer automation over ceremony. If the next GitHub step is low-risk and clearly recommended, do it.
+Prefer automation over ceremony. Avoid creating issues, branches, or pull requests for routine solo-developer work unless the user asks for them or the risk justifies the extra process.
 
 Pause and ask first for destructive git operations, force-pushes, branch deletion with unmerged work, merge conflict choices that could discard work, public releases/tags, package publishing, repo setting changes, secrets, or anything where confidence is low.
 
