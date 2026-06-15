@@ -25,6 +25,9 @@ class MidiOptions:
     sonification_samplerate: int = 44100
 
 
+DEFAULT_MIDI_OPTIONS = MidiOptions()
+
+
 @dataclass(frozen=True)
 class MidiResult:
     stem: str

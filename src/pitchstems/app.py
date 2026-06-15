@@ -53,6 +53,7 @@ from pitchstems.theory import (
     analyze_theory_region,
 )
 from pitchstems.time_format import format_time
+from pitchstems.transcription import DEFAULT_MIDI_OPTIONS
 
 @dataclass(frozen=True)
 class HarmonyContext:
@@ -63,6 +64,10 @@ class HarmonyContext:
     chord_analysis: ChordAnalysis | None
     theory_analysis: TheoryAnalysis | None
     gap_analysis: ChordGapAnalysis | None
+
+
+def _on_off(value: bool) -> str:
+    return "on" if value else "off"
 
 
 def main() -> int:
@@ -228,32 +233,88 @@ def main() -> int:
             self.midi_help = QLabel("Tick the saved stems that Basic Pitch should analyse. Drums are off by default because Basic Pitch is for pitched notes.")
             self.midi_help.setWordWrap(True)
             self.midi_help.setStyleSheet("color: #4b5563;")
-            self.onset_threshold = _double_spin(0.0, 1.0, 0.5, 0.05, 2)
-            self.onset_threshold.setToolTip("Basic Pitch default: 0.50. Higher means fewer detected note attacks; lower means more sensitive note starts.")
-            self.frame_threshold = _double_spin(0.0, 1.0, 0.3, 0.05, 2)
-            self.frame_threshold.setToolTip("Basic Pitch default: 0.30. Higher means stricter sustained-note detection; lower keeps more quiet/ambiguous frames.")
-            self.minimum_note_length = _double_spin(0.0, 1000.0, 127.7, 10.0, 1)
-            self.minimum_note_length.setToolTip("Basic Pitch default: 127.7 ms. Notes shorter than this are filtered out.")
+            self.onset_threshold = _double_spin(
+                0.0,
+                1.0,
+                DEFAULT_MIDI_OPTIONS.onset_threshold,
+                0.05,
+                2,
+            )
+            self.onset_threshold.setToolTip(
+                f"Basic Pitch default: {DEFAULT_MIDI_OPTIONS.onset_threshold:.2f}. "
+                "Higher means fewer detected note attacks; lower means more sensitive note starts."
+            )
+            self.frame_threshold = _double_spin(
+                0.0,
+                1.0,
+                DEFAULT_MIDI_OPTIONS.frame_threshold,
+                0.05,
+                2,
+            )
+            self.frame_threshold.setToolTip(
+                f"Basic Pitch default: {DEFAULT_MIDI_OPTIONS.frame_threshold:.2f}. "
+                "Higher means stricter sustained-note detection; lower keeps more quiet/ambiguous frames."
+            )
+            self.minimum_note_length = _double_spin(
+                0.0,
+                1000.0,
+                DEFAULT_MIDI_OPTIONS.minimum_note_length,
+                10.0,
+                1,
+            )
+            self.minimum_note_length.setToolTip(
+                f"Basic Pitch default: {DEFAULT_MIDI_OPTIONS.minimum_note_length:g} ms. "
+                "Notes shorter than this are filtered out."
+            )
             self.minimum_frequency = _frequency_spin("No lower limit")
             self.minimum_frequency.setToolTip("Basic Pitch default: no lower frequency limit.")
             self.maximum_frequency = _frequency_spin("No upper limit")
             self.maximum_frequency.setToolTip("Basic Pitch default: no upper frequency limit.")
-            self.midi_tempo = _double_spin(20.0, 300.0, 120.0, 1.0, 1)
-            self.midi_tempo.setToolTip("Basic Pitch default: 120 BPM. This is MIDI metadata, not audio time-stretching.")
-            self.melodia_trick = QCheckBox("Melodia post-processing (default on)")
-            self.melodia_trick.setChecked(True)
+            self.midi_tempo = _double_spin(
+                20.0,
+                300.0,
+                DEFAULT_MIDI_OPTIONS.midi_tempo,
+                1.0,
+                1,
+            )
+            self.midi_tempo.setToolTip(
+                f"Basic Pitch default: {DEFAULT_MIDI_OPTIONS.midi_tempo:g} BPM. "
+                "This is MIDI metadata, not audio time-stretching."
+            )
+            self.melodia_trick = QCheckBox(
+                f"Melodia post-processing (default {_on_off(DEFAULT_MIDI_OPTIONS.melodia_trick)})"
+            )
+            self.melodia_trick.setChecked(DEFAULT_MIDI_OPTIONS.melodia_trick)
             self.melodia_trick.setToolTip("Basic Pitch default. Helps turn frame/onset predictions into cleaner note events.")
-            self.multiple_pitch_bends = QCheckBox("Separate pitch bends for overlapping notes (default off)")
-            self.multiple_pitch_bends.setToolTip("Basic Pitch default: off. Useful for expressive material, but can make MIDI more complex.")
-            self.save_notes = QCheckBox("Save note-event CSV (default on)")
-            self.save_notes.setChecked(True)
-            self.save_model_outputs = QCheckBox("Save raw model output NPZ (default off)")
-            self.save_model_outputs.setToolTip("Basic Pitch default: off. Technical/debug output: contours, onsets, and note activations.")
-            self.sonify_midi = QCheckBox("Render MIDI check audio (default off)")
+            self.multiple_pitch_bends = QCheckBox(
+                "Separate pitch bends for overlapping notes "
+                f"(default {_on_off(DEFAULT_MIDI_OPTIONS.multiple_pitch_bends)})"
+            )
+            self.multiple_pitch_bends.setChecked(DEFAULT_MIDI_OPTIONS.multiple_pitch_bends)
+            self.multiple_pitch_bends.setToolTip(
+                f"Basic Pitch default: {_on_off(DEFAULT_MIDI_OPTIONS.multiple_pitch_bends)}. "
+                "Useful for expressive material, but can make MIDI more complex."
+            )
+            self.save_notes = QCheckBox(
+                f"Save note-event CSV (default {_on_off(DEFAULT_MIDI_OPTIONS.save_notes)})"
+            )
+            self.save_notes.setChecked(DEFAULT_MIDI_OPTIONS.save_notes)
+            self.save_model_outputs = QCheckBox(
+                f"Save raw model output NPZ (default {_on_off(DEFAULT_MIDI_OPTIONS.save_model_outputs)})"
+            )
+            self.save_model_outputs.setChecked(DEFAULT_MIDI_OPTIONS.save_model_outputs)
+            self.save_model_outputs.setToolTip(
+                f"Basic Pitch default: {_on_off(DEFAULT_MIDI_OPTIONS.save_model_outputs)}. "
+                "Technical/debug output: contours, onsets, and note activations."
+            )
+            self.sonify_midi = QCheckBox(
+                f"Render MIDI check audio (default {_on_off(DEFAULT_MIDI_OPTIONS.sonify_midi)})"
+            )
+            self.sonify_midi.setChecked(DEFAULT_MIDI_OPTIONS.sonify_midi)
             self.sonification_samplerate = NoWheelSpinBox()
             self.sonification_samplerate.setRange(8000, 192000)
             self.sonification_samplerate.setSingleStep(1000)
-            self.sonification_samplerate.setValue(44100)
+            self.sonification_samplerate.setValue(DEFAULT_MIDI_OPTIONS.sonification_samplerate)
             self.sonification_samplerate.setEnabled(False)
 
             self.create_zip = QCheckBox("Create ZIP export package")
@@ -831,9 +892,6 @@ def main() -> int:
         def clear_transport_players(self) -> None:
             self.transport.clear_players()
 
-        def transport_players(self) -> list[QMediaPlayer]:
-            return self.transport.players()
-
         def find_existing_midi_previews(self, result: PipelineResult) -> dict[str, Path]:
             return find_existing_midi_previews(result)
 
@@ -1167,12 +1225,6 @@ def main() -> int:
 
         def active_chord_track_region(self) -> ChordRegion | None:
             return harmony_panel.active_chord_track_region(self)
-
-        def _candidate_notes_text(self, analysis, label: str) -> str:
-            return harmony_panel.candidate_notes_text(self, analysis, label)
-
-        def _partial_candidate_notes_text(self, analysis, label: str) -> str:
-            return harmony_panel.partial_candidate_notes_text(self, analysis, label)
 
         def refresh_chord_actions(self) -> None:
             harmony_panel.refresh_chord_actions(self)

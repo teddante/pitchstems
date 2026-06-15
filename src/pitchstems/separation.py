@@ -14,11 +14,8 @@ from pitchstems.model_catalog import ModelChoice, model_choice
 class SeparationProfile:
     key: str
     label: str
-    description: str
     best_for: str
     expected_stems: list[str]
-    speed: str
-    quality: str
     models: list[str]
 
 
@@ -181,11 +178,8 @@ def get_profile(profile: str) -> SeparationProfile:
     return SeparationProfile(
         key=key,
         label=choice.label,
-        description=choice.summary,
         best_for=choice.best_for,
         expected_stems=choice.stems,
-        speed=choice.speed_note,
-        quality=choice.quality_note,
         models=[choice.native_model_id],
     )
 

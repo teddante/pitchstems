@@ -124,6 +124,7 @@ def refresh_model_details(window, *_args) -> None:
     torch = torch_status()
     ort = onnxruntime_status()
     window.model_title.setText(choice.label)
+    window.separation_card.setTitle(choice.label)
     window.model_summary.setText(choice.summary)
     window.model_facts.setText(
         f"Best for: {choice.best_for}\n"

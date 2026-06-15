@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 
 from pitchstems.gui_helpers import section_label
 from pitchstems.gui_layout_policy import PipelineLayoutPolicy
+from pitchstems.transcription import DEFAULT_MIDI_OPTIONS
 
 
 def build_pipeline_page(window) -> QWidget:
@@ -27,15 +28,15 @@ def build_pipeline_page(window) -> QWidget:
     intro.setStyleSheet("color: #4b5563;")
     separation_panel.addWidget(intro)
     separation_panel.addWidget(window.workflow_note)
-    separation_card = QGroupBox("BS-RoFormer SW six-stem")
+    window.separation_card = QGroupBox()
     separation_card_layout = QVBoxLayout()
     separation_card_layout.setSpacing(8)
     separation_card_layout.addWidget(window.model_summary)
     separation_card_layout.addWidget(window.model_facts)
     separation_card_layout.addWidget(window.audio_prep)
     separation_card_layout.addWidget(window.separation_status)
-    separation_card.setLayout(separation_card_layout)
-    separation_panel.addWidget(separation_card)
+    window.separation_card.setLayout(separation_card_layout)
+    separation_panel.addWidget(window.separation_card)
     midi_stage_card = QGroupBox("MIDI stage")
     midi_stage_layout = QVBoxLayout()
     midi_stage_layout.setSpacing(8)
@@ -106,13 +107,48 @@ def build_pipeline_page(window) -> QWidget:
     midi_grid = QGridLayout()
     midi_grid.setHorizontalSpacing(10)
     midi_grid.setVerticalSpacing(5)
-    grid_control(midi_grid, 0, 0, "Note starts", "default 0.50", window.onset_threshold)
-    grid_control(midi_grid, 0, 1, "Sustained notes", "default 0.30", window.frame_threshold)
-    grid_control(midi_grid, 1, 0, "Minimum note", "default 127.7 ms", window.minimum_note_length)
-    grid_control(midi_grid, 1, 1, "MIDI tempo", "default 120", window.midi_tempo)
+    grid_control(
+        midi_grid,
+        0,
+        0,
+        "Note starts",
+        f"default {DEFAULT_MIDI_OPTIONS.onset_threshold:.2f}",
+        window.onset_threshold,
+    )
+    grid_control(
+        midi_grid,
+        0,
+        1,
+        "Sustained notes",
+        f"default {DEFAULT_MIDI_OPTIONS.frame_threshold:.2f}",
+        window.frame_threshold,
+    )
+    grid_control(
+        midi_grid,
+        1,
+        0,
+        "Minimum note",
+        f"default {DEFAULT_MIDI_OPTIONS.minimum_note_length:g} ms",
+        window.minimum_note_length,
+    )
+    grid_control(
+        midi_grid,
+        1,
+        1,
+        "MIDI tempo",
+        f"default {DEFAULT_MIDI_OPTIONS.midi_tempo:g}",
+        window.midi_tempo,
+    )
     grid_control(midi_grid, 2, 0, "Lowest note", "default off", window.minimum_frequency)
     grid_control(midi_grid, 2, 1, "Highest note", "default off", window.maximum_frequency)
-    grid_control(midi_grid, 3, 0, "Check audio rate", "default 44100", window.sonification_samplerate)
+    grid_control(
+        midi_grid,
+        3,
+        0,
+        "Check audio rate",
+        f"default {DEFAULT_MIDI_OPTIONS.sonification_samplerate:g}",
+        window.sonification_samplerate,
+    )
     midi_settings_layout.addLayout(midi_grid)
 
     midi_checks = QGridLayout()

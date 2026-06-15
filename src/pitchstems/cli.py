@@ -8,7 +8,7 @@ from pitchstems.model_catalog import all_model_keys, model_choice
 from pitchstems.pipeline import process_audio_file
 from pitchstems.separation import download_model, model_key_for_profile, profile_keys
 from pitchstems.separation import SeparationOptions
-from pitchstems.transcription import MidiOptions
+from pitchstems.transcription import DEFAULT_MIDI_OPTIONS, MidiOptions
 
 
 def main() -> int:
@@ -42,18 +42,43 @@ def main() -> int:
         default="pitched",
         help="Choose which stems get Basic Pitch MIDI.",
     )
-    parser.add_argument("--onset-threshold", type=float, default=0.5, help="Basic Pitch onset confidence threshold.")
-    parser.add_argument("--frame-threshold", type=float, default=0.3, help="Basic Pitch frame confidence threshold.")
-    parser.add_argument("--minimum-note-length", type=float, default=127.7, help="Basic Pitch minimum note length in milliseconds.")
+    parser.add_argument(
+        "--onset-threshold",
+        type=float,
+        default=DEFAULT_MIDI_OPTIONS.onset_threshold,
+        help="Basic Pitch onset confidence threshold.",
+    )
+    parser.add_argument(
+        "--frame-threshold",
+        type=float,
+        default=DEFAULT_MIDI_OPTIONS.frame_threshold,
+        help="Basic Pitch frame confidence threshold.",
+    )
+    parser.add_argument(
+        "--minimum-note-length",
+        type=float,
+        default=DEFAULT_MIDI_OPTIONS.minimum_note_length,
+        help="Basic Pitch minimum note length in milliseconds.",
+    )
     parser.add_argument("--minimum-frequency", type=float, help="Basic Pitch minimum output frequency in Hz.")
     parser.add_argument("--maximum-frequency", type=float, help="Basic Pitch maximum output frequency in Hz.")
     parser.add_argument("--multiple-pitch-bends", action="store_true", help="Allow overlapping MIDI notes to carry separate pitch bends.")
     parser.add_argument("--no-melodia-trick", action="store_true", help="Disable Basic Pitch's default melodia post-processing step.")
-    parser.add_argument("--midi-tempo", type=float, default=120.0, help="Tempo written into generated MIDI files.")
+    parser.add_argument(
+        "--midi-tempo",
+        type=float,
+        default=DEFAULT_MIDI_OPTIONS.midi_tempo,
+        help="Tempo written into generated MIDI files.",
+    )
     parser.add_argument("--no-save-notes", action="store_true", help="Do not save Basic Pitch note-event CSV files.")
     parser.add_argument("--save-model-outputs", action="store_true", help="Save Basic Pitch raw model outputs as NPZ files.")
     parser.add_argument("--sonify-midi", action="store_true", help="Render Basic Pitch MIDI back to audio for checking.")
-    parser.add_argument("--sonification-samplerate", type=int, default=44100, help="Sample rate for --sonify-midi output.")
+    parser.add_argument(
+        "--sonification-samplerate",
+        type=int,
+        default=DEFAULT_MIDI_OPTIONS.sonification_samplerate,
+        help="Sample rate for --sonify-midi output.",
+    )
     parser.add_argument("--no-zip", action="store_true", help="Leave outputs in a folder without ZIP export.")
     parser.add_argument("--doctor", action="store_true", help="Check local runtime dependencies.")
     parser.add_argument(

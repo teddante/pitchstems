@@ -172,18 +172,15 @@ def active_chord_track_region(window) -> ChordRegion | None:
 
 
 def candidate_notes_text(window, analysis, label: str) -> str:
-    notes = window.display_chord_tones(label) if label else analysis.candidate_notes.get(label, [])
-    if not notes:
-        return "-"
-    text = " - ".join(notes)
-    bass_name = window.display_chord_bass(label)
-    if bass_name is not None:
-        text += f"  bass {bass_name}"
-    return text
+    return _candidate_notes_text(window, label, analysis.candidate_notes)
 
 
 def partial_candidate_notes_text(window, analysis, label: str) -> str:
-    notes = window.display_chord_tones(label) if label else analysis.partial_candidate_notes.get(label, [])
+    return _candidate_notes_text(window, label, analysis.partial_candidate_notes)
+
+
+def _candidate_notes_text(window, label: str, fallback_notes: dict[str, list[str]]) -> str:
+    notes = window.display_chord_tones(label) if label else fallback_notes.get(label, [])
     if not notes:
         return "-"
     text = " - ".join(notes)

@@ -21,10 +21,9 @@ from pitchstems.midi_energy import (
     region_pitch_energy,
 )
 from pitchstems.notation import (
-    ACCEPTED_NOTE_NAMES,
     midi_note_name as spell_midi_note_name,
     normalized_pitch_class_weights,
-    pitch_class_for_name,
+    split_chord_label,
 )
 
 __all__ = [
@@ -851,15 +850,10 @@ def _partial_shell_candidates_from_weights(
     candidates: list[PartialChordCandidate] = []
     seen_root_tone_sets: set[tuple[int, frozenset[int]]] = set()
     for *_sort, candidate in suggestions:
-        root_name = next(
-            name
-            for name in sorted(ACCEPTED_NOTE_NAMES, key=len, reverse=True)
-            if candidate.label.startswith(name)
-        )
-        root = pitch_class_for_name(root_name)
-        if root is None:
+        parts = split_chord_label(candidate.label)
+        if parts is None:
             continue
-        root_tone_key = (root, frozenset(candidate.observed_tones))
+        root_tone_key = (parts.root_pitch_class, frozenset(candidate.observed_tones))
         if root_tone_key in seen_root_tone_sets:
             continue
         candidates.append(candidate)

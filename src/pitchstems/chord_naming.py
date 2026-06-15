@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from pitchstems.notation import (
-    ACCEPTED_NOTE_NAMES,
     DEFAULT_PITCH_NAMES,
-    pitch_class_for_name,
     pitch_class_name,
     respell_chord_label,
     spell_chord_tones,
@@ -25,18 +23,10 @@ def chord_bass_name_for_label(label: str, spelling_preference: str | None = "aut
 
 
 def chord_tones_for_label(label: str, spelling_preference: str | None = "auto") -> list[str]:
-    base_label = label.split("/", 1)[0]
-    root_name = next(
-        (
-            name
-            for name in sorted(ACCEPTED_NOTE_NAMES, key=len, reverse=True)
-            if base_label.startswith(name)
-        ),
-        None,
-    )
-    if root_name is None:
+    parts = split_chord_label(label)
+    if parts is None:
         return [PITCH_NAMES[pitch_class] for pitch_class in chord_pitch_classes_for_label(label)]
-    suffix = base_label[len(root_name):]
+    suffix = parts.suffix
     omitted_intervals: set[int] = set()
     if "(no" in suffix:
         suffix, omitted_intervals = _split_omitted_suffix(suffix)
@@ -80,18 +70,10 @@ def exact_chord_names_for_pitch_classes(pitch_classes: set[int], bass: int | Non
 
 
 def chord_pitch_classes_for_label(label: str) -> list[int]:
-    base_label = label.split("/", 1)[0]
-    root_name = next(
-        (
-            name
-            for name in sorted(ACCEPTED_NOTE_NAMES, key=len, reverse=True)
-            if base_label.startswith(name)
-        ),
-        None,
-    )
-    if root_name is None:
+    parts = split_chord_label(label)
+    if parts is None:
         return []
-    suffix = base_label[len(root_name):]
+    suffix = parts.suffix
     omitted_intervals: set[int] = set()
     if "(no" in suffix:
         suffix, omitted_intervals = _split_omitted_suffix(suffix)
@@ -105,14 +87,11 @@ def chord_pitch_classes_for_label(label: str) -> list[int]:
     )
     if quality is None:
         return []
-    root = pitch_class_for_name(root_name)
-    if root is None:
-        return []
     tones: list[int] = []
     for interval in quality:
         if interval in omitted_intervals:
             continue
-        pitch_class = (root + interval) % 12
+        pitch_class = (parts.root_pitch_class + interval) % 12
         if pitch_class not in tones:
             tones.append(pitch_class)
     return tones

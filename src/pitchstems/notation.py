@@ -6,29 +6,6 @@ from dataclasses import dataclass
 SHARP_PITCH_NAMES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
 FLAT_PITCH_NAMES = ("C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B")
 DEFAULT_PITCH_NAMES = ("C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B")
-ACCEPTED_NOTE_NAMES = (
-    "C#",
-    "Db",
-    "D#",
-    "Eb",
-    "E#",
-    "Fb",
-    "F#",
-    "Gb",
-    "G#",
-    "Ab",
-    "A#",
-    "Bb",
-    "B#",
-    "Cb",
-    "C",
-    "D",
-    "E",
-    "F",
-    "G",
-    "A",
-    "B",
-)
 LETTERS = ("C", "D", "E", "F", "G", "A", "B")
 NATURAL_PITCH_CLASSES = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
 NOTE_NAME_TO_PITCH_CLASS = {

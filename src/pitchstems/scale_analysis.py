@@ -12,12 +12,12 @@ from pitchstems.midi_energy import (
     region_pitch_energy,
 )
 from pitchstems.notation import (
-    ACCEPTED_NOTE_NAMES,
     normalized_pitch_class_weights,
-    pitch_class_for_name,
     pitch_class_name,
     scale_label,
     spell_scale,
+    spelling_preference_from_label,
+    split_chord_label,
 )
 from pitchstems.theory_helpers import (
     candidate_common_tones as _candidate_common_tones,
@@ -556,31 +556,13 @@ def _chord_root_totals(chords: list[ChordRegion]) -> dict[int, float]:
 
 
 def _chord_root(label: str) -> int | None:
-    base_label = label.split("/", 1)[0]
-    root_name = next(
-        (
-            name
-            for name in sorted(ACCEPTED_NOTE_NAMES, key=len, reverse=True)
-            if base_label.startswith(name)
-        ),
-        None,
-    )
-    if root_name is None:
-        return None
-    return pitch_class_for_name(root_name)
+    parts = split_chord_label(label)
+    return parts.root_pitch_class if parts is not None else None
 
 
 def _chord_suffix(label: str) -> str:
-    base_label = label.split("/", 1)[0]
-    root_name = next(
-        (
-            name
-            for name in sorted(ACCEPTED_NOTE_NAMES, key=len, reverse=True)
-            if base_label.startswith(name)
-        ),
-        "",
-    )
-    return base_label[len(root_name):]
+    parts = split_chord_label(label)
+    return parts.suffix if parts is not None else ""
 
 
 def _minor_or_diminished_suffix(suffix: str) -> bool:
@@ -588,19 +570,7 @@ def _minor_or_diminished_suffix(suffix: str) -> bool:
 
 
 def spelling_preference_from_scale_label(label: str) -> str:
-    root = next(
-        (
-            name
-            for name in sorted(ACCEPTED_NOTE_NAMES, key=len, reverse=True)
-            if label.startswith(name)
-        ),
-        "",
-    )
-    if "b" in root:
-        return "flat"
-    if "#" in root:
-        return "sharp"
-    return "auto"
+    return spelling_preference_from_label(label)
 
 
 def _add_pitch_weight(totals: dict[int, float], pitch_class: int, weight: float) -> None:
