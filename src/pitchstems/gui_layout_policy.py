@@ -16,8 +16,16 @@ class EditorLayoutPolicy:
         return 260 if self.compact else 300
 
     @property
+    def harmony_panel_width(self) -> int:
+        return 380 if self.compact else 460
+
+    @property
     def track_panel_min_width(self) -> int:
         return 240 if self.compact else 280
+
+    @property
+    def track_panel_width(self) -> int:
+        return self.track_panel_min_width
 
 
 @dataclass(frozen=True)
