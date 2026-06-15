@@ -43,6 +43,10 @@ def test_resolve_notation_preference_prefers_user_then_theory_then_chord() -> No
 def test_harmony_context_key_rounds_point_and_selection() -> None:
     assert harmony_context_key(12.345, None) == ("point", 12.35)
     assert harmony_context_key(12.345, (1.23456, 2.34567)) == ("selection", 1.235, 2.346)
+    assert harmony_context_key(12.345, None, [(0.1111, 0.9999), (2.2222, 3.3333)]) == (
+        "selection-ranges",
+        ((0.111, 1.0), (2.222, 3.333)),
+    )
 
 
 def test_selected_chord_analysis_notes_filters_by_selected_tracks(tmp_path: Path) -> None:
@@ -93,6 +97,23 @@ def test_selection_weights_sum_overlap_times_velocity_energy() -> None:
     b_energy = 0.75 * midi_velocity_energy(64)
     assert weights[7] == pytest.approx(1.0)
     assert weights[11] == pytest.approx(b_energy / g_energy)
+
+
+def test_multi_selection_weights_sum_only_selected_ranges() -> None:
+    notes = [
+        NoteEvent("piano", 0.0, 1.0, 60, 80),
+        NoteEvent("piano", 1.0, 2.0, 71, 127),
+        NoteEvent("piano", 2.0, 3.0, 64, 80),
+    ]
+
+    weights = chord_base_pitch_weights(
+        notes,
+        ("selection-ranges", ((0.0, 1.0), (2.0, 3.0))),
+    )
+
+    assert weights[0] == pytest.approx(1.0)
+    assert weights[4] == pytest.approx(1.0)
+    assert 11 not in weights
 
 
 def test_point_weights_sum_active_events_per_pitch_class() -> None:

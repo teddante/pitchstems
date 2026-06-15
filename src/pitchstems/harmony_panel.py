@@ -194,4 +194,4 @@ def refresh_chord_actions(window) -> None:
     item = window.chord_list.currentItem()
     has_candidate = bool(item and item.data(Qt.UserRole))
     window.preview_chord_button.setEnabled(has_candidate)
-    window.use_chord_button.setEnabled(has_candidate and window.timeline.selection_range() is not None)
+    window.use_chord_button.setEnabled(has_candidate and bool(window.timeline.selection_ranges()))

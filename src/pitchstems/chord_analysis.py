@@ -37,6 +37,7 @@ __all__ = [
     "analyze_chord",
     "analyze_chord_at",
     "analyze_chord_region",
+    "analyze_chord_regions",
     "chord_bass_name_for_label",
     "chord_pitch_classes_for_label",
     "chord_tones_for_label",
@@ -227,7 +228,53 @@ def analyze_chord_region(
         return ChordAnalysis(None, 0.0, [], [])
 
     pitch_weights, exact_pitch_weights = region_pitch_energy(notes, start, end)
+    return _analyze_region_pitch_weights(
+        pitch_weights,
+        exact_pitch_weights,
+        required_pitch_classes=required_pitch_classes,
+        excluded_pitch_classes=excluded_pitch_classes,
+        scoring_options=options,
+    )
 
+
+def analyze_chord_regions(
+    notes: list[NoteEvent],
+    ranges: list[tuple[float, float]],
+    required_pitch_classes: set[int] | None = None,
+    excluded_pitch_classes: set[int] | None = None,
+    scoring_options: ChordScoringOptions | None = None,
+) -> ChordAnalysis:
+    options = scoring_options or ChordScoringOptions()
+    pitch_weights: dict[int, float] = {}
+    exact_pitch_weights: dict[int, float] = {}
+    for start, end in ranges:
+        start, end = sorted((start, end))
+        if end - start <= 0:
+            continue
+        region_weights, region_exact_weights = region_pitch_energy(notes, start, end)
+        for pitch_class, weight in region_weights.items():
+            pitch_weights[pitch_class] = pitch_weights.get(pitch_class, 0.0) + weight
+        for pitch, weight in region_exact_weights.items():
+            exact_pitch_weights[pitch] = exact_pitch_weights.get(pitch, 0.0) + weight
+    if not pitch_weights and not exact_pitch_weights:
+        return ChordAnalysis(None, 0.0, [], [])
+    return _analyze_region_pitch_weights(
+        pitch_weights,
+        exact_pitch_weights,
+        required_pitch_classes=required_pitch_classes,
+        excluded_pitch_classes=excluded_pitch_classes,
+        scoring_options=options,
+    )
+
+
+def _analyze_region_pitch_weights(
+    pitch_weights: dict[int, float],
+    exact_pitch_weights: dict[int, float],
+    required_pitch_classes: set[int] | None = None,
+    excluded_pitch_classes: set[int] | None = None,
+    scoring_options: ChordScoringOptions | None = None,
+) -> ChordAnalysis:
+    options = scoring_options or ChordScoringOptions()
     if pitch_weights and options.weak_note_floor > 0:
         max_pitch_class_weight = max(pitch_weights.values())
         kept_pitch_classes = {

@@ -61,10 +61,24 @@ def test_timeline_selection_is_clamped_and_cleared(tmp_path: Path) -> None:
     view._set_selection(-2.0, 20.0)
 
     assert view.selection_range() == (0.0, 4.0)
+    assert view.selection_ranges() == [(0.0, 4.0)]
 
     view.clear_selection()
 
     assert view.selection_range() is None
+    assert view.selection_ranges() == []
+
+
+def test_timeline_can_track_multiple_selection_ranges(tmp_path: Path) -> None:
+    _app()
+    view = TimelineView()
+    view.set_project(_project(tmp_path))
+
+    view.selection_segments = [(0.0, 1.0)]
+    view._set_selection(2.0, 3.0)
+
+    assert view.selection_range() is None
+    assert view.selection_ranges() == [(0.0, 1.0), (2.0, 3.0)]
 
 
 def test_timeline_fit_song_to_view_keeps_zoom_within_supported_bounds(tmp_path: Path) -> None:

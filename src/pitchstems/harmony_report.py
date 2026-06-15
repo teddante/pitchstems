@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pitchstems.chord_detection import analyze_chord_at, analyze_chord_region
+from pitchstems.chord_detection import analyze_chord_at, analyze_chord_region, analyze_chord_regions
 from pitchstems.editor_project import (
     NoteEvent,
 )
@@ -16,19 +16,33 @@ def current_chord_analysis_report(window) -> str:
     analysis_notes = window.filtered_chord_analysis_notes(source_notes, context)
     required, excluded = window.chord_note_constraints()
     scoring_options = window.chord_scoring_options()
-    selection = window.timeline.selection_range()
-    if selection is not None:
-        start, end = selection
-        analysis = analyze_chord_region(
-            analysis_notes,
-            start,
-            end,
-            required_pitch_classes=required,
-            excluded_pitch_classes=excluded,
-            scoring_options=scoring_options,
-        )
-        mode = f"Selection {format_time(start)} - {format_time(end)} ({end - start:.3f} sec)"
-        evidence_rows, totals = chord_selection_evidence_rows(window, analysis_notes, start, end)
+    selection_ranges = window.timeline.selection_ranges()
+    if selection_ranges:
+        selection = window.timeline.selection_range()
+        if selection is not None:
+            start, end = selection
+            analysis = analyze_chord_region(
+                analysis_notes,
+                start,
+                end,
+                required_pitch_classes=required,
+                excluded_pitch_classes=excluded,
+                scoring_options=scoring_options,
+            )
+            mode = f"Selection {format_time(start)} - {format_time(end)} ({end - start:.3f} sec)"
+            evidence_rows, totals = chord_selection_evidence_rows(window, analysis_notes, start, end)
+        else:
+            analysis = analyze_chord_regions(
+                analysis_notes,
+                selection_ranges,
+                required_pitch_classes=required,
+                excluded_pitch_classes=excluded,
+                scoring_options=scoring_options,
+            )
+            total = sum(end - start for start, end in selection_ranges)
+            shown_ranges = ", ".join(f"{format_time(start)} - {format_time(end)}" for start, end in selection_ranges)
+            mode = f"Selection {len(selection_ranges)} ranges ({total:.3f} sec total): {shown_ranges}"
+            evidence_rows, totals = chord_selection_ranges_evidence_rows(window, analysis_notes, selection_ranges)
     else:
         seconds = window.timeline.position
         analysis = analyze_chord_at(
@@ -162,6 +176,21 @@ def chord_selection_evidence_rows(
             f"overlap {overlap:.3f}s velocity {note.velocity:3} "
             f"velocity energy {velocity_energy:.4f} note energy {weight:.4f}"
         )
+    return rows, totals
+
+
+def chord_selection_ranges_evidence_rows(
+    window,
+    notes: list[NoteEvent],
+    ranges: list[tuple[float, float]],
+) -> tuple[list[str], dict[int, float]]:
+    rows: list[str] = []
+    totals: dict[int, float] = {}
+    for range_index, (start, end) in enumerate(ranges, start=1):
+        range_rows, range_totals = chord_selection_evidence_rows(window, notes, start, end)
+        rows.extend(f"range {range_index}: {row}" for row in range_rows)
+        for pitch_class, total in range_totals.items():
+            totals[pitch_class] = totals.get(pitch_class, 0.0) + total
     return rows, totals
 
 

@@ -473,7 +473,7 @@ def main() -> int:
             self.statusBar().addPermanentWidget(self.activity_label)
             self.statusBar().addPermanentWidget(self.activity_bar)
             self.statusBar().showMessage(
-                "Timeline: Space plays/pauses; drag chord lane or Shift+drag to select chord-analysis range; Esc clears selection; wheel scrolls, Ctrl+wheel zooms."
+                "Timeline: Space plays/pauses; drag chord lane or Shift+drag to select chord-analysis range; Ctrl+drag adds another range; Esc clears selection; wheel scrolls, Ctrl+wheel zooms."
             )
             self.space_playback_shortcut = QShortcut(QKeySequence("Space"), self)
             self.space_playback_shortcut.setContext(Qt.ApplicationShortcut)
@@ -762,7 +762,7 @@ def main() -> int:
 
         def show_timeline_controls(self) -> None:
             self.statusBar().showMessage(
-                "Timeline controls: Space plays/pauses; Fit Song or Ctrl+Alt+0 shows the full song; drag the chord lane or Shift+drag the timeline to select a chord-analysis range; Esc clears selection; click/drag sets playhead; wheel scrolls vertically; Shift+wheel scrolls horizontally; Ctrl+wheel zooms time; Ctrl+Shift+wheel zooms pitch; middle/right drag pans.",
+                "Timeline controls: Space plays/pauses; Fit Song or Ctrl+Alt+0 shows the full song; drag the chord lane or Shift+drag the timeline to select a chord-analysis range; Ctrl+drag adds another selected range; Esc clears selection; click/drag sets playhead; wheel scrolls vertically; Shift+wheel scrolls horizontally; Ctrl+wheel zooms time; Ctrl+Shift+wheel zooms pitch; middle/right drag pans.",
                 12000,
             )
 
@@ -968,6 +968,14 @@ def main() -> int:
         def set_editor_selection(self, selection: tuple[float, float] | None) -> None:
             self.refresh_current_harmony(self.timeline.position, force=True)
             self.refresh_chord_actions()
+            selection_ranges = self.timeline.selection_ranges()
+            if len(selection_ranges) > 1:
+                total = sum(end - start for start, end in selection_ranges)
+                self.statusBar().showMessage(
+                    f"Chord analysis selection active: {len(selection_ranges)} ranges, {total:.2f}s total.",
+                    5000,
+                )
+                return
             if selection is None:
                 self.statusBar().showMessage("Timeline selection cleared.", 3000)
                 return
@@ -987,6 +995,10 @@ def main() -> int:
 
         def refresh_current_theory(self, source_notes: list[NoteEvent], seconds: float) -> None:
             if self.editor_project is None:
+                self.set_theory_analysis(None)
+                return
+            selection_ranges = self.timeline.selection_ranges()
+            if len(selection_ranges) > 1:
                 self.set_theory_analysis(None)
                 return
             selection = self.timeline.selection_range()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pitchstems.chord_analysis import (
     analyze_chord_region,
+    analyze_chord_regions,
     analyze_chord,
     chord_tones_for_label,
     detect_chords,
@@ -65,3 +66,22 @@ def test_weighted_chord_analysis_keeps_existing_cmaj7_behavior() -> None:
     assert analysis.label == "Cmaj7"
     assert analysis.candidates[0][0] == "Cmaj7"
     assert analysis.candidate_explanations["Cmaj7"]
+
+
+def test_multi_range_chord_analysis_combines_only_selected_regions() -> None:
+    notes = [
+        NoteEvent("piano", 0.0, 1.0, 60, 100),
+        NoteEvent("piano", 0.0, 1.0, 64, 96),
+        NoteEvent("piano", 0.0, 1.0, 67, 92),
+        NoteEvent("piano", 1.0, 2.0, 71, 127),
+        NoteEvent("piano", 2.0, 3.0, 60, 100),
+        NoteEvent("piano", 2.0, 3.0, 64, 96),
+        NoteEvent("piano", 2.0, 3.0, 67, 92),
+    ]
+
+    combined = analyze_chord_regions(notes, [(0.0, 1.0), (2.0, 3.0)])
+    bounded = analyze_chord_region(notes, 0.0, 3.0)
+
+    assert combined.label == "C"
+    assert dict(combined.note_weights).get("B") is None
+    assert dict(bounded.note_weights)["B"] > 0

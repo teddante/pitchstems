@@ -50,20 +50,26 @@ def assign_selected_chord_to_selection(window) -> None:
 
     if window.editor_project is None or window.current_result is None:
         return
-    selection = window.timeline.selection_range()
+    selection_ranges = window.timeline.selection_ranges()
     item = window.chord_list.currentItem()
-    if selection is None or item is None:
+    if not selection_ranges or item is None:
         return
     label = item.data(Qt.UserRole)
     confidence = float(item.data(Qt.UserRole + 1) or 1.0)
     if not label:
         return
-    start, end = selection
-    manual = ChordRegion(start=start, end=end, label=label, confidence=confidence)
-    window.insert_manual_chord(manual)
-    window.refresh_editor_project_from_chord_edits(manual)
+    selected_chord = None
+    for start, end in selection_ranges:
+        selected_chord = ChordRegion(start=start, end=end, label=label, confidence=confidence)
+        window.insert_manual_chord(selected_chord)
+    window.refresh_editor_project_from_chord_edits(selected_chord)
+    range_text = (
+        f"{format_time(selection_ranges[0][0])} - {format_time(selection_ranges[0][1])}"
+        if len(selection_ranges) == 1
+        else f"{len(selection_ranges)} ranges"
+    )
     window.statusBar().showMessage(
-        f"Assigned {window.display_chord(label)} to {format_time(start)} - {format_time(end)}.",
+        f"Assigned {window.display_chord(label)} to {range_text}.",
         5000,
     )
 

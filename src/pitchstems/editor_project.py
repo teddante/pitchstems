@@ -27,6 +27,7 @@ from pitchstems.chord_detection import (
     analyze_chord,
     analyze_chord_at,
     analyze_chord_region,
+    analyze_chord_regions,
     detect_chords,
     midi_velocity_energy,
 )
@@ -54,6 +55,7 @@ __all__ = [
     "analyze_chord",
     "analyze_chord_at",
     "analyze_chord_region",
+    "analyze_chord_regions",
     "build_editor_project",
     "chord_bass_name_for_label",
     "chord_pitch_classes_for_label",

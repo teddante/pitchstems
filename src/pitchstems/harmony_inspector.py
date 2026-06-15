@@ -5,7 +5,12 @@ from pitchstems.midi_energy import point_pitch_energy, region_pitch_energy
 from pitchstems.notation import spelling_preference_from_label
 
 
-HarmonyContextKey = tuple[str, float] | tuple[str, float, float]
+SelectionRanges = list[tuple[float, float]]
+HarmonyContextKey = (
+    tuple[str, float]
+    | tuple[str, float, float]
+    | tuple[str, tuple[tuple[float, float], ...]]
+)
 
 
 def resolve_notation_preference(
@@ -27,7 +32,11 @@ def resolve_notation_preference(
 def harmony_context_key(
     seconds: float,
     selection: tuple[float, float] | None,
+    selection_ranges: SelectionRanges | None = None,
 ) -> HarmonyContextKey:
+    if selection_ranges and len(selection_ranges) > 1:
+        rounded = tuple((round(start, 3), round(end, 3)) for start, end in selection_ranges)
+        return ("selection-ranges", rounded)
     if selection is not None:
         start, end = selection
         return ("selection", round(start, 3), round(end, 3))
@@ -90,7 +99,14 @@ def chord_base_pitch_weights(
 ) -> dict[int, float]:
     if not notes:
         return {}
-    if context[0] == "selection":
+    if context[0] == "selection-ranges":
+        _kind, ranges = context
+        weights: dict[int, float] = {}
+        for start, end in ranges:
+            region_weights, _exact_pitch_weights = region_pitch_energy(notes, start, end)
+            for pitch_class, weight in region_weights.items():
+                weights[pitch_class] = weights.get(pitch_class, 0.0) + weight
+    elif context[0] == "selection":
         _kind, start, end = context
         weights, _exact_pitch_weights = region_pitch_energy(notes, start, end)
     else:

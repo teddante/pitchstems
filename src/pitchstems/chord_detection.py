@@ -12,6 +12,7 @@ from pitchstems.chord_analysis import (
     analyze_chord,
     analyze_chord_at,
     analyze_chord_region,
+    analyze_chord_regions,
     detect_chords,
     midi_velocity_energy,
 )
@@ -21,6 +22,7 @@ __all__ = [
     "analyze_chord",
     "analyze_chord_at",
     "analyze_chord_region",
+    "analyze_chord_regions",
     "detect_chords",
     "midi_velocity_energy",
 ]

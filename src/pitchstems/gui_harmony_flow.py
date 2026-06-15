@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pitchstems.editor_project import analyze_chord_at, analyze_chord_region
+from pitchstems.editor_project import analyze_chord_at, analyze_chord_regions
 from pitchstems.harmony_inspector import (
     chord_base_pitch_weights as inspector_chord_base_pitch_weights,
     chord_note_constraints as inspector_chord_note_constraints,
@@ -52,25 +52,26 @@ def refresh_current_harmony(window, seconds: float) -> None:
     analysis_notes = window.filtered_chord_analysis_notes(source_notes, context)
     sample_text = window.chord_sample_text(source_notes)
     scoring_options = window.chord_scoring_options()
-    selection = window.timeline.selection_range()
-    if selection is not None:
-        start, end = selection
+    selection_ranges = window.timeline.selection_ranges()
+    if selection_ranges:
         required, excluded = window.chord_note_constraints()
-        overlapping_notes = set(window.editor_project.note_index.overlapping(start, end))
+        overlapping_notes = set()
+        for start, end in selection_ranges:
+            overlapping_notes.update(window.editor_project.note_index.overlapping(start, end))
         region_analysis_notes = [note for note in analysis_notes if note in overlapping_notes]
-        analysis = analyze_chord_region(
+        analysis = analyze_chord_regions(
             region_analysis_notes,
-            start,
-            end,
+            selection_ranges,
             required_pitch_classes=required,
             excluded_pitch_classes=excluded,
             scoring_options=scoring_options,
         )
         window.refresh_current_theory(source_notes, seconds)
         chord = window.display_chord(analysis.label)
+        range_text = _selection_ranges_text(selection_ranges)
         window.current_chord.setText(
             f"Selection: {chord}  (score {analysis.confidence:.0%})  "
-            f"{format_time(start)} - {format_time(end)}"
+            f"{range_text}"
         )
         window._set_chord_candidates(analysis)
         window.refresh_current_gap_suggestions(source_notes)
@@ -86,9 +87,9 @@ def refresh_current_harmony(window, seconds: float) -> None:
             note_text = ", ".join(analysis.active_note_names[:32])
             if len(analysis.active_note_names) > 32:
                 note_text += f", +{len(analysis.active_note_names) - 32} more"
-            window.set_chord_context_text(f"{sample_text}\nNotes in selection: {note_text}")
+            window.set_chord_context_text(f"{sample_text}\nNotes in selection(s): {note_text}")
         else:
-            window.set_chord_context_text(f"{sample_text}\nNotes in selection: -")
+            window.set_chord_context_text(f"{sample_text}\nNotes in selection(s): -")
         return
 
     required, excluded = window.chord_note_constraints()
@@ -121,7 +122,11 @@ def refresh_current_harmony(window, seconds: float) -> None:
 
 
 def chord_context_key(window, seconds: float):
-    return inspector_harmony_context_key(seconds, window.timeline.selection_range())
+    return inspector_harmony_context_key(
+        seconds,
+        window.timeline.selection_range(),
+        window.timeline.selection_ranges(),
+    )
 
 
 def chord_analysis_notes(window):
@@ -188,3 +193,11 @@ def handle_chord_note_filter_changed(window, item) -> None:
 def reset_chord_note_filter(window) -> None:
     window.chord_note_overrides = {}
     window.refresh_current_harmony(window.timeline.position, force=True)
+
+
+def _selection_ranges_text(ranges: list[tuple[float, float]]) -> str:
+    if len(ranges) == 1:
+        start, end = ranges[0]
+        return f"{format_time(start)} - {format_time(end)}"
+    total = sum(end - start for start, end in ranges)
+    return f"{len(ranges)} ranges, {total:.2f}s total"

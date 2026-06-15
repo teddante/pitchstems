@@ -6,6 +6,7 @@ from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QColor, QBrush, QFontMetrics, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QGraphicsScene, QGraphicsView
 
+from pitchstems.chord_regions import merge_chord_ranges
 from pitchstems.editor_project import ChordRegion, EditorProject, midi_note_name
 from pitchstems.gui_theme import TRACK_COLORS
 from pitchstems.gui_track_controls import TRACK_CONTROL_MIN_HEIGHT
@@ -41,6 +42,8 @@ class TimelineView(QGraphicsView):
         self.sticky_y_items = []
         self.playhead = None
         self.selection_rect = None
+        self.selection_rects = []
+        self.selection_segments: list[tuple[float, float]] = []
         self.selection_start: float | None = None
         self.selection_end: float | None = None
         self.selected_chord: ChordRegion | None = None
@@ -58,6 +61,7 @@ class TimelineView(QGraphicsView):
         self._chord_drag = None
         self.chord_drag_preview_items = []
         self._selecting = False
+        self._selection_additive = False
         self._selection_anchor: float | None = None
         self._panning = False
         self._last_pan_pos = None
@@ -90,7 +94,9 @@ class TimelineView(QGraphicsView):
         self.position = 0.0
         self.selection_start = None
         self.selection_end = None
+        self.selection_segments = []
         self._selecting = False
+        self._selection_additive = False
         self._chord_drag = None
         self.selected_chord = None
         self.redraw()
@@ -258,6 +264,7 @@ class TimelineView(QGraphicsView):
             self.scene.clear()
             self.playhead = None
             self.selection_rect = None
+            self.selection_rects = []
             self.track_geometries = {}
             self.sticky_x_items = []
             self.sticky_y_items = []
@@ -596,21 +603,21 @@ class TimelineView(QGraphicsView):
 
     def _draw_selection(self, height: float) -> None:
         self.selection_rect = None
-        selection = self.selection_range()
-        if selection is None:
-            return
-        start, end = selection
-        x = self._x(start)
-        width = max(2.0, (end - start) * self.pixels_per_second)
-        self.selection_rect = self.scene.addRect(
-            x,
-            0,
-            width,
-            height,
-            QPen(QColor("#2563eb"), 1),
-            QBrush(QColor(37, 99, 235, 38)),
-        )
-        self.selection_rect.setZValue(9)
+        self.selection_rects = []
+        for start, end in self.selection_ranges():
+            x = self._x(start)
+            width = max(2.0, (end - start) * self.pixels_per_second)
+            rect = self.scene.addRect(
+                x,
+                0,
+                width,
+                height,
+                QPen(QColor("#2563eb"), 1),
+                QBrush(QColor(37, 99, 235, 38)),
+            )
+            rect.setZValue(9)
+            self.selection_rects.append(rect)
+            self.selection_rect = rect
 
     def _move_playhead(self) -> None:
         if self.playhead is None:
@@ -621,6 +628,19 @@ class TimelineView(QGraphicsView):
         self.playhead.setLine(line)
 
     def selection_range(self) -> tuple[float, float] | None:
+        ranges = self.selection_ranges()
+        if len(ranges) != 1:
+            return None
+        return ranges[0]
+
+    def selection_ranges(self) -> list[tuple[float, float]]:
+        ranges = list(self.selection_segments)
+        current = self._current_selection_range()
+        if current is not None:
+            ranges.append(current)
+        return merge_chord_ranges(ranges)
+
+    def _current_selection_range(self) -> tuple[float, float] | None:
         if self.selection_start is None or self.selection_end is None:
             return None
         start, end = sorted((self.selection_start, self.selection_end))
@@ -631,11 +651,15 @@ class TimelineView(QGraphicsView):
     def clear_selection(self) -> None:
         self.selection_start = None
         self.selection_end = None
+        self.selection_segments = []
         self._selecting = False
+        self._selection_additive = False
         self._selection_anchor = None
-        if self.selection_rect is not None:
-            self.scene.removeItem(self.selection_rect)
-            self.selection_rect = None
+        for rect in self.selection_rects:
+            if rect.scene() is self.scene:
+                self.scene.removeItem(rect)
+        self.selection_rect = None
+        self.selection_rects = []
         if self.on_selection_changed:
             self.on_selection_changed(None)
 
@@ -645,12 +669,29 @@ class TimelineView(QGraphicsView):
         duration = max(self.project.duration, 0.0)
         self.selection_start = max(0.0, min(start, duration))
         self.selection_end = max(0.0, min(end, duration))
+        if notify:
+            self._commit_selection()
         height = self.scene.sceneRect().height()
-        if self.selection_rect is not None:
-            self.scene.removeItem(self.selection_rect)
+        for rect in self.selection_rects:
+            if rect.scene() is self.scene:
+                self.scene.removeItem(rect)
+        self.selection_rect = None
+        self.selection_rects = []
         self._draw_selection(height)
         if notify and self.on_selection_changed:
             self.on_selection_changed(self.selection_range())
+
+    def _commit_selection(self) -> None:
+        selection = self._current_selection_range()
+        if selection is None:
+            if not self._selection_additive:
+                self.selection_segments = []
+            return
+        if self._selection_additive:
+            self.selection_segments = merge_chord_ranges([*self.selection_segments, selection])
+        else:
+            self.selection_segments = [selection]
+        self.selection_start, self.selection_end = selection
 
     def _build_track_geometries(self) -> dict[str, tuple[float, float, int, int]]:
         geometries: dict[str, tuple[float, float, int, int]] = {}
@@ -1063,6 +1104,9 @@ class TimelineView(QGraphicsView):
             return False
         seconds = (point.x() - self.label_width) / self.pixels_per_second
         self._selection_anchor = max(0.0, min(seconds, max(self.project.duration, 0.0)))
+        self._selection_additive = bool(event.modifiers() & Qt.ControlModifier)
+        if not self._selection_additive:
+            self.selection_segments = []
         self._selecting = True
         self._set_selection(self._selection_anchor, self._selection_anchor)
         return True
