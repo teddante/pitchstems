@@ -31,6 +31,8 @@ def run_startup_smoke(window) -> None:
     _assert(window.play_button.isEnabled(), "play available before project load")
     _assert(window.play_button.text() == "Play", "play button text")
     _assert(not window.play_review_button.isEnabled(), "play review disabled before project load")
+    _assert(not window.previous_chord_button.isEnabled(), "previous chord disabled before project load")
+    _assert(not window.next_chord_button.isEnabled(), "next chord disabled before project load")
     _assert(not window.stop_button.isEnabled(), "stop disabled before playback")
     _assert(not window.fit_song_button.isEnabled(), "fit disabled before project load")
     _assert(window.editor_position.text() == "00:00.000", "initial editor position")
@@ -79,12 +81,20 @@ def run_project_smoke(window) -> None:
     _assert(window.fit_song_button.isEnabled(), "fit song enabled")
     _assert(window.fit_review_button.isEnabled(), "fit review enabled")
     _assert(window.play_review_button.isEnabled(), "play review enabled")
+    _assert(window.previous_chord_button.isEnabled(), "previous chord enabled")
+    _assert(window.next_chord_button.isEnabled(), "next chord enabled")
     _assert(window.run_midi.isEnabled(), "rerun midi enabled after project load")
     _assert(window.export_button.isEnabled(), "export enabled after project load")
     _assert("bass" in window.track_analysis_checks, "bass chord analysis control")
     _assert(window.track_analysis_checks["bass"].isChecked(), "bass chord analysis enabled")
     _assert("bass" in window.track_visibility_checks, "bass visibility control")
     _assert(window.track_visibility_checks["bass"].isChecked(), "bass visible")
+
+    window.next_chord_button.click()
+    QApplication.processEvents()
+    _assert(window.timeline.selected_chord is not None, "next chord button selects a chord")
+    _assert(window.timeline.position == window.timeline.selected_chord.start, "next chord button moves playhead")
+    window.clear_editor_selection()
 
     window.timeline._set_selection(0.0, 1.0, notify=True)
     _assert(window.timeline.selection_range() == (0.0, 1.0), "timeline selection")
@@ -288,6 +298,8 @@ def run_project_smoke(window) -> None:
     _assert(not window.run_midi.isEnabled(), "reset disables rerun MIDI")
     _assert(not window.fit_review_button.isEnabled(), "reset disables fit review")
     _assert(not window.play_review_button.isEnabled(), "reset disables play review")
+    _assert(not window.previous_chord_button.isEnabled(), "reset disables previous chord")
+    _assert(not window.next_chord_button.isEnabled(), "reset disables next chord")
     _assert(not window.delete_chord_button.isEnabled(), "reset disables delete chord")
 
 

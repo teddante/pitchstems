@@ -424,6 +424,10 @@ def main() -> int:
             self.play_button.setObjectName("transportPrimary")
             self.play_review_button = QPushButton("Play Review")
             self.play_review_button.setEnabled(False)
+            self.previous_chord_button = QPushButton("Prev Chord")
+            self.previous_chord_button.setEnabled(False)
+            self.next_chord_button = QPushButton("Next Chord")
+            self.next_chord_button.setEnabled(False)
             self.stop_button = QPushButton("Stop")
             self.stop_button.setObjectName("transportIcon")
             self.stop_button.setEnabled(False)
@@ -469,6 +473,8 @@ def main() -> int:
             self.cancel_button.clicked.connect(self.cancel_processing)
             self.play_button.clicked.connect(self.toggle_playback)
             self.play_review_button.clicked.connect(self.play_editor_review_target)
+            self.previous_chord_button.clicked.connect(lambda: self.select_review_chord(-1))
+            self.next_chord_button.clicked.connect(lambda: self.select_review_chord(1))
             self.stop_button.clicked.connect(self.stop_transport)
             self.fit_song_button.clicked.connect(self.fit_editor_song_to_view)
             self.fit_review_button.clicked.connect(self.fit_editor_review_to_view)
@@ -629,6 +635,8 @@ def main() -> int:
             layout.setSpacing(8)
             layout.addWidget(self.play_button)
             layout.addWidget(self.play_review_button)
+            layout.addWidget(self.previous_chord_button)
+            layout.addWidget(self.next_chord_button)
             layout.addWidget(self.stop_button)
             layout.addWidget(self.fit_song_button)
             layout.addWidget(self.fit_review_button)
@@ -756,7 +764,7 @@ def main() -> int:
 
         def show_timeline_controls(self) -> None:
             self.statusBar().showMessage(
-                "Timeline controls: Space plays/pauses; Play Review loops one selected range or chord; Alt+Left/Right steps through chords for review; Fit Song or Ctrl+Alt+0 shows the full song; Ctrl+Alt+F fits the selected review target; drag the chord lane or Shift+drag the timeline to select a chord-analysis range; Ctrl+drag adds another selected range; Esc clears selection; click/drag sets playhead; wheel scrolls vertically; Shift+wheel scrolls horizontally; Ctrl+wheel zooms time; Ctrl+Shift+wheel zooms pitch; middle/right drag pans.",
+                "Timeline controls: Space plays/pauses; Play Review loops one selected range or chord; Prev/Next Chord or Alt+Left/Right steps through chords for review; Fit Song or Ctrl+Alt+0 shows the full song; Ctrl+Alt+F fits the selected review target; drag the chord lane or Shift+drag the timeline to select a chord-analysis range; Ctrl+drag adds another selected range; Esc clears selection; click/drag sets playhead; wheel scrolls vertically; Shift+wheel scrolls horizontally; Ctrl+wheel zooms time; Ctrl+Shift+wheel zooms pitch; middle/right drag pans.",
                 12000,
             )
 
