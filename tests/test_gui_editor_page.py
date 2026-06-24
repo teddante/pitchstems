@@ -43,6 +43,7 @@ class _EditorWindow:
         self.note_filter_list = QListWidget()
         self.preview_chord_button = QPushButton("Play Chord")
         self.use_chord_button = QPushButton("Use for Selection")
+        self.delete_chord_button = QPushButton("Delete Chord")
         self.reset_note_filter_button = QPushButton("Reset Evidence")
         self.inspect_chord_button = QPushButton("Inspect")
         self.piano_chord_view = PianoChordWidget()

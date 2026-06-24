@@ -105,6 +105,7 @@ def run_project_smoke(window) -> None:
     window.chord_list.setCurrentRow(0)
     window.refresh_chord_actions()
     _assert(window.use_chord_button.text() == "Use for Chord", "selected chord correction action")
+    _assert(window.delete_chord_button.isEnabled(), "selected chord delete action")
     window.set_editor_position_seconds(
         assigned_chord.end + 0.25,
         save=False,
@@ -118,10 +119,18 @@ def run_project_smoke(window) -> None:
     _assert(window.current_chord.text().startswith("Selected chord:"), "selected chord drives harmony review")
     window.assign_selected_chord_to_selection()
     _assert(bool(window.manual_chords), "assign chord from inspector to selected chord")
+    corrected_chord = window.manual_chords[-1]
+    window.timeline.selected_chord = corrected_chord
+    window.refresh_chord_actions()
+    window.delete_chord_button.click()
+    QApplication.processEvents()
+    _assert(corrected_chord not in window.manual_chords, "delete chord button removes selected manual chord")
+    _assert(window.timeline.selected_chord is None, "delete chord button clears selected chord")
     window.timeline._set_selection(0.25, 0.75, notify=True)
     window.refresh_chord_actions()
     _assert(window.timeline.selected_chord is None, "range selection clears selected chord")
     _assert(window.use_chord_button.text() == "Use for Selection", "range selection becomes correction target")
+    _assert(not window.delete_chord_button.isEnabled(), "range selection disables delete chord")
     window.fit_review_button.click()
     QApplication.processEvents()
     _assert(window.statusBar().currentMessage() == "Timeline fit to review target.", "fit review button")
@@ -279,6 +288,7 @@ def run_project_smoke(window) -> None:
     _assert(not window.run_midi.isEnabled(), "reset disables rerun MIDI")
     _assert(not window.fit_review_button.isEnabled(), "reset disables fit review")
     _assert(not window.play_review_button.isEnabled(), "reset disables play review")
+    _assert(not window.delete_chord_button.isEnabled(), "reset disables delete chord")
 
 
 def run_real_audio_project_smoke(window, manifest_path: Path) -> None:

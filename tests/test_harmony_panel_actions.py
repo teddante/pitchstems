@@ -64,6 +64,7 @@ class _Window:
         self.timeline = _Timeline(ranges or [], selected_chord)
         self.preview_chord_button = _Button()
         self.use_chord_button = _Button()
+        self.delete_chord_button = _Button()
 
 
 def test_refresh_chord_actions_targets_selected_chord_without_selection() -> None:
@@ -73,8 +74,10 @@ def test_refresh_chord_actions_targets_selected_chord_without_selection() -> Non
 
     assert window.preview_chord_button.enabled
     assert window.use_chord_button.enabled
+    assert window.delete_chord_button.enabled
     assert window.use_chord_button.text == "Use for Chord"
     assert "selected chord" in window.use_chord_button.tooltip
+    assert "Remove the selected chord" in window.delete_chord_button.tooltip
 
 
 def test_refresh_chord_actions_keeps_explicit_selection_first() -> None:
@@ -88,6 +91,7 @@ def test_refresh_chord_actions_keeps_explicit_selection_first() -> None:
 
     assert window.use_chord_button.enabled
     assert window.use_chord_button.text == "Use for Selection"
+    assert not window.delete_chord_button.enabled
 
 
 def test_refresh_chord_actions_disables_use_without_target() -> None:
@@ -97,3 +101,4 @@ def test_refresh_chord_actions_disables_use_without_target() -> None:
 
     assert window.preview_chord_button.enabled
     assert not window.use_chord_button.enabled
+    assert not window.delete_chord_button.enabled

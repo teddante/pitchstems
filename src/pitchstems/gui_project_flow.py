@@ -201,6 +201,7 @@ def reset_stage_state(window, path: Path | None = None) -> None:
     window.fit_song_button.setEnabled(False)
     window.fit_review_button.setEnabled(False)
     window.play_review_button.setEnabled(False)
+    window.delete_chord_button.setEnabled(False)
     window.inspect_chord_button.setEnabled(False)
     window.inspect_theory_button.setEnabled(False)
     window.use_gap_suggestion_button.setEnabled(False)

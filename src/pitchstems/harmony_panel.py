@@ -194,11 +194,15 @@ def refresh_chord_actions(window) -> None:
     explicit_ranges = window.timeline.selection_ranges()
     selected_chord = window.timeline.selected_chord
     target_ranges = chord_assignment_ranges(explicit_ranges, selected_chord)
+    selected_chord_target = not explicit_ranges and selected_chord is not None
     window.preview_chord_button.setEnabled(has_candidate)
     window.use_chord_button.setEnabled(has_candidate and bool(target_ranges))
-    if not explicit_ranges and selected_chord is not None:
+    window.delete_chord_button.setEnabled(selected_chord_target)
+    if selected_chord_target:
         window.use_chord_button.setText("Use for Chord")
         window.use_chord_button.setToolTip("Replace the selected chord block with this detected harmony.")
+        window.delete_chord_button.setToolTip("Remove the selected chord block from the timeline.")
     else:
         window.use_chord_button.setText("Use for Selection")
         window.use_chord_button.setToolTip("Apply this detected harmony to the selected timeline range.")
+        window.delete_chord_button.setToolTip("Select a chord block to remove it.")

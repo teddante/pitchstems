@@ -48,6 +48,7 @@ def build_editor_page(window) -> QWidget:
     chord_action_grid.addWidget(window.use_chord_button, 0, 1)
     chord_action_grid.addWidget(window.reset_note_filter_button, 1, 0)
     chord_action_grid.addWidget(window.inspect_chord_button, 1, 1)
+    chord_action_grid.addWidget(window.delete_chord_button, 2, 0, 1, 2)
     editor_side.addLayout(chord_action_grid)
     editor_side.addWidget(window.piano_chord_view)
     editor_side.addWidget(window.chord_list, 1)

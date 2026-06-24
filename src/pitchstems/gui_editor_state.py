@@ -76,6 +76,19 @@ def assign_selected_chord_to_selection(window) -> None:
     )
 
 
+def delete_selected_chord(window) -> None:
+    if window.editor_project is None or window.current_result is None:
+        return
+    if window.timeline.selection_ranges():
+        window.statusBar().showMessage("Clear the timeline range before deleting a chord.", 4000)
+        return
+    chord = window.timeline.selected_chord
+    if chord is None:
+        window.statusBar().showMessage("Select a chord block before deleting it.", 4000)
+        return
+    delete_timeline_chord(window, chord)
+
+
 def insert_manual_chord(window, chord: ChordRegion) -> None:
     window.manual_chords = [
         existing
@@ -113,6 +126,7 @@ def delete_timeline_chord(window, chord: ChordRegion) -> None:
 
 def show_timeline_chord_status(window, chord: ChordRegion | None) -> None:
     window.refresh_current_harmony(window.timeline.position, force=True)
+    window.refresh_chord_actions()
     if chord is None:
         window.refresh_chord_keyboard()
         return

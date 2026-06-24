@@ -409,9 +409,11 @@ def main() -> int:
             self.piano_chord_view = PianoChordWidget()
             self.preview_chord_button = QPushButton("Play Chord")
             self.use_chord_button = QPushButton("Use for Selection")
+            self.delete_chord_button = QPushButton("Delete Chord")
             self.inspect_chord_button = QPushButton("Inspect")
             self.preview_chord_button.setEnabled(False)
             self.use_chord_button.setEnabled(False)
+            self.delete_chord_button.setEnabled(False)
             self.inspect_chord_button.setEnabled(False)
             self.inspect_chord_button.setToolTip("Open a detailed report of the current harmony inputs, note weights, constraints, and chord candidate scoring.")
             self.chord_preview_player = QMediaPlayer(self)
@@ -472,6 +474,7 @@ def main() -> int:
             self.fit_review_button.clicked.connect(self.fit_editor_review_to_view)
             self.preview_chord_button.clicked.connect(self.preview_selected_chord)
             self.use_chord_button.clicked.connect(self.assign_selected_chord_to_selection)
+            self.delete_chord_button.clicked.connect(self.delete_selected_chord)
             self.reset_note_filter_button.clicked.connect(self.reset_chord_note_filter)
             self.inspect_chord_button.clicked.connect(self.inspect_current_chord_analysis)
             self.inspect_theory_button.clicked.connect(self.inspect_current_theory_analysis)
@@ -1245,6 +1248,9 @@ def main() -> int:
 
         def assign_selected_chord_to_selection(self) -> None:
             gui_editor_state.assign_selected_chord_to_selection(self)
+
+        def delete_selected_chord(self) -> None:
+            gui_editor_state.delete_selected_chord(self)
 
         def insert_manual_chord(self, chord: ChordRegion) -> None:
             gui_editor_state.insert_manual_chord(self, chord)

@@ -72,3 +72,17 @@ def test_assign_selected_chord_to_selection_uses_selected_chord_when_no_range() 
     assert window.removed_chord_ranges == [(1.0, 2.0)]
     assert window.refreshed_with == ChordRegion(1.0, 2.0, "C", 0.72)
     assert window.status.messages == ["Assigned C to selected chord."]
+
+
+def test_delete_selected_chord_uses_visible_selected_chord_target() -> None:
+    window = _Window()
+    chord = window.timeline.selected_chord
+    assert chord is not None
+    window.manual_chords = [chord]
+
+    gui_editor_state.delete_selected_chord(window)
+
+    assert window.manual_chords == []
+    assert window.removed_chord_ranges == [(1.0, 2.0)]
+    assert window.refreshed_with is None
+    assert window.status.messages == ["Deleted G."]
