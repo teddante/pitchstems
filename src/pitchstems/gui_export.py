@@ -64,7 +64,6 @@ class ExportSelectedFilesDialog:
             QWidget,
         )
 
-        self._items = items
         self._checks: list[tuple[ExportItem, QCheckBox]] = []
         self._category_checks: dict[str, list[QCheckBox]] = {}
         self._dialog = QDialog(parent)

@@ -130,7 +130,7 @@ The app also exposes:
 - Basic Pitch MIDI on/off
 - per-stem MIDI analysis checkboxes, with drums off by default
 - Basic Pitch's official MIDI parameters: onset threshold, frame threshold, minimum note length, note frequency limits, pitch-bend behavior, melodia post-processing, MIDI tempo, note CSV output, raw NPZ output, and MIDI sonification
-- ZIP export package on/off
+- export selected project files after a run or reopen
 - open output folder when finished
 - File menu actions for opening projects, choosing the output folder, and opening the latest output folder
 
@@ -161,7 +161,7 @@ The curated model catalog lives in `src/pitchstems/model_catalog.py`; the native
 py -3.10 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -U pip
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev,cpu,gui]"
 python -m ruff check src tests
 python -m pytest
 python -m compileall src
@@ -175,7 +175,8 @@ with the matching extra. Refresh constraints only after
 
 Validation tiers:
 
-- Fast source check: `.\scripts\check.ps1`
+- Fast source check with the local runtime stack: `.\scripts\check.ps1`
+- Source-only check for dev environments without the ML/GUI runtime stack: `.\scripts\check.ps1 -SkipDoctor`
 - GUI/package check: `.\scripts\check.ps1 -GuiSmoke -Build`
 - GPU/runtime check after setup or ML dependency changes: `.\scripts\check.ps1 -Gpu`
 - Dependency security audit: `python -m pip_audit`

@@ -5,7 +5,6 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from pitchstems.gui_jobs import ProcessWorker, create_process_worker
 from pitchstems.pipeline import (
@@ -21,18 +20,6 @@ from pitchstems.transcription import MidiOptions
 
 
 @dataclass(frozen=True)
-class FullRunRequest:
-    input_path: Path
-    output_root: Path
-    separation_options: SeparationOptions
-    generate_midi: bool
-    midi_options: MidiOptions
-    midi_stems: set[str]
-    create_zip: bool
-    cancelled: Callable[[], bool]
-
-
-@dataclass(frozen=True)
 class FullProcessRunRequest:
     input_path: Path
     output_root: Path
@@ -41,17 +28,6 @@ class FullProcessRunRequest:
     midi_options: MidiOptions
     midi_stems: set[str]
     create_zip: bool
-
-
-@dataclass(frozen=True)
-class MidiRunRequest:
-    result: PipelineResult
-    input_stem: str
-    stems: list[StemResult]
-    midi_options: MidiOptions
-    midi_stems: set[str]
-    create_zip: bool
-    cancelled: Callable[[], bool]
 
 
 @dataclass(frozen=True)
@@ -76,16 +52,6 @@ def start_full_processing(window) -> None:
         return
     token = start_worker_token(window)
     midi_stems = window.selected_midi_stems()
-    request = FullRunRequest(
-        input_path=window.drop_zone.path,
-        output_root=Path(window.output_dir.text()),
-        separation_options=window.selected_separation_options(),
-        generate_midi=window.generate_midi.isChecked() and bool(midi_stems),
-        midi_options=window.selected_midi_options(),
-        midi_stems=midi_stems,
-        create_zip=False,
-        cancelled=lambda token=token: window.worker_jobs.is_cancel_requested(token),
-    )
 
     window.set_processing_state(True)
     window.begin_activity("Running separation + MIDI...")
@@ -95,13 +61,13 @@ def start_full_processing(window) -> None:
         token,
         target=run_full_pipeline_process,
         process_request=FullProcessRunRequest(
-            input_path=request.input_path,
-            output_root=request.output_root,
-            separation_options=request.separation_options,
-            generate_midi=request.generate_midi,
-            midi_options=request.midi_options,
-            midi_stems=request.midi_stems,
-            create_zip=request.create_zip,
+            input_path=window.drop_zone.path,
+            output_root=Path(window.output_dir.text()),
+            separation_options=window.selected_separation_options(),
+            generate_midi=window.generate_midi.isChecked() and bool(midi_stems),
+            midi_options=window.selected_midi_options(),
+            midi_stems=midi_stems,
+            create_zip=False,
         ),
     )
 
@@ -113,15 +79,6 @@ def start_midi_processing(window) -> None:
         window.append_log("Run separation first. Then MIDI can be rerun from those stems.")
         return
     token = start_worker_token(window)
-    request = MidiRunRequest(
-        result=window.current_result,
-        input_stem=window.current_input_stem,
-        stems=list(window.current_stems),
-        midi_options=window.selected_midi_options(),
-        midi_stems=window.selected_midi_stems(),
-        create_zip=False,
-        cancelled=lambda token=token: window.worker_jobs.is_cancel_requested(token),
-    )
 
     window.set_processing_state(True)
     window.begin_activity("Rerunning MIDI...")
@@ -131,12 +88,12 @@ def start_midi_processing(window) -> None:
         token,
         target=run_midi_stage_process,
         process_request=MidiProcessRunRequest(
-            result=request.result,
-            input_stem=request.input_stem,
-            stems=request.stems,
-            midi_options=request.midi_options,
-            midi_stems=request.midi_stems,
-            create_zip=request.create_zip,
+            result=window.current_result,
+            input_stem=window.current_input_stem,
+            stems=list(window.current_stems),
+            midi_options=window.selected_midi_options(),
+            midi_stems=window.selected_midi_stems(),
+            create_zip=False,
         ),
     )
 
@@ -208,36 +165,6 @@ def invalidate_worker_token(window) -> None:
         window.set_processing_state(False)
 
 
-def run_full_pipeline(window, token: int, request: FullRunRequest) -> None:
-    completion = "success"
-    try:
-        window.logger.info("Starting full pipeline for %s", request.input_path)
-        result = process_audio_file(
-            request.input_path,
-            request.output_root,
-            separation_options=request.separation_options,
-            generate_midi=request.generate_midi,
-            midi_policy="all",
-            midi_options=request.midi_options,
-            midi_stems=request.midi_stems,
-            create_zip=request.create_zip,
-            log=lambda message: window.messages.put(("WORKER_LOG", token, message)),
-            cancelled=request.cancelled,
-        )
-        window.messages.put(("RESULT", token, result))
-        window.messages.put(("WORKER_LOG", token, f"Project ready: {result.project_dir}"))
-    except PipelineCancelledError:
-        completion = "cancelled"
-        window.logger.info("Processing cancelled")
-        window.messages.put(("WORKER_LOG", token, "Processing cancelled."))
-    except Exception as exc:
-        completion = "error"
-        window.logger.exception("Full pipeline failed")
-        window.messages.put(("WORKER_LOG", token, f"Error: {exc}"))
-    finally:
-        window.messages.put(("ENABLE_PROCESS", token, completion))
-
-
 def run_full_pipeline_process(token: int, request: FullProcessRunRequest, messages) -> None:
     try:
         result = process_audio_file(
@@ -261,36 +188,6 @@ def run_full_pipeline_process(token: int, request: FullProcessRunRequest, messag
     except Exception as exc:
         messages.put(("WORKER_LOG", token, f"Error: {exc}"))
         raise
-
-
-def run_midi_stage(window, token: int, request: MidiRunRequest) -> None:
-    completion = "success"
-    try:
-        window.logger.info("Starting MIDI rerun for %s", request.result.project_dir)
-        result = process_midi_from_stems(
-            project_dir=request.result.project_dir,
-            input_stem=request.input_stem,
-            normalized_audio=request.result.normalized_audio,
-            stems=request.stems,
-            midi_policy="all",
-            midi_options=request.midi_options,
-            midi_stems=request.midi_stems,
-            create_zip=request.create_zip,
-            log=lambda message: window.messages.put(("WORKER_LOG", token, message)),
-            cancelled=request.cancelled,
-        )
-        window.messages.put(("RESULT", token, result))
-        window.messages.put(("WORKER_LOG", token, f"Updated project MIDI: {result.project_dir}"))
-    except PipelineCancelledError:
-        completion = "cancelled"
-        window.logger.info("Processing cancelled")
-        window.messages.put(("WORKER_LOG", token, "Processing cancelled."))
-    except Exception as exc:
-        completion = "error"
-        window.logger.exception("MIDI rerun failed")
-        window.messages.put(("WORKER_LOG", token, f"Error: {exc}"))
-    finally:
-        window.messages.put(("ENABLE_PROCESS", token, completion))
 
 
 def run_midi_stage_process(token: int, request: MidiProcessRunRequest, messages) -> None:

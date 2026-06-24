@@ -6,7 +6,7 @@ from pathlib import Path
 import pitchstems.gui_processing as gui_processing
 import pitchstems.gui_shutdown as gui_shutdown
 from pitchstems.gui_jobs import EditorLoadJobState, MidiPreviewJobState, WorkerJobState
-from pitchstems.pipeline import PipelineCancelledError, PipelineResult
+from pitchstems.pipeline import PipelineResult
 from pitchstems.separation import SeparationOptions, StemResult
 from pitchstems.transcription import MidiOptions
 
@@ -201,6 +201,7 @@ def test_start_full_processing_requests_no_zip_from_gui(monkeypatch, tmp_path: P
     assert process_workers[0].process.started is True
     assert window.worker_jobs.active_process is process_workers[0]
     request = process_workers[0].args[1]
+    assert process_workers[0].target is gui_processing.run_full_pipeline_process
     assert request.create_zip is False
     assert window.worker.started is True
 
@@ -237,6 +238,7 @@ def test_start_midi_processing_requests_no_zip_from_gui(monkeypatch, tmp_path: P
     assert process_workers[0].process.started is True
     assert window.worker_jobs.active_process is process_workers[0]
     request = process_workers[0].args[1]
+    assert process_workers[0].target is gui_processing.run_midi_stage_process
     assert request.create_zip is False
     assert window.worker.started is True
 
@@ -284,36 +286,6 @@ def test_cancel_processing_reports_no_active_worker() -> None:
 
     assert gui_processing.cancel_processing(window) is False
     assert "No active processing job to cancel." in window.logs[-1]
-
-
-def test_run_midi_stage_reports_cancellation_without_error(monkeypatch, tmp_path: Path) -> None:
-    def cancelled_midi_stage(**_kwargs):
-        raise PipelineCancelledError("Processing cancelled.")
-
-    monkeypatch.setattr(gui_processing, "process_midi_from_stems", cancelled_midi_stage)
-    result = PipelineResult(
-        project_dir=tmp_path / "song.pitchstems",
-        normalized_audio=tmp_path / "song.pitchstems" / "work" / "song.wav",
-        stems=[StemResult("bass", tmp_path / "song.pitchstems" / "stems" / "bass.wav")],
-        midi_files=[],
-        combined_midi=None,
-        zip_path=None,
-    )
-    request = gui_processing.MidiRunRequest(
-        result=result,
-        input_stem="song",
-        stems=result.stems,
-        midi_options=MidiOptions(),
-        midi_stems={"bass"},
-        create_zip=False,
-        cancelled=lambda: True,
-    )
-    window = _Window()
-
-    gui_processing.run_midi_stage(window, 3, request)
-
-    assert window.messages.get_nowait() == ("WORKER_LOG", 3, "Processing cancelled.")
-    assert window.messages.get_nowait() == ("ENABLE_PROCESS", 3, "cancelled")
 
 
 class _FlushWindow:

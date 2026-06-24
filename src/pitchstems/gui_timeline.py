@@ -47,7 +47,6 @@ class TimelineView(QGraphicsView):
         self.sticky_x_items = []
         self.sticky_y_items = []
         self.playhead = None
-        self.selection_rect = None
         self.selection_rects = []
         self.selection_segments: list[tuple[float, float]] = []
         self.selection_start: float | None = None
@@ -294,7 +293,6 @@ class TimelineView(QGraphicsView):
         try:
             self.scene.clear()
             self.playhead = None
-            self.selection_rect = None
             self.selection_rects = []
             self.track_geometries = {}
             self.sticky_x_items = []
@@ -633,7 +631,6 @@ class TimelineView(QGraphicsView):
         self._move_playhead()
 
     def _draw_selection(self, height: float) -> None:
-        self.selection_rect = None
         self.selection_rects = []
         for start, end in self.selection_ranges():
             x = self._x(start)
@@ -648,7 +645,6 @@ class TimelineView(QGraphicsView):
             )
             rect.setZValue(9)
             self.selection_rects.append(rect)
-            self.selection_rect = rect
 
     def _move_playhead(self) -> None:
         if self.playhead is None:
@@ -681,7 +677,6 @@ class TimelineView(QGraphicsView):
         for rect in self.selection_rects:
             if rect.scene() is self.scene:
                 self.scene.removeItem(rect)
-        self.selection_rect = None
         self.selection_rects = []
         if self.on_selection_changed:
             self.on_selection_changed(None)
@@ -735,7 +730,6 @@ class TimelineView(QGraphicsView):
         for rect in self.selection_rects:
             if rect.scene() is self.scene:
                 self.scene.removeItem(rect)
-        self.selection_rect = None
         self.selection_rects = []
         self._draw_selection(height)
         if notify and self.on_selection_changed:
