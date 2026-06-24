@@ -34,6 +34,7 @@ def set_current_result(window, result, open_output: bool = True) -> None:
     )
     window.editor_summary.setText("Building editor timeline...")
     window.fit_song_button.setEnabled(False)
+    window.fit_review_button.setEnabled(False)
     window.clear_transport_players()
     window.remember_recent_project(result.project_dir)
     if open_output and window.open_when_done.isChecked():
@@ -104,6 +105,7 @@ def finish_editor_project_load(window, token: int, loaded) -> None:
     window.editor_summary.setText(summary.summary)
     maximum = max(0, int(project.duration * 1000))
     window.fit_song_button.setEnabled(summary.fit_song_enabled and maximum > 0)
+    window.fit_review_button.setEnabled(summary.fit_song_enabled and maximum > 0)
     window.editor_position.setText(format_time(playhead_seconds))
     refresh_editor_lists(window, track_visibility)
     window.refresh_playback_controls(editor_state)

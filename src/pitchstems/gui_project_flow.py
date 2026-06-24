@@ -199,6 +199,7 @@ def reset_stage_state(window, path: Path | None = None) -> None:
     window.midi_status.setText("Run the full pipeline first, then MIDI can be rerun without separating again.")
     window.editor_summary.setText(EMPTY_EDITOR_SUMMARY)
     window.fit_song_button.setEnabled(False)
+    window.fit_review_button.setEnabled(False)
     window.inspect_chord_button.setEnabled(False)
     window.inspect_theory_button.setEnabled(False)
     window.use_gap_suggestion_button.setEnabled(False)

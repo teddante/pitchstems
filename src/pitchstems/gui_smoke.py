@@ -76,6 +76,7 @@ def run_project_smoke(window) -> None:
     _assert(window.current_result is not None, "current result after project open")
     _assert(window.timeline.project is window.editor_project, "timeline project attached")
     _assert(window.fit_song_button.isEnabled(), "fit song enabled")
+    _assert(window.fit_review_button.isEnabled(), "fit review enabled")
     _assert(window.run_midi.isEnabled(), "rerun midi enabled after project load")
     _assert(window.export_button.isEnabled(), "export enabled after project load")
     _assert("bass" in window.track_analysis_checks, "bass chord analysis control")
@@ -119,6 +120,9 @@ def run_project_smoke(window) -> None:
     window.refresh_chord_actions()
     _assert(window.timeline.selected_chord is None, "range selection clears selected chord")
     _assert(window.use_chord_button.text() == "Use for Selection", "range selection becomes correction target")
+    window.fit_review_button.click()
+    QApplication.processEvents()
+    _assert(window.statusBar().currentMessage() == "Timeline fit to review target.", "fit review button")
     window.clear_editor_selection()
     _assert(window.timeline.selected_chord is None, "clear selection clears selected chord")
     report = current_chord_analysis_report(window)
@@ -264,6 +268,7 @@ def run_project_smoke(window) -> None:
     _assert(window.timeline.project is None, "reset clears timeline project")
     _assert(not window.track_analysis_checks, "reset clears track controls")
     _assert(not window.run_midi.isEnabled(), "reset disables rerun MIDI")
+    _assert(not window.fit_review_button.isEnabled(), "reset disables fit review")
 
 
 def run_real_audio_project_smoke(window, manifest_path: Path) -> None:
