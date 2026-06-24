@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QListWidgetItem
 
+from pitchstems.editor_chord_assignment import chord_assignment_ranges
 from pitchstems.editor_project import ChordRegion
 from pitchstems.time_format import format_time
 
@@ -190,5 +191,14 @@ def _candidate_notes_text(window, label: str, fallback_notes: dict[str, list[str
 def refresh_chord_actions(window) -> None:
     item = window.chord_list.currentItem()
     has_candidate = bool(item and item.data(Qt.UserRole))
+    explicit_ranges = window.timeline.selection_ranges()
+    selected_chord = window.timeline.selected_chord
+    target_ranges = chord_assignment_ranges(explicit_ranges, selected_chord)
     window.preview_chord_button.setEnabled(has_candidate)
-    window.use_chord_button.setEnabled(has_candidate and bool(window.timeline.selection_ranges()))
+    window.use_chord_button.setEnabled(has_candidate and bool(target_ranges))
+    if not explicit_ranges and selected_chord is not None:
+        window.use_chord_button.setText("Use for Chord")
+        window.use_chord_button.setToolTip("Replace the selected chord block with this detected harmony.")
+    else:
+        window.use_chord_button.setText("Use for Selection")
+        window.use_chord_button.setToolTip("Apply this detected harmony to the selected timeline range.")

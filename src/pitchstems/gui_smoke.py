@@ -95,6 +95,14 @@ def run_project_smoke(window) -> None:
     window.chord_list.setCurrentRow(0)
     window.assign_selected_chord_to_selection()
     _assert(bool(window.manual_chords), "assign chord from inspector to timeline selection")
+    assigned_chord = window.manual_chords[-1]
+    window.timeline.clear_selection()
+    window.timeline.selected_chord = assigned_chord
+    window.chord_list.setCurrentRow(0)
+    window.refresh_chord_actions()
+    _assert(window.use_chord_button.text() == "Use for Chord", "selected chord correction action")
+    window.assign_selected_chord_to_selection()
+    _assert(bool(window.manual_chords), "assign chord from inspector to selected chord")
     report = current_chord_analysis_report(window)
     _assert("Harmony Inspector Calculation" in report, "harmony report title")
     _assert("MIDI Energy Evidence" in report, "harmony report evidence section")
