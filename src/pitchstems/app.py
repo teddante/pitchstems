@@ -1298,14 +1298,24 @@ def main() -> int:
     window = MainWindow()
     window.show()
     smoke_mode = os.environ.get("PITCHSTEMS_GUI_SMOKE")
-    if smoke_mode in {"startup", "project"}:
-        from pitchstems.gui_smoke import capture_visual_audit, run_project_smoke, run_startup_smoke
+    if smoke_mode in {"startup", "project", "real-audio"}:
+        from pitchstems.gui_smoke import (
+            capture_visual_audit,
+            run_project_smoke,
+            run_real_audio_project_smoke,
+            run_startup_smoke,
+        )
 
         def run_smoke_and_exit() -> None:
             try:
                 run_startup_smoke(window)
                 if smoke_mode == "project":
                     run_project_smoke(window)
+                if smoke_mode == "real-audio":
+                    manifest = os.environ.get("PITCHSTEMS_REAL_AUDIO_SMOKE_MANIFEST")
+                    if not manifest:
+                        raise RuntimeError("PITCHSTEMS_REAL_AUDIO_SMOKE_MANIFEST is required.")
+                    run_real_audio_project_smoke(window, Path(manifest))
                 visual_audit_dir = os.environ.get("PITCHSTEMS_VISUAL_AUDIT_DIR")
                 if visual_audit_dir:
                     capture_visual_audit(window, Path(visual_audit_dir))

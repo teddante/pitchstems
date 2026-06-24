@@ -88,6 +88,46 @@ class _CaptureThread:
         self.started = True
 
 
+class _CaptureProcess:
+    def __init__(self) -> None:
+        self.started = False
+        self.terminated = False
+        self.exitcode = None
+
+    def start(self) -> None:
+        self.started = True
+
+    def is_alive(self) -> bool:
+        return self.started and not self.terminated
+
+    def join(self, timeout=0) -> None:
+        if self.terminated:
+            self.exitcode = -15
+
+    def terminate(self) -> None:
+        self.terminated = True
+
+
+class _CaptureProcessWorker:
+    def __init__(self, target, args) -> None:
+        self.target = target
+        self.args = args
+        self.process = _CaptureProcess()
+        self.terminated = False
+
+    def is_alive(self) -> bool:
+        return self.process.is_alive()
+
+    def drain_messages(self) -> list[object]:
+        return []
+
+    def terminate(self, timeout_seconds: float = 2.0) -> bool:
+        self.terminated = True
+        self.process.terminate()
+        self.process.join(timeout=timeout_seconds)
+        return True
+
+
 class _StartProcessingWindow:
     def __init__(self, input_path: Path, output_root: Path) -> None:
         self.worker = None
@@ -125,12 +165,23 @@ def test_start_full_processing_requests_no_zip_from_gui(monkeypatch, tmp_path: P
     input_path = tmp_path / "song.wav"
     input_path.write_bytes(b"RIFF")
     window = _StartProcessingWindow(input_path, tmp_path / "out")
+    process_workers: list[_CaptureProcessWorker] = []
+
+    def capture_process_worker(target, args):
+        worker = _CaptureProcessWorker(target, args)
+        process_workers.append(worker)
+        return worker
+
+    monkeypatch.setattr(gui_processing, "create_process_worker", capture_process_worker)
     monkeypatch.setattr(gui_processing.threading, "Thread", _CaptureThread)
 
     gui_processing.start_full_processing(window)
 
     assert isinstance(window.worker, _CaptureThread)
-    request = window.worker.args[2]
+    assert process_workers
+    assert process_workers[0].process.started is True
+    assert window.worker_jobs.active_process is process_workers[0]
+    request = process_workers[0].args[1]
     assert request.create_zip is False
     assert window.worker.started is True
 
@@ -150,12 +201,23 @@ def test_start_midi_processing_requests_no_zip_from_gui(monkeypatch, tmp_path: P
     window.current_result = result
     window.current_stems = result.stems
     window.current_input_stem = "song"
+    process_workers: list[_CaptureProcessWorker] = []
+
+    def capture_process_worker(target, args):
+        worker = _CaptureProcessWorker(target, args)
+        process_workers.append(worker)
+        return worker
+
+    monkeypatch.setattr(gui_processing, "create_process_worker", capture_process_worker)
     monkeypatch.setattr(gui_processing.threading, "Thread", _CaptureThread)
 
     gui_processing.start_midi_processing(window)
 
     assert isinstance(window.worker, _CaptureThread)
-    request = window.worker.args[2]
+    assert process_workers
+    assert process_workers[0].process.started is True
+    assert window.worker_jobs.active_process is process_workers[0]
+    request = process_workers[0].args[1]
     assert request.create_zip is False
     assert window.worker.started is True
 
@@ -168,6 +230,20 @@ def test_cancel_processing_requests_active_worker_and_updates_activity() -> None
     assert window.worker_jobs.is_cancel_requested(token)
     assert window.activities[-1] == "Cancelling after the current model stage..."
     assert "Cancellation requested." in window.logs[-1]
+
+
+def test_cancel_processing_terminates_active_process_worker() -> None:
+    window = DummyWindow()
+    token = window.worker_jobs.start()
+    process_worker = _CaptureProcessWorker(None, ())
+    process_worker.process.start()
+    assert window.worker_jobs.attach_process(token, process_worker)
+
+    assert gui_processing.cancel_processing(window) is True
+
+    assert window.worker_jobs.is_cancel_requested(token)
+    assert process_worker.terminated
+    assert window.activities[-1] == "Cancelling worker process..."
 
 
 def test_cancel_processing_reports_no_active_worker() -> None:

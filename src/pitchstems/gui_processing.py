@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import queue
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from pitchstems.gui_jobs import ProcessWorker, create_process_worker
 from pitchstems.pipeline import (
     PipelineCancelledError,
     PipelineResult,
@@ -31,6 +33,17 @@ class FullRunRequest:
 
 
 @dataclass(frozen=True)
+class FullProcessRunRequest:
+    input_path: Path
+    output_root: Path
+    separation_options: SeparationOptions
+    generate_midi: bool
+    midi_options: MidiOptions
+    midi_stems: set[str]
+    create_zip: bool
+
+
+@dataclass(frozen=True)
 class MidiRunRequest:
     result: PipelineResult
     input_stem: str
@@ -39,6 +52,16 @@ class MidiRunRequest:
     midi_stems: set[str]
     create_zip: bool
     cancelled: Callable[[], bool]
+
+
+@dataclass(frozen=True)
+class MidiProcessRunRequest:
+    result: PipelineResult
+    input_stem: str
+    stems: list[StemResult]
+    midi_options: MidiOptions
+    midi_stems: set[str]
+    create_zip: bool
 
 
 def start_full_processing(window) -> None:
@@ -67,8 +90,20 @@ def start_full_processing(window) -> None:
     window.set_processing_state(True)
     window.begin_activity("Running separation + MIDI...")
     window.append_log("Starting separation + MIDI pipeline...")
-    window.worker = threading.Thread(target=run_full_pipeline, args=(window, token, request), daemon=True)
-    window.worker.start()
+    start_process_job(
+        window,
+        token,
+        target=run_full_pipeline_process,
+        process_request=FullProcessRunRequest(
+            input_path=request.input_path,
+            output_root=request.output_root,
+            separation_options=request.separation_options,
+            generate_midi=request.generate_midi,
+            midi_options=request.midi_options,
+            midi_stems=request.midi_stems,
+            create_zip=request.create_zip,
+        ),
+    )
 
 
 def start_midi_processing(window) -> None:
@@ -91,8 +126,56 @@ def start_midi_processing(window) -> None:
     window.set_processing_state(True)
     window.begin_activity("Rerunning MIDI...")
     window.append_log("Rerunning MIDI from existing stems...")
-    window.worker = threading.Thread(target=run_midi_stage, args=(window, token, request), daemon=True)
+    start_process_job(
+        window,
+        token,
+        target=run_midi_stage_process,
+        process_request=MidiProcessRunRequest(
+            result=request.result,
+            input_stem=request.input_stem,
+            stems=request.stems,
+            midi_options=request.midi_options,
+            midi_stems=request.midi_stems,
+            create_zip=request.create_zip,
+        ),
+    )
+
+
+def start_process_job(window, token: int, target, process_request) -> None:
+    process_worker = create_process_worker(target, (token, process_request))
+    if isinstance(process_request, FullProcessRunRequest):
+        process_worker.cleanup_root = process_request.output_root
+    if not window.worker_jobs.attach_process(token, process_worker):
+        process_worker.terminate(timeout_seconds=0.5)
+        return
+    process_worker.process.start()
+    window.worker = threading.Thread(
+        target=supervise_process_job,
+        args=(window, token, process_worker),
+        daemon=True,
+    )
     window.worker.start()
+
+
+def supervise_process_job(window, token: int, process_worker: ProcessWorker) -> None:
+    while process_worker.is_alive():
+        forward_process_messages(window, process_worker)
+        time.sleep(0.05)
+    process_worker.process.join(timeout=0)
+    forward_process_messages(window, process_worker)
+    if process_worker.terminated:
+        window.messages.put(("WORKER_LOG", token, "Processing cancelled."))
+        window.messages.put(("ENABLE_PROCESS", token, "cancelled"))
+    elif process_worker.process.exitcode == 0:
+        window.messages.put(("ENABLE_PROCESS", token, "success"))
+    else:
+        window.messages.put(("WORKER_LOG", token, f"Worker process exited with code {process_worker.process.exitcode}."))
+        window.messages.put(("ENABLE_PROCESS", token, "error"))
+
+
+def forward_process_messages(window, process_worker: ProcessWorker) -> None:
+    for message in process_worker.drain_messages():
+        window.messages.put(message)
 
 
 def start_worker_token(window) -> int:
@@ -103,7 +186,10 @@ def cancel_processing(window) -> bool:
     if not window.worker_jobs.cancel():
         window.append_log("No active processing job to cancel.")
         return False
-    window.set_activity_message(CANCELLING_AFTER_STAGE_MESSAGE)
+    if window.worker_jobs.active_process is not None:
+        window.set_activity_message("Cancelling worker process...")
+    else:
+        window.set_activity_message(CANCELLING_AFTER_STAGE_MESSAGE)
     window.append_log("Cancellation requested.")
     return True
 
@@ -144,6 +230,31 @@ def run_full_pipeline(window, token: int, request: FullRunRequest) -> None:
         window.messages.put(("ENABLE_PROCESS", token, completion))
 
 
+def run_full_pipeline_process(token: int, request: FullProcessRunRequest, messages) -> None:
+    try:
+        result = process_audio_file(
+            request.input_path,
+            request.output_root,
+            separation_options=request.separation_options,
+            generate_midi=request.generate_midi,
+            midi_policy="all",
+            midi_options=request.midi_options,
+            midi_stems=request.midi_stems,
+            create_zip=request.create_zip,
+            log=lambda message: messages.put(("WORKER_LOG", token, message)),
+            cancelled=None,
+            project_created=lambda project_dir: messages.put(("PROJECT_DIR", token, project_dir)),
+        )
+        messages.put(("RESULT", token, result))
+        messages.put(("WORKER_LOG", token, f"Project ready: {result.project_dir}"))
+    except PipelineCancelledError:
+        messages.put(("WORKER_LOG", token, "Processing cancelled."))
+        raise
+    except Exception as exc:
+        messages.put(("WORKER_LOG", token, f"Error: {exc}"))
+        raise
+
+
 def run_midi_stage(window, token: int, request: MidiRunRequest) -> None:
     completion = "success"
     try:
@@ -172,6 +283,30 @@ def run_midi_stage(window, token: int, request: MidiRunRequest) -> None:
         window.messages.put(("WORKER_LOG", token, f"Error: {exc}"))
     finally:
         window.messages.put(("ENABLE_PROCESS", token, completion))
+
+
+def run_midi_stage_process(token: int, request: MidiProcessRunRequest, messages) -> None:
+    try:
+        result = process_midi_from_stems(
+            project_dir=request.result.project_dir,
+            input_stem=request.input_stem,
+            normalized_audio=request.result.normalized_audio,
+            stems=request.stems,
+            midi_policy="all",
+            midi_options=request.midi_options,
+            midi_stems=request.midi_stems,
+            create_zip=request.create_zip,
+            log=lambda message: messages.put(("WORKER_LOG", token, message)),
+            cancelled=None,
+        )
+        messages.put(("RESULT", token, result))
+        messages.put(("WORKER_LOG", token, f"Updated project MIDI: {result.project_dir}"))
+    except PipelineCancelledError:
+        messages.put(("WORKER_LOG", token, "Processing cancelled."))
+        raise
+    except Exception as exc:
+        messages.put(("WORKER_LOG", token, f"Error: {exc}"))
+        raise
 
 
 def flush_messages(window) -> None:

@@ -687,6 +687,29 @@ def test_full_pipeline_cancellation_removes_partial_new_project(
     assert not list((tmp_path / "out").glob("*.pitchstems"))
 
 
+def test_full_pipeline_reports_created_project_dir(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    input_path = tmp_path / "source.mp3"
+    input_path.write_bytes(b"audio")
+    created_dirs: list[Path] = []
+
+    monkeypatch.setattr(pipeline, "normalize_to_wav", _fake_normalize)
+    monkeypatch.setattr(pipeline, "separate_stems", _fake_separate)
+
+    result = process_audio_file(
+        input_path,
+        tmp_path / "out",
+        generate_midi=False,
+        create_zip=False,
+        project_created=created_dirs.append,
+    )
+
+    assert created_dirs == [result.project_dir]
+    assert result.project_dir.exists()
+
+
 def test_full_pipeline_logs_deferred_cancellation_boundary(
     tmp_path: Path,
     monkeypatch,

@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from pitchstems.editor_loader import EditorLoadResult
+from pitchstems.export_files import build_export_items, copy_export_items
 from pitchstems.pipeline import PipelineResult
 from pitchstems.project_store import save_project_manifest
 from pitchstems.separation import StemResult
@@ -237,6 +238,39 @@ def run_project_smoke(window) -> None:
     _assert(window.timeline.project is None, "reset clears timeline project")
     _assert(not window.track_analysis_checks, "reset clears track controls")
     _assert(not window.run_midi.isEnabled(), "reset disables rerun MIDI")
+
+
+def run_real_audio_project_smoke(window, manifest_path: Path) -> None:
+    window.open_project_manifest(manifest_path)
+    _wait_for(lambda: window.editor_project is not None, "real-audio editor project load")
+
+    _assert(window.current_result is not None, "real-audio current result")
+    _assert(window.current_result.source_audio is not None, "real-audio source import recorded")
+    _assert(window.current_result.source_audio.is_file(), "real-audio source import exists")
+    _assert(window.current_result.stems, "real-audio separated stems")
+    _assert(any(stem.path.is_file() for stem in window.current_result.stems), "real-audio stem files")
+    _assert(window.current_result.midi_files, "real-audio MIDI files")
+    _assert(any(midi.path.is_file() for midi in window.current_result.midi_files), "real-audio MIDI files exist")
+    _assert(window.timeline.project is window.editor_project, "real-audio timeline project attached")
+
+    window.fit_editor_song_to_view()
+    window.timeline._set_selection(0.0, min(1.0, max(0.1, window.editor_project.duration)), notify=True)
+    window.refresh_current_harmony(0.0)
+    _assert(window.current_harmony_context is not None, "real-audio harmony review context")
+
+    window.play_transport()
+    QApplication.processEvents()
+    _assert(window.transport.is_playing, "real-audio playback starts")
+    window.stop_transport()
+    QApplication.processEvents()
+    _assert(not window.transport.is_playing, "real-audio playback stops")
+
+    items = build_export_items(window.current_result)
+    _assert(items, "real-audio selected export items")
+    export_dir = Path(tempfile.mkdtemp(prefix="pitchstems-real-audio-export-"))
+    summary = copy_export_items(items[: min(3, len(items))], export_dir)
+    _assert(summary.file_count > 0, "real-audio selected export copied files")
+    _assert(any(summary.destination.rglob("*")), "real-audio selected export artifacts exist")
 
 
 def capture_visual_audit(window, output_dir: Path) -> list[Path]:

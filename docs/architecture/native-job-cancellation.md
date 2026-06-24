@@ -1,40 +1,32 @@
 # Native Job Cancellation
 
-PitchStems cancellation is cooperative in the Python orchestration layer. The app checks
-cancellation before and after expensive native model stages, but it does not interrupt
-BS-RoFormer or Basic Pitch once those libraries are executing.
+PitchStems uses different cancellation boundaries for GUI and CLI execution.
 
 ## Current Boundary
 
-- `process_audio_file()` can stop between copy, normalization, separation, MIDI, and archive
-  stages.
-- `process_midi_from_stems()` can stop between stem transcriptions and before replacement of
-  previous MIDI outputs.
-- `separate_stems()` and `transcribe_to_midi()` are treated as native calls that either return,
-  raise, or finish through their library-level behavior.
+- GUI full-pipeline and MIDI-rerun jobs execute in a child process.
+- GUI Cancel terminates that child process, so native BS-RoFormer or Basic Pitch work can stop without waiting for the native call to return.
+- CLI runs still execute in one process and remain cooperative between orchestration steps.
+- `process_audio_file()` can report the newly created project folder to the parent process before native model work starts.
+- `process_midi_from_stems()` still writes MIDI reruns through staging directories before promoting outputs.
+
+## Cleanup Rules
+
+For a cancelled GUI full-pipeline run, the parent process removes the recorded new project directory only when all of these are true:
+
+- the path is inside the requested output root
+- the path is not the output root itself
+- the path has the `.pitchstems` suffix
+- the path is not a symlink
+
+For a cancelled GUI MIDI rerun, the existing project is not deleted. The MIDI stage uses temporary staging folders and only promotes outputs after normal success; a later rerun resets stale staging folders before starting.
 
 ## User-Facing Behavior
 
-When the user closes the app during processing, PitchStems requests cancellation, waits for the
-current model stage to finish, and then closes. This avoids corrupting project folders or leaving
-half-written replacement MIDI.
-
-## Future Process-Based Strategy
-
-The next architecture should run ML work in a separate job process or sidecar. Each job should have
-a stable `job_id`, emit progress events, write outputs into a staging directory, and promote outputs
-only after success. Cancellation can then terminate the process, delete the staging directory, and
-leave the existing project unchanged.
-
-## Future Boundary Requirements
-
-Any process-based implementation must preserve the current project safety rule: write into a staging
-project or staging output directory first, then promote outputs only after success. Cancellation may
-terminate the process and delete staging data, but it must not remove or mutate the last successful
-project manifest.
+When the user cancels processing or closes the app during processing, PitchStems requests cancellation and terminates the active processing child. Stale worker messages remain token-filtered, so old results cannot replace the currently open project.
 
 ## Non-Goals
 
-- Do not kill Python threads inside the current PySide process.
-- Do not terminate model libraries mid-write without a staging boundary.
+- Do not kill Python threads inside the PySide process.
+- Do not remove an existing `.pitchstems` project because a MIDI rerun was cancelled.
 - Do not change existing `.pitchstems` project compatibility for cancellation alone.

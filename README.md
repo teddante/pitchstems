@@ -147,10 +147,10 @@ optional, and stem WAVs are not duplicated into `export`.
 Use **Open Project** in the GUI to reopen that manifest without rerunning the expensive
 separation step.
 
-Cancellation is cooperative. PitchStems checks for cancellation between orchestration
-steps, but native BS-RoFormer and Basic Pitch calls may need to finish their current
-model stage before the GUI can report the job as cancelled.
-For the technical boundary and future process-based cancellation strategy, see
+GUI cancellation runs the expensive full-pipeline and MIDI-rerun jobs in a child
+process so Cancel can stop native BS-RoFormer or Basic Pitch work without waiting
+for the model call to return. CLI cancellation remains cooperative inside one
+process. For the technical boundary and cleanup rules, see
 `docs/architecture/native-job-cancellation.md`.
 
 The curated model catalog lives in `src/pitchstems/model_catalog.py`; the native BS-RoFormer runtime bridge lives in `src/pitchstems/separation.py`.
@@ -179,16 +179,15 @@ Validation tiers:
 - GUI/package check: `.\scripts\check.ps1 -GuiSmoke -Build`
 - GPU/runtime check after setup or ML dependency changes: `.\scripts\check.ps1 -Gpu`
 - Dependency security audit: `python -m pip_audit`
-- Manual real-audio smoke when changing separation/transcription behavior:
+- Manual real-audio smoke when changing separation/transcription or editor review/export behavior:
 
 See `docs/architecture/quality-gate-roadmap.md` for the current typed/coverage surface and known gaps.
 
 ```powershell
-pitchstems "C:\path\to\short-audio.mp3" --output-dir "C:\path\to\pitchstems-smoke" --midi-policy pitched
-pitchstems-gui
+.\scripts\real_audio_smoke.ps1 -AudioPath "C:\path\to\short-audio.mp3"
 ```
 
-Open the generated `.pitchstems` project in the GUI and confirm stems, per-stem MIDI, combined MIDI, `pitchstems.project.json`, editor timeline playback, and optional ZIP export are present.
+Use a short local audio fixture, not a committed song or generated stem output. The smoke script runs the real CLI pipeline, reopens the generated `.pitchstems` project in the offscreen GUI, checks timeline review/playback, and copies selected export files to prove the import audio -> separate -> MIDI -> reopen project -> play/review -> export selected files path.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution notes.
 

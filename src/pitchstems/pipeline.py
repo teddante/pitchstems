@@ -51,6 +51,7 @@ def process_audio_file(
     create_zip: bool = True,
     log: Callable[[str], None] | None = None,
     cancelled: CancelCheck | None = None,
+    project_created: Callable[[Path], None] | None = None,
 ) -> PipelineResult:
     """Run the complete local stem-to-MIDI pipeline."""
     input_path = input_path.expanduser().resolve()
@@ -77,6 +78,8 @@ def process_audio_file(
 
     for directory in [audio_dir, work_dir, stems_dir, midi_dir, export_dir]:
         directory.mkdir(parents=True, exist_ok=True)
+    if project_created is not None:
+        project_created(project_dir)
 
     project_source_audio: Path | None = None
     normalized_audio = work_dir / f"{input_stem}.wav"
