@@ -32,6 +32,7 @@ from pitchstems.harmony_inspector import (
     resolve_notation_preference,
 )
 from pitchstems import harmony_panel
+from pitchstems import gui_editor_actions
 from pitchstems import gui_harmony_dialogs
 from pitchstems import gui_harmony_flow
 from pitchstems import gui_export
@@ -753,26 +754,10 @@ def main() -> int:
             )
 
         def fit_editor_song_to_view(self) -> None:
-            if self.editor_project is None:
-                self.statusBar().showMessage("Open or run a project before fitting the song view.", 4000)
-                return
-            self.timeline.fit_song_to_view()
-            self.statusBar().showMessage("Showing the whole song horizontally and vertically.", 4000)
+            gui_editor_actions.fit_editor_song_to_view(self)
 
         def fit_editor_review_to_view(self) -> None:
-            if self.editor_project is None:
-                self.statusBar().showMessage("Open or run a project before fitting the review target.", 4000)
-                return
-            ranges = review_ranges(self.timeline.selection_ranges(), self.timeline.selected_chord)
-            if not ranges:
-                self.statusBar().showMessage("Select a timeline range or chord before fitting the review target.", 4000)
-                return
-            start = min(start for start, _end in ranges)
-            end = max(end for _start, end in ranges)
-            if not self.timeline.fit_time_range_to_view(start, end):
-                self.statusBar().showMessage("Review target is too short to fit.", 4000)
-                return
-            self.statusBar().showMessage("Timeline fit to review target.", 3000)
+            gui_editor_actions.fit_editor_review_to_view(self)
 
         def toggle_playback_from_shortcut(self) -> None:
             focused = QApplication.focusWidget()
@@ -997,11 +982,7 @@ def main() -> int:
             self.refresh_current_harmony(self.timeline.position, force=True)
 
         def select_review_chord(self, direction: int) -> None:
-            chord = self.timeline.select_review_chord(direction)
-            if chord is None:
-                self.statusBar().showMessage("No timeline chord available.", 3000)
-                return
-            self.refresh_chord_actions()
+            gui_editor_actions.select_review_chord(self, direction)
 
         def set_chord_context_text(self, text: str) -> None:
             self.chord_context.setText(text)

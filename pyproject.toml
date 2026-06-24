@@ -85,6 +85,7 @@ files = [
   "src/pitchstems/editor_review_target.py",
   "src/pitchstems/editor_models.py",
   "src/pitchstems/export_files.py",
+  "src/pitchstems/gui_editor_actions.py",
   "src/pitchstems/gui_editor_model.py",
   "src/pitchstems/gui_jobs.py",
   "src/pitchstems/gui_layout_policy.py",
