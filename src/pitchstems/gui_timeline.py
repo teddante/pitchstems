@@ -655,6 +655,9 @@ class TimelineView(QGraphicsView):
         self._selecting = False
         self._selection_additive = False
         self._selection_anchor = None
+        had_selected_chord = self.selected_chord is not None
+        self.selected_chord = None
+        self._chord_drag = None
         for rect in self.selection_rects:
             if rect.scene() is self.scene:
                 self.scene.removeItem(rect)
@@ -662,6 +665,8 @@ class TimelineView(QGraphicsView):
         self.selection_rects = []
         if self.on_selection_changed:
             self.on_selection_changed(None)
+        if had_selected_chord and self.on_chord_selected:
+            self.on_chord_selected(None)
 
     def _set_selection(self, start: float, end: float, notify: bool = False) -> None:
         if self.project is None:

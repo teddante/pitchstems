@@ -108,6 +108,8 @@ def run_project_smoke(window) -> None:
     )
     window.assign_selected_chord_to_selection()
     _assert(bool(window.manual_chords), "assign chord from inspector to selected chord")
+    window.clear_editor_selection()
+    _assert(window.timeline.selected_chord is None, "clear selection clears selected chord")
     report = current_chord_analysis_report(window)
     _assert("Harmony Inspector Calculation" in report, "harmony report title")
     _assert("MIDI Energy Evidence" in report, "harmony report evidence section")

@@ -57,8 +57,12 @@ def test_timeline_selection_is_clamped_and_cleared(tmp_path: Path) -> None:
     _app()
     view = TimelineView()
     view.set_project(_project(tmp_path))
+    chord_events = []
+    view.on_chord_selected = chord_events.append
 
     view._set_selection(-2.0, 20.0)
+    view.selected_chord = view.project.chords[0]
+    view._chord_drag = {"chord": view.selected_chord}
 
     assert view.selection_range() == (0.0, 4.0)
     assert view.selection_ranges() == [(0.0, 4.0)]
@@ -67,6 +71,9 @@ def test_timeline_selection_is_clamped_and_cleared(tmp_path: Path) -> None:
 
     assert view.selection_range() is None
     assert view.selection_ranges() == []
+    assert view.selected_chord is None
+    assert view._chord_drag is None
+    assert chord_events == [None]
 
 
 def test_timeline_can_track_multiple_selection_ranges(tmp_path: Path) -> None:
