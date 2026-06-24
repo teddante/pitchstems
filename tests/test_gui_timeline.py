@@ -88,6 +88,21 @@ def test_timeline_can_track_multiple_selection_ranges(tmp_path: Path) -> None:
     assert view.selection_ranges() == [(0.0, 1.0), (2.0, 3.0)]
 
 
+def test_committing_timeline_selection_clears_selected_chord(tmp_path: Path) -> None:
+    _app()
+    view = TimelineView()
+    view.set_project(_project(tmp_path))
+    chord_events = []
+    view.on_chord_selected = chord_events.append
+    view.selected_chord = view.project.chords[0]
+
+    view._set_selection(1.0, 2.0, notify=True)
+
+    assert view.selection_range() == (1.0, 2.0)
+    assert view.selected_chord is None
+    assert chord_events == [None]
+
+
 def test_timeline_fit_song_to_view_keeps_zoom_within_supported_bounds(tmp_path: Path) -> None:
     _app()
     view = TimelineView()

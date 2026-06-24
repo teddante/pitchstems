@@ -655,9 +655,7 @@ class TimelineView(QGraphicsView):
         self._selecting = False
         self._selection_additive = False
         self._selection_anchor = None
-        had_selected_chord = self.selected_chord is not None
-        self.selected_chord = None
-        self._chord_drag = None
+        self._clear_selected_chord()
         for rect in self.selection_rects:
             if rect.scene() is self.scene:
                 self.scene.removeItem(rect)
@@ -665,6 +663,11 @@ class TimelineView(QGraphicsView):
         self.selection_rects = []
         if self.on_selection_changed:
             self.on_selection_changed(None)
+
+    def _clear_selected_chord(self) -> None:
+        had_selected_chord = self.selected_chord is not None
+        self.selected_chord = None
+        self._chord_drag = None
         if had_selected_chord and self.on_chord_selected:
             self.on_chord_selected(None)
 
@@ -697,6 +700,7 @@ class TimelineView(QGraphicsView):
         else:
             self.selection_segments = [selection]
         self.selection_start, self.selection_end = selection
+        self._clear_selected_chord()
 
     def _build_track_geometries(self) -> dict[str, tuple[float, float, int, int]]:
         geometries: dict[str, tuple[float, float, int, int]] = {}
