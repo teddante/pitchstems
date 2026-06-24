@@ -32,7 +32,11 @@ def _project(tmp_path: Path) -> EditorProject:
             NoteEvent("bass", 1.2, 2.0, 47, 70),
             NoteEvent("piano", 0.5, 1.5, 60, 80),
         ],
-        chords=[ChordRegion(0.0, 1.0, "G", 0.8)],
+        chords=[
+            ChordRegion(0.0, 1.0, "G", 0.8),
+            ChordRegion(1.25, 2.0, "C", 0.8),
+            ChordRegion(2.5, 3.25, "D", 0.8),
+        ],
         duration=4.0,
     )
 
@@ -101,6 +105,36 @@ def test_committing_timeline_selection_clears_selected_chord(tmp_path: Path) -> 
     assert view.selection_range() == (1.0, 2.0)
     assert view.selected_chord is None
     assert chord_events == [None]
+
+
+def test_timeline_select_review_chord_clears_range_and_moves_playhead(tmp_path: Path) -> None:
+    _app()
+    view = TimelineView()
+    view.set_project(_project(tmp_path))
+    positions = []
+    chord_events = []
+
+    def set_position(seconds: float) -> None:
+        positions.append(seconds)
+        view.set_position(seconds)
+
+    view.on_position_changed = set_position
+    view.on_chord_selected = chord_events.append
+    view._set_selection(0.25, 0.75, notify=True)
+
+    selected = view.select_review_chord(1)
+
+    assert selected == view.project.chords[0]
+    assert view.selected_chord == selected
+    assert view.selection_ranges() == []
+    assert positions == [0.0]
+    assert chord_events == [selected]
+
+    selected = view.select_review_chord(1)
+
+    assert selected == view.project.chords[1]
+    assert view.selected_chord == selected
+    assert positions[-1] == 1.25
 
 
 def test_timeline_fit_song_to_view_keeps_zoom_within_supported_bounds(tmp_path: Path) -> None:

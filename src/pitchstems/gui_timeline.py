@@ -7,6 +7,7 @@ from PySide6.QtGui import QColor, QBrush, QFontMetrics, QImage, QPainter, QPen, 
 from PySide6.QtWidgets import QApplication, QGraphicsScene, QGraphicsView
 
 from pitchstems.chord_regions import merge_chord_ranges
+from pitchstems.editor_chord_navigation import review_navigation_chord
 from pitchstems.editor_project import ChordRegion, EditorProject, midi_note_name
 from pitchstems.gui_theme import TRACK_COLORS
 from pitchstems.gui_track_controls import TRACK_CONTROL_MIN_HEIGHT
@@ -663,6 +664,34 @@ class TimelineView(QGraphicsView):
         self.selection_rects = []
         if self.on_selection_changed:
             self.on_selection_changed(None)
+
+    def select_review_chord(self, direction: int) -> ChordRegion | None:
+        if self.project is None:
+            return None
+        chord = review_navigation_chord(
+            self.project.chords,
+            self.selected_chord,
+            self.position,
+            direction,
+        )
+        if chord is None:
+            return None
+        self.selection_start = None
+        self.selection_end = None
+        self.selection_segments = []
+        self._selecting = False
+        self._selection_additive = False
+        self._selection_anchor = None
+        self._chord_drag = None
+        self.selected_chord = chord
+        if self.on_position_changed:
+            self.on_position_changed(chord.start)
+        else:
+            self.set_position(chord.start)
+        if self.on_chord_selected:
+            self.on_chord_selected(chord)
+        self.redraw()
+        return chord
 
     def _clear_selected_chord(self) -> None:
         had_selected_chord = self.selected_chord is not None

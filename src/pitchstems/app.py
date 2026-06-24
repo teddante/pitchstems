@@ -447,7 +447,7 @@ def main() -> int:
             self.statusBar().addPermanentWidget(self.activity_label)
             self.statusBar().addPermanentWidget(self.activity_bar)
             self.statusBar().showMessage(
-                "Timeline: Space plays/pauses; drag chord lane or Shift+drag to select chord-analysis range; Ctrl+drag adds another range; Esc clears selection; wheel scrolls, Ctrl+wheel zooms."
+                "Timeline: Space plays/pauses; Alt+Left/Right steps chords; drag chord lane or Shift+drag to select chord-analysis range; Ctrl+drag adds another range; Esc clears selection; wheel scrolls, Ctrl+wheel zooms."
             )
             self.space_playback_shortcut = QShortcut(QKeySequence("Space"), self)
             self.space_playback_shortcut.setContext(Qt.ApplicationShortcut)
@@ -703,6 +703,9 @@ def main() -> int:
             )
             self._add_action(view_menu, "Reset Timeline Zoom", "Ctrl+0", self.timeline.reset_zoom)
             self._add_action(view_menu, "Fit Whole Song", "Ctrl+Alt+0", self.fit_editor_song_to_view)
+            view_menu.addSeparator()
+            self._add_action(view_menu, "Previous Chord", "Alt+Left", lambda: self.select_review_chord(-1))
+            self._add_action(view_menu, "Next Chord", "Alt+Right", lambda: self.select_review_chord(1))
 
             help_menu = self.menuBar().addMenu("&Help")
             self._add_action(help_menu, "Show Timeline Controls", None, self.show_timeline_controls)
@@ -740,7 +743,7 @@ def main() -> int:
 
         def show_timeline_controls(self) -> None:
             self.statusBar().showMessage(
-                "Timeline controls: Space plays/pauses; Fit Song or Ctrl+Alt+0 shows the full song; drag the chord lane or Shift+drag the timeline to select a chord-analysis range; Ctrl+drag adds another selected range; Esc clears selection; click/drag sets playhead; wheel scrolls vertically; Shift+wheel scrolls horizontally; Ctrl+wheel zooms time; Ctrl+Shift+wheel zooms pitch; middle/right drag pans.",
+                "Timeline controls: Space plays/pauses; Alt+Left/Right steps through chords for review; Fit Song or Ctrl+Alt+0 shows the full song; drag the chord lane or Shift+drag the timeline to select a chord-analysis range; Ctrl+drag adds another selected range; Esc clears selection; click/drag sets playhead; wheel scrolls vertically; Shift+wheel scrolls horizontally; Ctrl+wheel zooms time; Ctrl+Shift+wheel zooms pitch; middle/right drag pans.",
                 12000,
             )
 
@@ -972,6 +975,13 @@ def main() -> int:
         def clear_editor_selection(self) -> None:
             self.timeline.clear_selection()
             self.refresh_current_harmony(self.timeline.position, force=True)
+
+        def select_review_chord(self, direction: int) -> None:
+            chord = self.timeline.select_review_chord(direction)
+            if chord is None:
+                self.statusBar().showMessage("No timeline chord available.", 3000)
+                return
+            self.refresh_chord_actions()
 
         def set_chord_context_text(self, text: str) -> None:
             self.chord_context.setText(text)
