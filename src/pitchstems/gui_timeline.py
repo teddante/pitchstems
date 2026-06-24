@@ -6,13 +6,18 @@ from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QColor, QBrush, QFontMetrics, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QGraphicsScene, QGraphicsView
 
-from pitchstems.chord_regions import merge_chord_ranges
 from pitchstems.editor_chord_navigation import review_navigation_chord
 from pitchstems.editor_project import ChordRegion, EditorProject, midi_note_name
 from pitchstems.gui_theme import TRACK_COLORS
 from pitchstems.gui_track_controls import TRACK_CONTROL_MIN_HEIGHT
 from pitchstems.timeline_chord_geometry import compact_chord_label, snap_seconds_to_timeline_targets
 from pitchstems.timeline_render_policy import TimelineRenderPolicy
+from pitchstems.timeline_selection import (
+    active_selection_range,
+    clamp_selection_bounds,
+    commit_selection_range,
+    merged_selection_ranges,
+)
 from pitchstems.time_format import format_time
 
 
@@ -660,19 +665,10 @@ class TimelineView(QGraphicsView):
         return ranges[0]
 
     def selection_ranges(self) -> list[tuple[float, float]]:
-        ranges = list(self.selection_segments)
-        current = self._current_selection_range()
-        if current is not None:
-            ranges.append(current)
-        return merge_chord_ranges(ranges)
+        return merged_selection_ranges(self.selection_segments, self._current_selection_range())
 
     def _current_selection_range(self) -> tuple[float, float] | None:
-        if self.selection_start is None or self.selection_end is None:
-            return None
-        start, end = sorted((self.selection_start, self.selection_end))
-        if end - start < 0.05:
-            return None
-        return start, end
+        return active_selection_range(self.selection_start, self.selection_end)
 
     def clear_selection(self) -> None:
         self.selection_start = None
@@ -728,9 +724,11 @@ class TimelineView(QGraphicsView):
     def _set_selection(self, start: float, end: float, notify: bool = False) -> None:
         if self.project is None:
             return
-        duration = max(self.project.duration, 0.0)
-        self.selection_start = max(0.0, min(start, duration))
-        self.selection_end = max(0.0, min(end, duration))
+        self.selection_start, self.selection_end = clamp_selection_bounds(
+            start,
+            end,
+            self.project.duration,
+        )
         if notify:
             self._commit_selection()
         height = self.scene.sceneRect().height()
@@ -745,14 +743,13 @@ class TimelineView(QGraphicsView):
 
     def _commit_selection(self) -> None:
         selection = self._current_selection_range()
+        self.selection_segments = commit_selection_range(
+            self.selection_segments,
+            selection,
+            self._selection_additive,
+        )
         if selection is None:
-            if not self._selection_additive:
-                self.selection_segments = []
             return
-        if self._selection_additive:
-            self.selection_segments = merge_chord_ranges([*self.selection_segments, selection])
-        else:
-            self.selection_segments = [selection]
         self.selection_start, self.selection_end = selection
         self._clear_selected_chord()
 

@@ -96,6 +96,7 @@ files = [
   "src/pitchstems/project_store.py",
   "src/pitchstems/recent_projects.py",
   "src/pitchstems/timeline_render_policy.py",
+  "src/pitchstems/timeline_selection.py",
   "src/pitchstems/time_format.py",
 ]
 warn_unused_configs = true
