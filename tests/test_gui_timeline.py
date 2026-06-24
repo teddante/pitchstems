@@ -152,6 +152,27 @@ def test_timeline_fit_song_to_view_keeps_zoom_within_supported_bounds(tmp_path: 
     assert view.verticalScrollBar().value() == 0
 
 
+def test_timeline_fit_time_range_to_view_frames_review_target(tmp_path: Path) -> None:
+    _app()
+    view = TimelineView()
+    view.resize(900, 420)
+    view.set_project(_project(tmp_path))
+
+    assert view.fit_time_range_to_view(1.25, 2.0)
+
+    assert view.pixels_per_second == 420
+    assert view.horizontalScrollBar().value() > 0
+
+
+def test_timeline_fit_time_range_rejects_tiny_targets(tmp_path: Path) -> None:
+    _app()
+    view = TimelineView()
+    view.resize(900, 420)
+    view.set_project(_project(tmp_path))
+
+    assert not view.fit_time_range_to_view(1.0, 1.01)
+
+
 def test_tiny_chord_labels_fall_back_to_root_name(tmp_path: Path) -> None:
     _app()
     view = TimelineView()

@@ -703,6 +703,7 @@ def main() -> int:
             )
             self._add_action(view_menu, "Reset Timeline Zoom", "Ctrl+0", self.timeline.reset_zoom)
             self._add_action(view_menu, "Fit Whole Song", "Ctrl+Alt+0", self.fit_editor_song_to_view)
+            self._add_action(view_menu, "Fit Review Target", "Ctrl+Alt+F", self.fit_editor_review_to_view)
             view_menu.addSeparator()
             self._add_action(view_menu, "Previous Chord", "Alt+Left", lambda: self.select_review_chord(-1))
             self._add_action(view_menu, "Next Chord", "Alt+Right", lambda: self.select_review_chord(1))
@@ -743,7 +744,7 @@ def main() -> int:
 
         def show_timeline_controls(self) -> None:
             self.statusBar().showMessage(
-                "Timeline controls: Space plays/pauses; Alt+Left/Right steps through chords for review; Fit Song or Ctrl+Alt+0 shows the full song; drag the chord lane or Shift+drag the timeline to select a chord-analysis range; Ctrl+drag adds another selected range; Esc clears selection; click/drag sets playhead; wheel scrolls vertically; Shift+wheel scrolls horizontally; Ctrl+wheel zooms time; Ctrl+Shift+wheel zooms pitch; middle/right drag pans.",
+                "Timeline controls: Space plays/pauses; Alt+Left/Right steps through chords for review; Fit Song or Ctrl+Alt+0 shows the full song; Ctrl+Alt+F fits the selected review target; drag the chord lane or Shift+drag the timeline to select a chord-analysis range; Ctrl+drag adds another selected range; Esc clears selection; click/drag sets playhead; wheel scrolls vertically; Shift+wheel scrolls horizontally; Ctrl+wheel zooms time; Ctrl+Shift+wheel zooms pitch; middle/right drag pans.",
                 12000,
             )
 
@@ -753,6 +754,21 @@ def main() -> int:
                 return
             self.timeline.fit_song_to_view()
             self.statusBar().showMessage("Showing the whole song horizontally and vertically.", 4000)
+
+        def fit_editor_review_to_view(self) -> None:
+            if self.editor_project is None:
+                self.statusBar().showMessage("Open or run a project before fitting the review target.", 4000)
+                return
+            ranges = review_ranges(self.timeline.selection_ranges(), self.timeline.selected_chord)
+            if not ranges:
+                self.statusBar().showMessage("Select a timeline range or chord before fitting the review target.", 4000)
+                return
+            start = min(start for start, _end in ranges)
+            end = max(end for _start, end in ranges)
+            if not self.timeline.fit_time_range_to_view(start, end):
+                self.statusBar().showMessage("Review target is too short to fit.", 4000)
+                return
+            self.statusBar().showMessage("Timeline fit to review target.", 3000)
 
         def toggle_playback_from_shortcut(self) -> None:
             focused = QApplication.focusWidget()

@@ -184,6 +184,31 @@ class TimelineView(QGraphicsView):
         self.verticalScrollBar().setValue(0)
         self.update_sticky_labels()
 
+    def fit_time_range_to_view(self, start: float, end: float) -> bool:
+        if self.project is None:
+            return False
+        duration = max(self.project.duration, 0.0)
+        start = max(0.0, min(start, duration))
+        end = max(0.0, min(end, duration))
+        if end - start < 0.05:
+            return False
+        self.zoom_redraw_timer.stop()
+        self.view_redraw_timer.stop()
+        self.pending_pixels_per_second = None
+        self.pending_vertical_zoom = None
+        self.pending_zoom_center_seconds = None
+        self.pending_zoom_center_y = None
+
+        viewport = self.viewport().rect()
+        time_width = max(80, viewport.width() - self.label_width - 92)
+        range_duration = max(0.05, end - start)
+        self.pixels_per_second = max(1, min(420, time_width / range_duration))
+        self.redraw()
+        target_left = max(0.0, self._x(start) - 24)
+        self.horizontalScrollBar().setValue(int(target_left))
+        self.update_sticky_labels()
+        return True
+
     def reset_zoom(self) -> None:
         if self.project is None:
             return
