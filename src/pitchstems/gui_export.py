@@ -91,7 +91,7 @@ class ExportSelectedFilesDialog:
         scroll_body = QWidget()
         scroll_layout = QVBoxLayout()
         scroll_layout.setSpacing(8)
-        for category in ("Stems", "MIDI", "Combined MIDI", "Notes CSV"):
+        for category in ("Project", "Source Audio", "Stems", "MIDI", "Combined MIDI", "Notes CSV"):
             category_items = [item for item in items if item.category == category]
             if not category_items:
                 continue
@@ -100,7 +100,7 @@ class ExportSelectedFilesDialog:
             group_layout.setSpacing(4)
             for item in category_items:
                 check = QCheckBox(f"{item.label} -> {item.relative_path.as_posix()}")
-                check.setChecked(True)
+                check.setChecked(item.default_selected)
                 check.setToolTip(str(item.source_path))
                 self._checks.append((item, check))
                 group_layout.addWidget(check)

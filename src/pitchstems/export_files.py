@@ -14,6 +14,7 @@ class ExportItem:
     category: str
     source_path: Path
     relative_path: Path
+    default_selected: bool = True
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,21 @@ class ExportSummary:
 def build_export_items(result: PipelineResult) -> list[ExportItem]:
     items: list[ExportItem] = []
     seen: set[Path] = set()
+
+    manifest = result.project_dir / "pitchstems.project.json"
+    if manifest.is_file():
+        _append_item(items, seen, "Project manifest", "Project", manifest, Path(manifest.name))
+
+    if result.source_audio and result.source_audio.is_file():
+        _append_item(
+            items,
+            seen,
+            "Source audio",
+            "Source Audio",
+            result.source_audio,
+            Path("audio") / _safe_filename(result.source_audio.name),
+            default_selected=False,
+        )
 
     for stem in result.stems:
         if stem.path.is_file():
@@ -70,6 +86,7 @@ def _append_item(
     category: str,
     source_path: Path,
     relative_path: Path,
+    default_selected: bool = True,
 ) -> None:
     source_path = source_path.expanduser().resolve()
     if source_path in seen:
@@ -81,6 +98,7 @@ def _append_item(
             category=category,
             source_path=source_path,
             relative_path=relative_path,
+            default_selected=default_selected,
         )
     )
 

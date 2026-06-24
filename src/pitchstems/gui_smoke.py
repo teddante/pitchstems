@@ -281,7 +281,7 @@ def run_real_audio_project_smoke(window, manifest_path: Path) -> None:
     items = build_export_items(window.current_result)
     _assert(items, "real-audio selected export items")
     export_dir = Path(tempfile.mkdtemp(prefix="pitchstems-real-audio-export-"))
-    summary = copy_export_items(items[: min(3, len(items))], export_dir)
+    summary = copy_export_items([item for item in items if item.default_selected], export_dir)
     _assert(summary.file_count > 0, "real-audio selected export copied files")
     _assert(any(summary.destination.rglob("*")), "real-audio selected export artifacts exist")
 
