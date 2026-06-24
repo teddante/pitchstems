@@ -6,6 +6,7 @@ from pitchstems.editor_project import ChordRegion
 from pitchstems.gui_editor_actions import (
     fit_editor_review_to_view,
     fit_editor_song_to_view,
+    play_editor_review_target,
     select_review_chord,
 )
 
@@ -49,12 +50,26 @@ class FakeWindow:
     timeline: FakeTimeline = field(default_factory=FakeTimeline)
     status_bar: FakeStatusBar = field(default_factory=FakeStatusBar)
     chord_actions_refreshed: int = 0
+    positions: list[tuple[float, bool, bool, bool]] = field(default_factory=list)
+    play_count: int = 0
 
     def statusBar(self) -> FakeStatusBar:
         return self.status_bar
 
     def refresh_chord_actions(self) -> None:
         self.chord_actions_refreshed += 1
+
+    def set_editor_position_seconds(
+        self,
+        seconds: float,
+        save: bool = True,
+        seek_players: bool = True,
+        force_harmony_refresh: bool = False,
+    ) -> None:
+        self.positions.append((seconds, save, seek_players, force_harmony_refresh))
+
+    def play_transport(self) -> None:
+        self.play_count += 1
 
 
 def test_fit_song_requires_project() -> None:
@@ -134,3 +149,49 @@ def test_select_review_chord_refreshes_actions_only_after_selection() -> None:
     assert with_chord.timeline.chord_directions == [-1]
     assert with_chord.chord_actions_refreshed == 1
     assert with_chord.status_bar.messages == []
+
+
+def test_play_review_target_starts_single_range() -> None:
+    window = FakeWindow(timeline=FakeTimeline(ranges=[(1.0, 2.0)]))
+
+    play_editor_review_target(window)
+
+    assert window.positions == [(1.0, False, True, False)]
+    assert window.play_count == 1
+    assert window.status_bar.messages == [("Playing review target.", 3000)]
+
+
+def test_play_review_target_uses_selected_chord() -> None:
+    window = FakeWindow(timeline=FakeTimeline(selected_chord=ChordRegion(3.0, 4.0, "G", 0.8)))
+
+    play_editor_review_target(window)
+
+    assert window.positions == [(3.0, False, True, False)]
+    assert window.play_count == 1
+
+
+def test_play_review_target_reports_unplayable_targets() -> None:
+    empty = FakeWindow()
+
+    play_editor_review_target(empty)
+
+    assert empty.play_count == 0
+    assert empty.status_bar.messages == [
+        ("Select a timeline range or chord before playing the review target.", 4000)
+    ]
+
+    multiple = FakeWindow(timeline=FakeTimeline(ranges=[(1.0, 2.0), (3.0, 4.0)]))
+
+    play_editor_review_target(multiple)
+
+    assert multiple.play_count == 0
+    assert multiple.status_bar.messages == [
+        ("Select one range or chord before playing the review target.", 4000)
+    ]
+
+    tiny = FakeWindow(timeline=FakeTimeline(ranges=[(1.0, 1.01)]))
+
+    play_editor_review_target(tiny)
+
+    assert tiny.play_count == 0
+    assert tiny.status_bar.messages == [("Review target is too short to play.", 4000)]

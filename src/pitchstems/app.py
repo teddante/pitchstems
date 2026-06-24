@@ -19,7 +19,7 @@ from pitchstems.editor_project import (
     display_chord_label,
     midi_note_name,
 )
-from pitchstems.editor_playback import playback_loop_range
+from pitchstems.editor_playback import review_playback_loop_range
 from pitchstems.editor_review_target import review_ranges, single_review_range
 from pitchstems.editor_loader import EditorLoadResult
 from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
@@ -420,6 +420,8 @@ def main() -> int:
             self.chord_preview_player.setAudioOutput(self.chord_preview_output)
             self.play_button = QPushButton("Play")
             self.play_button.setObjectName("transportPrimary")
+            self.play_review_button = QPushButton("Play Review")
+            self.play_review_button.setEnabled(False)
             self.stop_button = QPushButton("Stop")
             self.stop_button.setObjectName("transportIcon")
             self.stop_button.setEnabled(False)
@@ -464,6 +466,7 @@ def main() -> int:
             self.export_button.clicked.connect(self.export_selected_files)
             self.cancel_button.clicked.connect(self.cancel_processing)
             self.play_button.clicked.connect(self.toggle_playback)
+            self.play_review_button.clicked.connect(self.play_editor_review_target)
             self.stop_button.clicked.connect(self.stop_transport)
             self.fit_song_button.clicked.connect(self.fit_editor_song_to_view)
             self.fit_review_button.clicked.connect(self.fit_editor_review_to_view)
@@ -622,6 +625,7 @@ def main() -> int:
             layout.setContentsMargins(12, 8, 12, 8)
             layout.setSpacing(8)
             layout.addWidget(self.play_button)
+            layout.addWidget(self.play_review_button)
             layout.addWidget(self.stop_button)
             layout.addWidget(self.fit_song_button)
             layout.addWidget(self.fit_review_button)
@@ -749,7 +753,7 @@ def main() -> int:
 
         def show_timeline_controls(self) -> None:
             self.statusBar().showMessage(
-                "Timeline controls: Space plays/pauses; Alt+Left/Right steps through chords for review; Fit Song or Ctrl+Alt+0 shows the full song; Ctrl+Alt+F fits the selected review target; drag the chord lane or Shift+drag the timeline to select a chord-analysis range; Ctrl+drag adds another selected range; Esc clears selection; click/drag sets playhead; wheel scrolls vertically; Shift+wheel scrolls horizontally; Ctrl+wheel zooms time; Ctrl+Shift+wheel zooms pitch; middle/right drag pans.",
+                "Timeline controls: Space plays/pauses; Play Review loops one selected range or chord; Alt+Left/Right steps through chords for review; Fit Song or Ctrl+Alt+0 shows the full song; Ctrl+Alt+F fits the selected review target; drag the chord lane or Shift+drag the timeline to select a chord-analysis range; Ctrl+drag adds another selected range; Esc clears selection; click/drag sets playhead; wheel scrolls vertically; Shift+wheel scrolls horizontally; Ctrl+wheel zooms time; Ctrl+Shift+wheel zooms pitch; middle/right drag pans.",
                 12000,
             )
 
@@ -758,6 +762,9 @@ def main() -> int:
 
         def fit_editor_review_to_view(self) -> None:
             gui_editor_actions.fit_editor_review_to_view(self)
+
+        def play_editor_review_target(self) -> None:
+            gui_editor_actions.play_editor_review_target(self)
 
         def toggle_playback_from_shortcut(self) -> None:
             focused = QApplication.focusWidget()
@@ -938,7 +945,7 @@ def main() -> int:
             return loop_playback_start(self.timeline.position, self.loop_playback_range())
 
         def loop_playback_range(self) -> tuple[float, float] | None:
-            return playback_loop_range(self.timeline.selection_range(), self.timeline.selected_chord)
+            return review_playback_loop_range(self.timeline.selection_ranges(), self.timeline.selected_chord)
 
         def set_editor_position_seconds(
             self,

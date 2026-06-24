@@ -30,6 +30,7 @@ def run_startup_smoke(window) -> None:
     _assert(window.timeline.project is None, "empty startup timeline")
     _assert(window.play_button.isEnabled(), "play available before project load")
     _assert(window.play_button.text() == "Play", "play button text")
+    _assert(not window.play_review_button.isEnabled(), "play review disabled before project load")
     _assert(not window.stop_button.isEnabled(), "stop disabled before playback")
     _assert(not window.fit_song_button.isEnabled(), "fit disabled before project load")
     _assert(window.editor_position.text() == "00:00.000", "initial editor position")
@@ -77,6 +78,7 @@ def run_project_smoke(window) -> None:
     _assert(window.timeline.project is window.editor_project, "timeline project attached")
     _assert(window.fit_song_button.isEnabled(), "fit song enabled")
     _assert(window.fit_review_button.isEnabled(), "fit review enabled")
+    _assert(window.play_review_button.isEnabled(), "play review enabled")
     _assert(window.run_midi.isEnabled(), "rerun midi enabled after project load")
     _assert(window.export_button.isEnabled(), "export enabled after project load")
     _assert("bass" in window.track_analysis_checks, "bass chord analysis control")
@@ -123,6 +125,13 @@ def run_project_smoke(window) -> None:
     window.fit_review_button.click()
     QApplication.processEvents()
     _assert(window.statusBar().currentMessage() == "Timeline fit to review target.", "fit review button")
+    window.play_review_button.click()
+    QApplication.processEvents()
+    _assert(window.transport.is_playing, "play review starts transport")
+    _assert(window.timeline.position == 0.25, "play review starts at selected range")
+    _assert(window.play_button.text() == "Pause", "play review changes play button")
+    window.stop_transport()
+    QApplication.processEvents()
     window.clear_editor_selection()
     _assert(window.timeline.selected_chord is None, "clear selection clears selected chord")
     report = current_chord_analysis_report(window)
@@ -269,6 +278,7 @@ def run_project_smoke(window) -> None:
     _assert(not window.track_analysis_checks, "reset clears track controls")
     _assert(not window.run_midi.isEnabled(), "reset disables rerun MIDI")
     _assert(not window.fit_review_button.isEnabled(), "reset disables fit review")
+    _assert(not window.play_review_button.isEnabled(), "reset disables play review")
 
 
 def run_real_audio_project_smoke(window, manifest_path: Path) -> None:
