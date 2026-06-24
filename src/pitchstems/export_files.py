@@ -21,6 +21,7 @@ class ExportItem:
 class ExportSummary:
     destination: Path
     file_count: int
+    relative_paths: tuple[Path, ...]
 
 
 def build_export_items(result: PipelineResult) -> list[ExportItem]:
@@ -72,11 +73,17 @@ def copy_export_items(items: list[ExportItem], destination: Path) -> ExportSumma
         raise ValueError("Choose at least one file to export.")
 
     destination = destination.expanduser().resolve()
+    relative_paths: list[Path] = []
     for item in items:
         target = destination / item.relative_path
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(item.source_path, target)
-    return ExportSummary(destination=destination, file_count=len(items))
+        relative_paths.append(item.relative_path)
+    return ExportSummary(
+        destination=destination,
+        file_count=len(items),
+        relative_paths=tuple(relative_paths),
+    )
 
 
 def _append_item(

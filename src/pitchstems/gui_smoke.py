@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import time
 import wave
@@ -292,10 +293,33 @@ def run_real_audio_project_smoke(window, manifest_path: Path) -> None:
 
     items = build_export_items(window.current_result)
     _assert(items, "real-audio selected export items")
-    export_dir = Path(tempfile.mkdtemp(prefix="pitchstems-real-audio-export-"))
-    summary = copy_export_items([item for item in items if item.default_selected], export_dir)
+    default_items = [item for item in items if item.default_selected]
+    default_categories = {item.category for item in default_items}
+    _assert("Project" in default_categories, "real-audio selected export includes project manifest")
+    _assert("Stems" in default_categories, "real-audio selected export includes stems")
+    _assert(
+        bool(default_categories & {"MIDI", "Combined MIDI"}),
+        "real-audio selected export includes MIDI",
+    )
+    _assert(
+        "Source Audio" not in default_categories,
+        "real-audio selected export keeps source audio unchecked by default",
+    )
+    export_dir = Path(
+        os.environ.get("PITCHSTEMS_REAL_AUDIO_EXPORT_DIR")
+        or tempfile.mkdtemp(prefix="pitchstems-real-audio-export-")
+    )
+    summary = copy_export_items(default_items, export_dir)
     _assert(summary.file_count > 0, "real-audio selected export copied files")
     _assert(any(summary.destination.rglob("*")), "real-audio selected export artifacts exist")
+    copied_paths = {path.as_posix() for path in summary.relative_paths}
+    _assert("pitchstems.project.json" in copied_paths, "real-audio copied project manifest")
+    _assert(any(path.startswith("stems/") for path in copied_paths), "real-audio copied stem export")
+    _assert(any(path.startswith("midi/") for path in copied_paths), "real-audio copied MIDI export")
+    _assert(
+        not any(path.startswith("audio/") for path in copied_paths),
+        "real-audio did not copy source audio by default",
+    )
 
 
 def capture_visual_audit(window, output_dir: Path) -> list[Path]:

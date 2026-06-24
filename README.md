@@ -187,7 +187,7 @@ See `docs/architecture/quality-gate-roadmap.md` for the current typed/coverage s
 .\scripts\real_audio_smoke.ps1 -AudioPath "C:\path\to\short-audio.mp3"
 ```
 
-Use a short local audio fixture, not a committed song or generated stem output. The smoke script runs the real CLI pipeline, reopens the generated `.pitchstems` project in the offscreen GUI, checks timeline review/playback, and copies selected export files to prove the import audio -> separate -> MIDI -> reopen project -> play/review -> export selected files path.
+Use a short local audio fixture, not a committed song or generated stem output. The smoke script runs the real CLI pipeline, reopens the generated `.pitchstems` project in the offscreen GUI, checks timeline review/playback, and copies selected export files to prove the import audio -> separate -> MIDI -> reopen project -> play/review -> export selected files path. A passing run prints the generated project folder and a `selected-export` folder containing the project manifest, selected stems, and MIDI; source audio stays unchecked by default.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution notes.
 

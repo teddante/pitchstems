@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -214,6 +215,12 @@ def _redirect_output(log: Callable[[str], None] | None):
     if log is None:
         yield
         return
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+
+    def log_line(line: str) -> None:
+        with contextlib.redirect_stdout(original_stdout), contextlib.redirect_stderr(original_stderr):
+            log(line)
 
     class LogWriter:
         def __init__(self) -> None:
@@ -224,12 +231,12 @@ def _redirect_output(log: Callable[[str], None] | None):
             while "\n" in self.buffer:
                 line, self.buffer = self.buffer.split("\n", 1)
                 if line.strip():
-                    log(line.rstrip())
+                    log_line(line.rstrip())
             return len(text)
 
         def flush(self) -> None:
             if self.buffer.strip():
-                log(self.buffer.rstrip())
+                log_line(self.buffer.rstrip())
             self.buffer = ""
 
     writer = LogWriter()

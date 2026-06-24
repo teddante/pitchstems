@@ -103,6 +103,11 @@ def test_copy_export_items_copies_selected_files_and_overwrites(tmp_path: Path) 
 
     assert summary.file_count == 3
     assert summary.destination == destination.resolve()
+    assert [path.as_posix() for path in summary.relative_paths] == [
+        "pitchstems.project.json",
+        "stems/bass.wav",
+        "midi/bass.mid",
+    ]
     assert (destination / "pitchstems.project.json").read_bytes() == b"manifest"
     assert (destination / "stems" / "bass.wav").read_bytes() == b"new"
     assert (destination / "midi" / "bass.mid").read_bytes() == b"midi"

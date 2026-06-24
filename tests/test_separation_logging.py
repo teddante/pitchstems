@@ -19,6 +19,13 @@ def test_redirect_output_captures_stderr_when_console_stream_is_missing(monkeypa
     assert messages == ["progress update"]
 
 
+def test_redirect_output_can_forward_to_print_logger(capsys) -> None:
+    with _redirect_output(print):
+        print("native progress")
+
+    assert "native progress" in capsys.readouterr().out
+
+
 def test_registry_model_reports_missing_native_model_id() -> None:
     with pytest.raises(RuntimeError, match="registry id is unavailable"):
         _registry_model({}, model_choice("bs_roformer_sw"))

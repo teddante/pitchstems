@@ -10,12 +10,18 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$previousPythonIoEncoding = $env:PYTHONIOENCODING
+$env:PYTHONIOENCODING = "utf-8"
+
+try {
 $resolvedAudio = (Resolve-Path -LiteralPath $AudioPath).Path
 if (-not $OutputDir) {
     $OutputDir = Join-Path ([System.IO.Path]::GetTempPath()) ("pitchstems-real-audio-smoke-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
 }
 $resolvedOutput = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDir)
 New-Item -ItemType Directory -Force -Path $resolvedOutput | Out-Null
+$resolvedExport = Join-Path $resolvedOutput "selected-export"
+New-Item -ItemType Directory -Force -Path $resolvedExport | Out-Null
 
 $venvPython = Join-Path $PSScriptRoot "..\.venv\Scripts\python.exe"
 if (Test-Path $venvPython) {
@@ -49,9 +55,11 @@ Write-Host "Running offscreen GUI review/export smoke..."
 $previousQtPlatform = $env:QT_QPA_PLATFORM
 $previousGuiSmoke = $env:PITCHSTEMS_GUI_SMOKE
 $previousManifest = $env:PITCHSTEMS_REAL_AUDIO_SMOKE_MANIFEST
+$previousExport = $env:PITCHSTEMS_REAL_AUDIO_EXPORT_DIR
 $env:QT_QPA_PLATFORM = "offscreen"
 $env:PITCHSTEMS_GUI_SMOKE = "real-audio"
 $env:PITCHSTEMS_REAL_AUDIO_SMOKE_MANIFEST = $manifest.FullName
+$env:PITCHSTEMS_REAL_AUDIO_EXPORT_DIR = $resolvedExport
 try {
     & $python @pythonArgs -c "from pitchstems.app import main; raise SystemExit(main())"
     if ($LASTEXITCODE -ne 0) {
@@ -73,7 +81,20 @@ try {
     } else {
         $env:PITCHSTEMS_REAL_AUDIO_SMOKE_MANIFEST = $previousManifest
     }
+    if ($null -eq $previousExport) {
+        Remove-Item Env:\PITCHSTEMS_REAL_AUDIO_EXPORT_DIR -ErrorAction SilentlyContinue
+    } else {
+        $env:PITCHSTEMS_REAL_AUDIO_EXPORT_DIR = $previousExport
+    }
 }
 
 Write-Host "Real-audio smoke passed."
 Write-Host "Project: $($manifest.DirectoryName)"
+Write-Host "Selected export: $resolvedExport"
+} finally {
+    if ($null -eq $previousPythonIoEncoding) {
+        Remove-Item Env:\PYTHONIOENCODING -ErrorAction SilentlyContinue
+    } else {
+        $env:PYTHONIOENCODING = $previousPythonIoEncoding
+    }
+}
