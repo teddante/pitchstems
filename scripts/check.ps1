@@ -94,6 +94,7 @@ Invoke-Checked "Running mypy..." { & $python @pythonArgs -m mypy }
 Invoke-Checked "Running tests..." {
     & $python @pythonArgs -m pytest `
         --cov=pitchstems.editor_models `
+        --cov=pitchstems.export_files `
         --cov=pitchstems.gui_editor_model `
         --cov=pitchstems.gui_jobs `
         --cov=pitchstems.gui_layout_policy `

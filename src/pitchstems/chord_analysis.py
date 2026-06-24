@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 from dataclasses import dataclass, field
+from itertools import pairwise
 
 from pitchstems.chord_naming import (
     PITCH_NAMES,
@@ -106,7 +107,7 @@ def detect_chords(notes: list[NoteEvent], minimum_region: float = 0.18) -> list[
     times = sorted(set(starts) | set(ends))
     regions: list[ChordRegion] = []
     active: list[NoteEvent] = []
-    for start, end in zip(times, times[1:]):
+    for start, end in pairwise(times):
         for note in ends.get(start, []):
             with contextlib.suppress(ValueError):
                 active.remove(note)
@@ -1034,9 +1035,7 @@ def _label_matches_constraints(
     notes = set(chord_pitch_classes_for_label(label))
     if required_pitch_classes and not required_pitch_classes <= notes:
         return False
-    if excluded_pitch_classes and notes & excluded_pitch_classes:
-        return False
-    return True
+    return not (excluded_pitch_classes and notes & excluded_pitch_classes)
 
 
 def _plain_score_explanation(

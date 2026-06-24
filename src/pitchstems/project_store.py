@@ -28,10 +28,7 @@ def project_manifest_path(project_dir: Path) -> Path:
 
 def find_project_manifest(path: Path) -> Path:
     path = path.expanduser().resolve()
-    if path.is_dir():
-        manifest = project_manifest_path(path)
-    else:
-        manifest = path
+    manifest = project_manifest_path(path) if path.is_dir() else path
     if manifest.name != PROJECT_FILENAME:
         raise ValueError(f"Not a PitchStems project manifest: {manifest}")
     if not manifest.exists():

@@ -127,11 +127,10 @@ def _read_midi_notes_for_project(path: Path, stem: str) -> list[NoteEvent]:
 
 
 def _audio_duration_seconds(path: Path) -> float:
-    with contextlib.suppress(OSError, wave.Error, EOFError):
-        with wave.open(str(path), "rb") as audio:
-            frame_rate = audio.getframerate()
-            if frame_rate > 0:
-                return audio.getnframes() / frame_rate
+    with contextlib.suppress(OSError, wave.Error, EOFError), wave.open(str(path), "rb") as audio:
+        frame_rate = audio.getframerate()
+        if frame_rate > 0:
+            return audio.getnframes() / frame_rate
     return 0.0
 
 

@@ -531,7 +531,7 @@ def _suggested_note_groups(
     ]
     scale_notes = [
         note_name
-        for pitch_class, note_name in zip(scale_pitch_classes, scale_spellings)
+        for pitch_class, note_name in zip(scale_pitch_classes, scale_spellings, strict=True)
         if pitch_class not in core_note_set
     ]
     outside_notes = [

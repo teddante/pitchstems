@@ -46,10 +46,7 @@ def populate_note_filter_list(window, weights: dict[int, float]) -> None:
         missing = [pitch_class for pitch_class in range(12) if pitch_class not in weights]
         for pitch_class in [*detected, *missing]:
             state = window.chord_note_overrides.get(pitch_class, "auto")
-            if pitch_class in weights:
-                detail = f"{weights[pitch_class]:.0%}"
-            else:
-                detail = "not detected"
+            detail = f"{weights[pitch_class]:.0%}" if pitch_class in weights else "not detected"
             if state == "exclude":
                 detail = f"{detail}; hard excluded"
             elif state == "force":

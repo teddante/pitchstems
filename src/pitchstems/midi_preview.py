@@ -119,9 +119,8 @@ def _write_metadata_atomic(path: Path, metadata: dict) -> None:
 def valid_preview_wav(path: Path) -> bool:
     if not path.exists():
         return False
-    with contextlib.suppress(OSError, wave.Error, EOFError):
-        with wave.open(str(path), "rb") as wav:
-            return wav.getnframes() > 0 and wav.getframerate() > 0
+    with contextlib.suppress(OSError, wave.Error, EOFError), wave.open(str(path), "rb") as wav:
+        return wav.getnframes() > 0 and wav.getframerate() > 0
     return False
 
 
