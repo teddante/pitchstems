@@ -164,6 +164,14 @@ def supervise_process_job(window, token: int, process_worker: ProcessWorker) -> 
     process_worker.process.join(timeout=0)
     forward_process_messages(window, process_worker)
     if process_worker.terminated:
+        if process_worker.cleanup_error:
+            window.messages.put(
+                (
+                    "WORKER_LOG",
+                    token,
+                    f"Cancelled project cleanup warning: {process_worker.cleanup_error}",
+                )
+            )
         window.messages.put(("WORKER_LOG", token, "Processing cancelled."))
         window.messages.put(("ENABLE_PROCESS", token, "cancelled"))
     elif process_worker.process.exitcode == 0:

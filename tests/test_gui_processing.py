@@ -128,6 +128,25 @@ class _CaptureProcessWorker:
         return True
 
 
+class _FinishedProcess:
+    exitcode = -15
+
+    def join(self, timeout=0) -> None:
+        pass
+
+
+class _TerminatedProcessWorker:
+    terminated = True
+    cleanup_error = "Refused to remove partial project"
+    process = _FinishedProcess()
+
+    def is_alive(self) -> bool:
+        return False
+
+    def drain_messages(self) -> list[object]:
+        return []
+
+
 class _StartProcessingWindow:
     def __init__(self, input_path: Path, output_root: Path) -> None:
         self.worker = None
@@ -244,6 +263,20 @@ def test_cancel_processing_terminates_active_process_worker() -> None:
     assert window.worker_jobs.is_cancel_requested(token)
     assert process_worker.terminated
     assert window.activities[-1] == "Cancelling worker process..."
+
+
+def test_supervise_process_job_reports_cancel_cleanup_warning() -> None:
+    window = _Window()
+
+    gui_processing.supervise_process_job(window, 3, _TerminatedProcessWorker())
+
+    assert window.messages.get_nowait() == (
+        "WORKER_LOG",
+        3,
+        "Cancelled project cleanup warning: Refused to remove partial project",
+    )
+    assert window.messages.get_nowait() == ("WORKER_LOG", 3, "Processing cancelled.")
+    assert window.messages.get_nowait() == ("ENABLE_PROCESS", 3, "cancelled")
 
 
 def test_cancel_processing_reports_no_active_worker() -> None:

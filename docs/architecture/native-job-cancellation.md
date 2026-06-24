@@ -19,6 +19,8 @@ For a cancelled GUI full-pipeline run, the parent process removes the recorded n
 - the path has the `.pitchstems` suffix
 - the path is not a symlink
 
+If cleanup is refused or fails, the GUI keeps the project folder in place and logs a cancelled-project cleanup warning.
+
 For a cancelled GUI MIDI rerun, the existing project is not deleted. The MIDI stage uses temporary staging folders and only promotes outputs after normal success; a later rerun resets stale staging folders before starting.
 
 ## User-Facing Behavior

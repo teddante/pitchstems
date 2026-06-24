@@ -94,6 +94,7 @@ def test_process_worker_terminate_refuses_cleanup_outside_root(tmp_path: Path) -
         assert worker.terminate(timeout_seconds=0.25) is True
 
         assert outside.exists()
+        assert worker.cleanup_error
     finally:
         outside.rmdir()
 
