@@ -66,6 +66,7 @@ class ExportSelectedFilesDialog:
 
         self._items = items
         self._checks: list[tuple[ExportItem, QCheckBox]] = []
+        self._category_checks: dict[str, list[QCheckBox]] = {}
         self._dialog = QDialog(parent)
         self._dialog.setWindowTitle("Export Selected Files")
         self._dialog.resize(520, 420)
@@ -114,12 +115,23 @@ class ExportSelectedFilesDialog:
             group = QGroupBox(category)
             group_layout = QVBoxLayout()
             group_layout.setSpacing(4)
+            category_row = QHBoxLayout()
+            category_row.setSpacing(6)
+            category_row.addStretch(1)
+            category_all = QPushButton("All")
+            category_all.clicked.connect(lambda _checked=False, name=category: self.select_category_items(name))
+            category_row.addWidget(category_all)
+            category_none = QPushButton("None")
+            category_none.clicked.connect(lambda _checked=False, name=category: self.clear_category_items(name))
+            category_row.addWidget(category_none)
+            group_layout.addLayout(category_row)
             for item in category_items:
                 check = QCheckBox(f"{item.label} -> {item.relative_path.as_posix()}")
                 check.setChecked(item.default_selected)
                 check.setToolTip(str(item.source_path))
                 check.stateChanged.connect(lambda _state: self._refresh_selection_summary())
                 self._checks.append((item, check))
+                self._category_checks.setdefault(category, []).append(check)
                 group_layout.addWidget(check)
             group.setLayout(group_layout)
             scroll_layout.addWidget(group)
@@ -154,6 +166,16 @@ class ExportSelectedFilesDialog:
 
     def clear_selected_items(self) -> None:
         for _item, check in self._checks:
+            check.setChecked(False)
+        self._refresh_selection_summary()
+
+    def select_category_items(self, category: str) -> None:
+        for check in self._category_checks.get(category, []):
+            check.setChecked(True)
+        self._refresh_selection_summary()
+
+    def clear_category_items(self, category: str) -> None:
+        for check in self._category_checks.get(category, []):
             check.setChecked(False)
         self._refresh_selection_summary()
 
