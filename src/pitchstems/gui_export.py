@@ -85,6 +85,22 @@ class ExportSelectedFilesDialog:
         destination_row.addWidget(browse)
         layout.addLayout(destination_row)
 
+        selection_row = QHBoxLayout()
+        selection_row.setSpacing(8)
+        defaults = QPushButton("Defaults")
+        defaults.clicked.connect(self.select_default_items)
+        selection_row.addWidget(defaults)
+        all_items = QPushButton("All")
+        all_items.clicked.connect(self.select_all_items)
+        selection_row.addWidget(all_items)
+        none = QPushButton("None")
+        none.clicked.connect(self.clear_selected_items)
+        selection_row.addWidget(none)
+        self._selection_summary = QLabel("")
+        self._selection_summary.setStyleSheet("color: #4b5563;")
+        selection_row.addWidget(self._selection_summary, 1)
+        layout.addLayout(selection_row)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -102,6 +118,7 @@ class ExportSelectedFilesDialog:
                 check = QCheckBox(f"{item.label} -> {item.relative_path.as_posix()}")
                 check.setChecked(item.default_selected)
                 check.setToolTip(str(item.source_path))
+                check.stateChanged.connect(lambda _state: self._refresh_selection_summary())
                 self._checks.append((item, check))
                 group_layout.addWidget(check)
             group.setLayout(group_layout)
@@ -117,6 +134,7 @@ class ExportSelectedFilesDialog:
         buttons.rejected.connect(self._dialog.reject)
         layout.addWidget(buttons)
         self._dialog.setLayout(layout)
+        self._refresh_selection_summary()
 
     def exec(self) -> int:
         return self._dialog.exec()
@@ -124,8 +142,28 @@ class ExportSelectedFilesDialog:
     def selected_items(self) -> list[ExportItem]:
         return [item for item, check in self._checks if check.isChecked()]
 
+    def select_default_items(self) -> None:
+        for item, check in self._checks:
+            check.setChecked(item.default_selected)
+        self._refresh_selection_summary()
+
+    def select_all_items(self) -> None:
+        for _item, check in self._checks:
+            check.setChecked(True)
+        self._refresh_selection_summary()
+
+    def clear_selected_items(self) -> None:
+        for _item, check in self._checks:
+            check.setChecked(False)
+        self._refresh_selection_summary()
+
     def destination(self) -> Path:
         return Path(self._destination.text()).expanduser()
+
+    def _refresh_selection_summary(self) -> None:
+        selected = len(self.selected_items())
+        total = len(self._checks)
+        self._selection_summary.setText(f"{selected} of {total} files selected")
 
     def _browse_destination(self, file_dialog) -> None:
         directory = file_dialog.getExistingDirectory(

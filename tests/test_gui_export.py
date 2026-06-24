@@ -27,3 +27,31 @@ def test_export_dialog_respects_default_selected_items(tmp_path: Path) -> None:
     dialog = ExportSelectedFilesDialog(None, items, tmp_path / "export")
 
     assert [item.label for item in dialog.selected_items()] == ["Project manifest"]
+
+
+def test_export_dialog_bulk_selection_controls(tmp_path: Path) -> None:
+    _app()
+    items = [
+        ExportItem("Project manifest", "Project", tmp_path / "pitchstems.project.json", Path("pitchstems.project.json")),
+        ExportItem("Stem", "Stems", tmp_path / "stem.wav", Path("stems/stem.wav")),
+        ExportItem("Source audio", "Source Audio", tmp_path / "song.mp3", Path("audio/song.mp3"), default_selected=False),
+    ]
+    dialog = ExportSelectedFilesDialog(None, items, tmp_path / "export")
+
+    assert [item.label for item in dialog.selected_items()] == ["Project manifest", "Stem"]
+    assert dialog._selection_summary.text() == "2 of 3 files selected"
+
+    dialog.select_all_items()
+
+    assert [item.label for item in dialog.selected_items()] == ["Project manifest", "Source audio", "Stem"]
+    assert dialog._selection_summary.text() == "3 of 3 files selected"
+
+    dialog.clear_selected_items()
+
+    assert dialog.selected_items() == []
+    assert dialog._selection_summary.text() == "0 of 3 files selected"
+
+    dialog.select_default_items()
+
+    assert [item.label for item in dialog.selected_items()] == ["Project manifest", "Stem"]
+    assert dialog._selection_summary.text() == "2 of 3 files selected"
