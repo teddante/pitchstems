@@ -117,7 +117,7 @@ def show_timeline_chord_status(window, chord: ChordRegion | None) -> None:
         return
     window.refresh_chord_keyboard()
     window.statusBar().showMessage(
-        f"Selected {window.display_chord(chord.label)}: drag middle to move, drag edges to resize, Delete removes it.",
+        f"Selected {window.display_chord(chord.label)}: Play loops this chord; drag middle to move, drag edges to resize, Delete removes it.",
         6000,
     )
 

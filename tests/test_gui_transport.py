@@ -15,6 +15,7 @@ from pitchstems.gui_transport import (  # noqa: E402
     safe_qt_multimedia_call,
     start_player_source,
 )
+from pitchstems import gui_transport_flow  # noqa: E402
 from pitchstems.pipeline import PipelineResult  # noqa: E402
 from pitchstems.separation import StemResult  # noqa: E402
 
@@ -41,6 +42,15 @@ def test_loop_playback_start_keeps_position_inside_selection() -> None:
 def test_loop_playback_start_jumps_to_selection_start_outside_selection() -> None:
     assert loop_playback_start(8.0, (10.0, 15.0)) == 10.0
     assert loop_playback_start(15.0, (10.0, 15.0)) == 10.0
+
+
+def test_update_transport_position_loops_selected_chord_range() -> None:
+    window = _TransportWindow(position_ms=2050, loop_range=(1.0, 2.0))
+
+    gui_transport_flow.update_transport_position(window)
+
+    assert window.seeked_seconds == [1.0]
+    assert window.positions == [1.0]
 
 
 def test_find_existing_midi_previews_returns_existing_stem_previews(tmp_path: Path) -> None:
@@ -165,6 +175,45 @@ class _FakePlayer:
 
     def play(self) -> None:
         self.actions.append("play")
+
+    def position(self) -> int:
+        return 0
+
+
+class _PositionPlayer:
+    def __init__(self, position_ms: int) -> None:
+        self._position_ms = position_ms
+
+    def position(self) -> int:
+        return self._position_ms
+
+
+class _TransportWindow:
+    def __init__(self, position_ms: int, loop_range: tuple[float, float] | None) -> None:
+        self.master = _PositionPlayer(position_ms)
+        self._loop_range = loop_range
+        self.seeked_seconds: list[float] = []
+        self.positions: list[float] = []
+
+    def transport_master_player(self):
+        return self.master
+
+    def resync_transport_players(self, _master=None) -> None:
+        pass
+
+    def loop_playback_range(self) -> tuple[float, float] | None:
+        return self._loop_range
+
+    def seek_audio_players(self, seconds: float) -> None:
+        self.seeked_seconds.append(seconds)
+
+    def set_editor_position_seconds(
+        self,
+        seconds: float,
+        save: bool = True,
+        seek_players: bool = True,
+    ) -> None:
+        self.positions.append(seconds)
 
 
 class _FakeAudioOutput:

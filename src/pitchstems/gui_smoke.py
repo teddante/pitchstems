@@ -101,6 +101,11 @@ def run_project_smoke(window) -> None:
     window.chord_list.setCurrentRow(0)
     window.refresh_chord_actions()
     _assert(window.use_chord_button.text() == "Use for Chord", "selected chord correction action")
+    window.set_editor_position_seconds(assigned_chord.end + 0.25, save=False, seek_players=False)
+    _assert(
+        window.loop_playback_start_seconds() == assigned_chord.start,
+        "selected chord playback loops from chord start",
+    )
     window.assign_selected_chord_to_selection()
     _assert(bool(window.manual_chords), "assign chord from inspector to selected chord")
     report = current_chord_analysis_report(window)

@@ -167,7 +167,7 @@ def update_transport_position(window) -> None:
         return
     seconds = master.position() / 1000
     window.resync_transport_players(master)
-    selection = window.timeline.selection_range()
+    selection = window.loop_playback_range()
     if selection is not None:
         start, end = selection
         if seconds >= end:

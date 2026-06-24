@@ -80,6 +80,7 @@ addopts = "-q"
 python_version = "3.10"
 files = [
   "src/pitchstems/editor_chord_assignment.py",
+  "src/pitchstems/editor_playback.py",
   "src/pitchstems/editor_models.py",
   "src/pitchstems/export_files.py",
   "src/pitchstems/gui_editor_model.py",

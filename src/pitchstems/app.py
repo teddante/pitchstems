@@ -19,6 +19,7 @@ from pitchstems.editor_project import (
     display_chord_label,
     midi_note_name,
 )
+from pitchstems.editor_playback import playback_loop_range
 from pitchstems.editor_loader import EditorLoadResult
 from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
 from pitchstems.midi_preview import render_note_preview
@@ -925,7 +926,10 @@ def main() -> int:
             self.transport.resync(master)
 
         def loop_playback_start_seconds(self) -> float:
-            return loop_playback_start(self.timeline.position, self.timeline.selection_range())
+            return loop_playback_start(self.timeline.position, self.loop_playback_range())
+
+        def loop_playback_range(self) -> tuple[float, float] | None:
+            return playback_loop_range(self.timeline.selection_range(), self.timeline.selected_chord)
 
         def set_editor_position_seconds(
             self,
