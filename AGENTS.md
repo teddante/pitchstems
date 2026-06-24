@@ -23,6 +23,10 @@ PitchStems is a solo-developer, local-first desktop app. Work quickly, keep the 
 - When reviewing Codex threads or tool history, avoid including raw outputs unless needed; cap per-item output and do not re-ingest large inline images or base64 blobs after they have been summarized.
 - For long implementation turns, report progress by phase: context gathered, edits underway, verification, and result. Avoid one update per tiny hunk unless the user needs that granularity.
 - Run focused checks while iterating, especially `ruff`/targeted tests after import or test edits and focused `mypy` after new shared types/protocols. Then run one full required check once the diff is stable, and rerun it after production edits that could affect the result.
+- For broad goals, create a compact acceptance matrix early: requirement, intended proof, and done/not-done state. Use it to stop once the explicit proof is met instead of repeatedly finding another nice-to-have.
+- Batch adjacent low-risk polish into one reviewable unit when it shares the same proof surface. Keep high-risk infrastructure, data-loss, cancellation, real-audio, or migration work in smaller independently proven slices.
+- Avoid repeating the full cycle for every micro-change. Prefer focused checks during the batch, then one full `.\scripts\check.ps1` or `.\scripts\check.ps1 -GuiSmoke` after the diff is stable. If production code changes after the full gate, rerun the affected proof.
+- Keep final summaries compact: changed, proof run, commit/push state, and remaining risk. Do not restate long goal histories or paste passing logs unless the user asks.
 
 ## Git And Autonomy
 
