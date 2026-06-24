@@ -20,6 +20,7 @@ from pitchstems.editor_project import (
     midi_note_name,
 )
 from pitchstems.editor_playback import playback_loop_range
+from pitchstems.editor_review_target import review_ranges, single_review_range
 from pitchstems.editor_loader import EditorLoadResult
 from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
 from pitchstems.midi_preview import render_note_preview
@@ -980,11 +981,11 @@ def main() -> int:
             if self.editor_project is None:
                 self.set_theory_analysis(None)
                 return
-            selection_ranges = self.timeline.selection_ranges()
+            selection_ranges = review_ranges(self.timeline.selection_ranges(), self.timeline.selected_chord)
             if len(selection_ranges) > 1:
                 self.set_theory_analysis(None)
                 return
-            selection = self.timeline.selection_range()
+            selection = single_review_range(selection_ranges)
             if selection is not None:
                 start, end = selection
                 analysis = analyze_theory_region(source_notes, self.editor_project.chords, start, end)

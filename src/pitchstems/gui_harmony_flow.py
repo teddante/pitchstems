@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from pitchstems.editor_review_target import review_ranges, single_review_range
 from pitchstems.editor_project import analyze_chord_at, analyze_chord_regions
 from pitchstems.harmony_inspector import (
     chord_base_pitch_weights as inspector_chord_base_pitch_weights,
@@ -52,7 +53,8 @@ def refresh_current_harmony(window, seconds: float) -> None:
     analysis_notes = filtered_chord_analysis_notes(window, source_notes, context)
     sample_text = chord_sample_text(window, source_notes)
     scoring_options = window.chord_scoring_options()
-    selection_ranges = window.timeline.selection_ranges()
+    explicit_ranges = window.timeline.selection_ranges()
+    selection_ranges = review_ranges(explicit_ranges, window.timeline.selected_chord)
     if selection_ranges:
         required, excluded = chord_note_constraints(window)
         overlapping_notes = set()
@@ -69,8 +71,9 @@ def refresh_current_harmony(window, seconds: float) -> None:
         window.refresh_current_theory(source_notes, seconds)
         chord = window.display_chord(analysis.label)
         range_text = _selection_ranges_text(selection_ranges)
+        label = "Selected chord" if not explicit_ranges and window.timeline.selected_chord is not None else "Selection"
         window.current_chord.setText(
-            f"Selection: {chord}  (score {analysis.confidence:.0%})  "
+            f"{label}: {chord}  (score {analysis.confidence:.0%})  "
             f"{range_text}"
         )
         harmony_panel.set_chord_candidates(window, analysis)
@@ -87,9 +90,9 @@ def refresh_current_harmony(window, seconds: float) -> None:
             note_text = ", ".join(analysis.active_note_names[:32])
             if len(analysis.active_note_names) > 32:
                 note_text += f", +{len(analysis.active_note_names) - 32} more"
-            window.set_chord_context_text(f"{sample_text}\nNotes in selection(s): {note_text}")
+            window.set_chord_context_text(f"{sample_text}\nNotes in {label.lower()}: {note_text}")
         else:
-            window.set_chord_context_text(f"{sample_text}\nNotes in selection(s): -")
+            window.set_chord_context_text(f"{sample_text}\nNotes in {label.lower()}: -")
         return
 
     required, excluded = chord_note_constraints(window)
@@ -122,10 +125,11 @@ def refresh_current_harmony(window, seconds: float) -> None:
 
 
 def chord_context_key(window, seconds: float):
+    ranges = review_ranges(window.timeline.selection_ranges(), window.timeline.selected_chord)
     return inspector_harmony_context_key(
         seconds,
-        window.timeline.selection_range(),
-        window.timeline.selection_ranges(),
+        single_review_range(ranges),
+        ranges,
     )
 
 

@@ -112,6 +112,7 @@ def delete_timeline_chord(window, chord: ChordRegion) -> None:
 
 
 def show_timeline_chord_status(window, chord: ChordRegion | None) -> None:
+    window.refresh_current_harmony(window.timeline.position, force=True)
     if chord is None:
         window.refresh_chord_keyboard()
         return
