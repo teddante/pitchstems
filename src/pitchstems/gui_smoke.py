@@ -299,12 +299,14 @@ def run_real_audio_project_smoke(window, manifest_path: Path) -> None:
     window.refresh_current_harmony(0.0)
     _assert(window.current_harmony_context is not None, "real-audio harmony review context")
 
-    window.play_transport()
+    _assert(window.play_review_button.isEnabled(), "real-audio play review enabled")
+    window.play_editor_review_target()
     QApplication.processEvents()
-    _assert(window.transport.is_playing, "real-audio playback starts")
+    _assert(window.transport.is_playing, "real-audio review playback starts")
+    _assert(window.timeline.position == 0.0, "real-audio review playback starts at selection")
     window.stop_transport()
     QApplication.processEvents()
-    _assert(not window.transport.is_playing, "real-audio playback stops")
+    _assert(not window.transport.is_playing, "real-audio review playback stops")
 
     items = build_export_items(window.current_result)
     _assert(items, "real-audio selected export items")
