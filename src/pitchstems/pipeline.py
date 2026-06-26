@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Callable
 
 from pitchstems.audio import normalize_to_wav
+from pitchstems.filename_safety import safe_file_stem
 from pitchstems.midi import combine_midi_tracks
 from pitchstems.preflight import run_preflight
 from pitchstems.project_store import (
@@ -319,20 +320,7 @@ def _existing_source_audio(project_dir: Path) -> Path | None:
 
 
 def _safe_stem(stem: str, max_length: int = 80) -> str:
-    safe = "".join(char if char.isalnum() or char in "-_" else "_" for char in stem).strip("._-")
-    if not safe:
-        safe = "audio"
-    safe = safe[:max_length].rstrip("._-") or "audio"
-    if _is_windows_reserved_name(safe):
-        safe = f"audio_{safe}"
-    return safe
-
-
-def _is_windows_reserved_name(name: str) -> bool:
-    reserved = {"CON", "PRN", "AUX", "NUL", "CLOCK$"}
-    reserved.update(f"COM{index}" for index in range(1, 10))
-    reserved.update(f"LPT{index}" for index in range(1, 10))
-    return name.upper() in reserved
+    return safe_file_stem(stem, fallback="audio", max_length=max_length)
 
 
 def _zip_project_outputs(

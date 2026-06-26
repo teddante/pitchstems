@@ -14,6 +14,11 @@ from pitchstems.chord_naming import (
     display_chord_label,
     exact_chord_names_for_pitch_classes,
 )
+from pitchstems.chord_explanation import (
+    _interval_names,
+    _interval_quality_name,
+    _ordered_pitch_classes,
+)
 from pitchstems.editor_models import ChordRegion, NoteEvent
 from pitchstems.midi_energy import (
     active_notes_at as energy_active_notes_at,
@@ -972,29 +977,6 @@ def _partial_chord_completions(
     return completions
 
 
-def _ordered_pitch_classes(pitch_classes: set[int], root: int | None = None) -> list[int]:
-    if root is None or root not in pitch_classes:
-        return sorted(pitch_classes)
-    return sorted(pitch_classes, key=lambda pitch_class: (pitch_class - root) % 12)
-
-
-def _interval_quality_name(interval: int) -> str:
-    return {
-        0: "unison",
-        1: "minor second",
-        2: "major second",
-        3: "minor third",
-        4: "major third",
-        5: "perfect fourth",
-        6: "tritone",
-        7: "perfect fifth",
-        8: "minor sixth",
-        9: "major sixth",
-        10: "minor seventh",
-        11: "major seventh",
-    }[interval % 12]
-
-
 def _partial_quality_priority(suffix: str, fallback: int) -> int:
     priorities = {
         "": 0,
@@ -1066,7 +1048,6 @@ def _plain_score_explanation(
         f"Raw score {score:.2f}; displayed percentage is a ranking score, not a statistical probability.",
     ]
 
-
 def _weighted_score_explanation(
     label: str,
     root: int,
@@ -1101,7 +1082,3 @@ def _weighted_score_explanation(
         "Display score: coverage * purity. No naming bonuses, penalties, or user-tuned weights are applied.",
         f"Raw score {score:.2f}; displayed percentage is a ranking score, not a statistical probability.",
     ]
-
-
-def _interval_names(root: int, intervals) -> list[str]:
-    return [PITCH_NAMES[(root + interval) % 12] for interval in intervals]

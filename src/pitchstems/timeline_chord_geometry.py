@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
+from typing import Protocol
 
 from pitchstems.editor_models import ChordRegion
+
+
+class TimelineTrack(Protocol):
+    name: str
 
 
 def compact_chord_label(label: str) -> str:
@@ -36,3 +42,32 @@ def snap_seconds_to_timeline_targets(
     if abs(delta) <= threshold:
         return nearest, delta
     return seconds, 0.0
+
+
+def build_track_geometries(
+    *,
+    tracks: Sequence[TimelineTrack],
+    visible_tracks: set[str],
+    pitch_ranges: dict[str, tuple[int, int]],
+    chord_height: float,
+    minimum_track_height: float,
+    vertical_zoom: float,
+) -> dict[str, tuple[float, float, int, int]]:
+    geometries: dict[str, tuple[float, float, int, int]] = {}
+    y = chord_height
+    for track in tracks:
+        track_key = track.name.lower()
+        if track_key not in visible_tracks:
+            continue
+        pitch_range = pitch_ranges.get(track_key)
+        if pitch_range:
+            low_pitch, high_pitch = pitch_range
+            base_height = max(132, (high_pitch - low_pitch + 1) * 8 + 34)
+            height = max(minimum_track_height, base_height * vertical_zoom)
+        else:
+            low_pitch = 48
+            high_pitch = 72
+            height = max(minimum_track_height, 132 * vertical_zoom)
+        geometries[track_key] = (y, height, low_pitch, high_pitch)
+        y += height
+    return geometries

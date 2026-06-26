@@ -10,17 +10,7 @@ from array import array
 from pathlib import Path
 
 from pitchstems.editor_project import NoteEvent
-
-
-_WINDOWS_RESERVED_NAMES = {
-    "CON",
-    "PRN",
-    "AUX",
-    "NUL",
-    "CLOCK$",
-    *(f"COM{index}" for index in range(1, 10)),
-    *(f"LPT{index}" for index in range(1, 10)),
-}
+from pitchstems.filename_safety import safe_file_stem
 
 
 def render_midi_preview(
@@ -135,13 +125,7 @@ def _valid_metadata(path: Path, expected: dict) -> bool:
 
 
 def _safe_preview_name(name: str, fallback: str = "preview", max_length: int = 80) -> str:
-    safe = "".join(character if character.isalnum() or character in "-_" else "_" for character in name)
-    safe = safe.strip("._-")[:max_length].rstrip("._-")
-    if not safe:
-        safe = fallback
-    if safe.upper() in _WINDOWS_RESERVED_NAMES:
-        safe = f"{fallback}_{safe}"
-    return safe
+    return safe_file_stem(name, fallback=fallback, max_length=max_length)
 
 
 def _preview_metadata(

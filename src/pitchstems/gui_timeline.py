@@ -10,7 +10,11 @@ from pitchstems.editor_chord_navigation import review_navigation_chord
 from pitchstems.editor_project import ChordRegion, EditorProject, midi_note_name
 from pitchstems.gui_theme import TRACK_COLORS
 from pitchstems.gui_track_controls import TRACK_CONTROL_MIN_HEIGHT
-from pitchstems.timeline_chord_geometry import compact_chord_label, snap_seconds_to_timeline_targets
+from pitchstems.timeline_chord_geometry import (
+    build_track_geometries,
+    compact_chord_label,
+    snap_seconds_to_timeline_targets,
+)
 from pitchstems.timeline_render_policy import TimelineRenderPolicy
 from pitchstems.timeline_selection import (
     active_selection_range,
@@ -748,21 +752,16 @@ class TimelineView(QGraphicsView):
         self._clear_selected_chord()
 
     def _build_track_geometries(self) -> dict[str, tuple[float, float, int, int]]:
-        geometries: dict[str, tuple[float, float, int, int]] = {}
-        y = self.chord_height
-        for track in self._visible_project_tracks():
-            pitch_range = self.pitch_ranges.get(track.name.lower())
-            if pitch_range:
-                low_pitch, high_pitch = pitch_range
-                base_height = max(132, (high_pitch - low_pitch + 1) * 8 + 34)
-                height = max(self.minimum_track_height, base_height * self.vertical_zoom)
-            else:
-                low_pitch = 48
-                high_pitch = 72
-                height = max(self.minimum_track_height, 132 * self.vertical_zoom)
-            geometries[track.name.lower()] = (y, height, low_pitch, high_pitch)
-            y += height
-        return geometries
+        if self.project is None:
+            return {}
+        return build_track_geometries(
+            tracks=self.project.tracks,
+            visible_tracks=self.visible_tracks,
+            pitch_ranges=self.pitch_ranges,
+            chord_height=self.chord_height,
+            minimum_track_height=self.minimum_track_height,
+            vertical_zoom=self.vertical_zoom,
+        )
 
     def _visible_project_tracks(self):
         if self.project is None:
