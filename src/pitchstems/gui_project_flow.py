@@ -23,19 +23,26 @@ def refresh_recent_projects_menu(window) -> None:
     if window.recent_projects_menu is None:
         return
     window.recent_projects_menu.clear()
-    recent = window.recent_project_paths()
+    recent = recent_project_paths(window)
     if not recent:
         action = QAction("No recent projects", window)
         action.setEnabled(False)
         window.recent_projects_menu.addAction(action)
         return
     for index, path in enumerate(recent[:10], 1):
-        action = QAction(f"&{index} {window.recent_project_label(path)}", window)
+        action = QAction(f"&{index} {recent_project_label(path)}", window)
         action.setToolTip(str(path))
-        action.triggered.connect(lambda _checked=False, project_path=path: window.open_recent_project(project_path))
+        action.triggered.connect(
+            lambda _checked=False, project_path=path: open_recent_project(window, project_path)
+        )
         window.recent_projects_menu.addAction(action)
     window.recent_projects_menu.addSeparator()
-    window._add_action(window.recent_projects_menu, "Clear Recent Projects", None, window.clear_recent_projects)
+    window._add_action(
+        window.recent_projects_menu,
+        "Clear Recent Projects",
+        None,
+        lambda: clear_recent_projects(window),
+    )
 
 
 def recent_project_paths(window) -> list[Path]:
@@ -47,26 +54,26 @@ def recent_project_label(manifest_path: Path) -> str:
 
 
 def remember_recent_project(window, project_dir: Path) -> None:
-    recent = remember_project_path(window.recent_project_paths(), project_dir)
+    recent = remember_project_path(recent_project_paths(window), project_dir)
     window.settings.setValue("recent_projects", [str(path) for path in recent])
-    window.refresh_recent_projects_menu()
+    refresh_recent_projects_menu(window)
 
 
 def remove_recent_project(window, manifest_path: Path) -> None:
-    recent = remove_project_path(window.recent_project_paths(), manifest_path)
+    recent = remove_project_path(recent_project_paths(window), manifest_path)
     window.settings.setValue("recent_projects", [str(path) for path in recent])
-    window.refresh_recent_projects_menu()
+    refresh_recent_projects_menu(window)
 
 
 def clear_recent_projects(window) -> None:
     window.settings.setValue("recent_projects", [])
-    window.refresh_recent_projects_menu()
+    refresh_recent_projects_menu(window)
     window.statusBar().showMessage("Recent projects cleared.", 3000)
 
 
 def open_recent_project(window, manifest_path: Path) -> None:
     if not manifest_path.exists():
-        window.remove_recent_project(manifest_path)
+        remove_recent_project(window, manifest_path)
         window.append_log(f"Recent project no longer exists: {manifest_path}")
         window.statusBar().showMessage("Recent project was removed because it no longer exists.", 5000)
         return
@@ -136,7 +143,7 @@ def open_project_manifest(window, manifest_path: Path) -> None:
         window.logger.exception("Could not open project manifest")
         window.append_log(f"Could not open project: {exc}")
         window.end_activity("Could not open project")
-        window.remove_recent_project(manifest_path)
+        remove_recent_project(window, manifest_path)
         return
     window.output_dir.setText(str(result.project_dir.parent))
     window.drop_zone.set_project_file(result.project_dir, result.source_audio)

@@ -6,6 +6,7 @@ from pathlib import Path
 from pitchstems.editor_loader import build_editor_load_result
 from pitchstems.editor_state import editor_float
 from pitchstems.gui_editor_model import EditorSummaryModel
+from pitchstems.gui_project_flow import remember_recent_project
 from pitchstems.time_format import format_time
 
 
@@ -39,7 +40,7 @@ def set_current_result(window, result, open_output: bool = True) -> None:
     window.previous_chord_button.setEnabled(False)
     window.next_chord_button.setEnabled(False)
     window.clear_transport_players()
-    window.remember_recent_project(result.project_dir)
+    remember_recent_project(window, result.project_dir)
     if open_output and window.open_when_done.isChecked():
         window.open_latest_output()
     window.start_editor_project_load(result, token)

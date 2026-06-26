@@ -12,7 +12,10 @@ from pitchstems.gui_theme import TRACK_COLORS
 from pitchstems.gui_track_controls import TRACK_CONTROL_MIN_HEIGHT
 from pitchstems.timeline_chord_geometry import (
     build_track_geometries,
+    chord_drag_mode,
     compact_chord_label,
+    dragged_chord_region,
+    neighbour_chords,
     snap_seconds_to_timeline_targets,
 )
 from pitchstems.timeline_render_policy import TimelineRenderPolicy
@@ -987,13 +990,11 @@ class TimelineView(QGraphicsView):
                 self.redraw()
             return False
         seconds = self._seconds_from_event(event)
-        edge = max(0.04, 8 / self.pixels_per_second)
-        if abs(seconds - chord.start) <= edge:
-            mode = "resize_start"
-        elif abs(seconds - chord.end) <= edge:
-            mode = "resize_end"
-        else:
-            mode = "move"
+        mode = chord_drag_mode(
+            seconds=seconds,
+            chord=chord,
+            pixels_per_second=self.pixels_per_second,
+        )
         self.selected_chord = chord
         self._chord_drag = {
             "chord": chord,
@@ -1068,51 +1069,23 @@ class TimelineView(QGraphicsView):
         mode = self._chord_drag["mode"]
         seconds = self._seconds_from_event(event)
         duration = max(0.0, self.project.duration if self.project else original.end)
-        minimum = max(0.08, 4 / self.pixels_per_second)
-        previous_chord, next_chord = self._neighbour_chords(original)
-        lower_bound = previous_chord.end if previous_chord else 0.0
-        upper_bound = next_chord.start if next_chord else duration
-        if mode == "move":
-            delta = seconds - self._chord_drag["press_seconds"]
-            length = min(original.duration, max(minimum, upper_bound - lower_bound))
-            start = max(lower_bound, min(original.start + delta, max(lower_bound, upper_bound - length)))
-            end = start + length
-            if not (event.modifiers() & Qt.AltModifier):
-                snapped_start, start_delta = self._snap_seconds(start, original)
-                snapped_end, end_delta = self._snap_seconds(end, original)
-                if abs(start_delta) <= abs(end_delta):
-                    start = max(lower_bound, min(snapped_start, upper_bound - length))
-                    end = start + length
-                else:
-                    end = min(upper_bound, max(snapped_end, lower_bound + length))
-                    start = end - length
-        elif mode == "resize_start":
-            end = original.end
-            start = max(lower_bound, min(seconds, end - minimum))
-            if not (event.modifiers() & Qt.AltModifier):
-                start = max(lower_bound, min(self._snap_seconds(start, original)[0], end - minimum))
-        else:
-            start = original.start
-            end = min(upper_bound, max(seconds, start + minimum))
-            if not (event.modifiers() & Qt.AltModifier):
-                end = min(upper_bound, max(self._snap_seconds(end, original)[0], start + minimum))
-        return ChordRegion(start=start, end=end, label=original.label, confidence=original.confidence)
-
-    def _neighbour_chords(self, chord: ChordRegion) -> tuple[ChordRegion | None, ChordRegion | None]:
-        if self.project is None:
-            return None, None
-        other_chords = [other for other in self.project.chords if other != chord]
-        previous = max(
-            (other for other in other_chords if other.end <= chord.start),
-            key=lambda item: item.end,
-            default=None,
+        previous_chord, next_chord = (
+            neighbour_chords(self.project.chords, original)
+            if self.project is not None
+            else (None, None)
         )
-        next_chord = min(
-            (other for other in other_chords if other.start >= chord.end),
-            key=lambda item: item.start,
-            default=None,
+        return dragged_chord_region(
+            original=original,
+            mode=mode,
+            press_seconds=self._chord_drag["press_seconds"],
+            seconds=seconds,
+            duration=duration,
+            previous_chord=previous_chord,
+            next_chord=next_chord,
+            minimum_length=max(0.08, 4 / self.pixels_per_second),
+            snap_seconds=lambda value: self._snap_seconds(value, original),
+            snap_enabled=not (event.modifiers() & Qt.AltModifier),
         )
-        return previous, next_chord
 
     def _snap_seconds(self, seconds: float, ignored_chord: ChordRegion) -> tuple[float, float]:
         if self.project is None:

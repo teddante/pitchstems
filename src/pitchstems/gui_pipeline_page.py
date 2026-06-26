@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -146,11 +147,23 @@ def build_pipeline_page(window) -> QWidget:
 
     window.processing_tabs.addTab(midi_settings_tab, "Basic Pitch")
     window.processing_tabs.addTab(runtime_tab, "Runtime")
+    advanced_toggle = QPushButton("Advanced")
+    advanced_toggle.setCheckable(True)
+    advanced_toggle.setToolTip("Show detailed Basic Pitch, runtime, and export options.")
+    advanced_panel = QWidget()
+    advanced_layout = QVBoxLayout()
+    advanced_layout.setContentsMargins(0, 0, 0, 0)
+    advanced_layout.setSpacing(6)
+    advanced_layout.addWidget(window.processing_tabs, 1)
+    advanced_panel.setLayout(advanced_layout)
+    advanced_panel.setVisible(False)
+    advanced_toggle.toggled.connect(advanced_panel.setVisible)
 
     selected_panel.addWidget(model_group)
     selected_panel.addWidget(stem_group)
     selected_panel.addWidget(midi_group)
-    selected_panel.addWidget(window.processing_tabs, 1)
+    selected_panel.addWidget(advanced_toggle)
+    selected_panel.addWidget(advanced_panel, 1)
     selected_panel.addStretch(1)
 
     main_row = QHBoxLayout()

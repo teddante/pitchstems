@@ -7,13 +7,11 @@ import threading
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, cast
+from typing import Any, Callable, cast
 
+from pitchstems.pipeline_models import PipelineResult
 from pitchstems.separation import SeparationOptions, StemResult, safe_stem_key
 from pitchstems.transcription import MidiOptions, MidiResult
-
-if TYPE_CHECKING:
-    from pitchstems.pipeline import PipelineResult
 
 
 PROJECT_FILENAME = "pitchstems.project.json"
@@ -175,8 +173,6 @@ def load_pipeline_result(path: Path) -> PipelineResult:
         last_error = manifest.get("last_error")
         detail = f": {last_error}" if isinstance(last_error, str) and last_error else ""
         raise ValueError(f"Project processing failed{detail}")
-
-    from pitchstems.pipeline import PipelineResult
 
     return PipelineResult(
         project_dir=project_dir,

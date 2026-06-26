@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 import shutil
 import zipfile
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -11,6 +10,7 @@ from typing import Callable
 from pitchstems.audio import normalize_to_wav
 from pitchstems.filename_safety import safe_file_stem
 from pitchstems.midi import combine_midi_tracks
+from pitchstems.pipeline_models import PipelineResult
 from pitchstems.preflight import run_preflight
 from pitchstems.project_store import (
     PROJECT_FILENAME,
@@ -20,17 +20,6 @@ from pitchstems.project_store import (
 )
 from pitchstems.separation import SeparationOptions, StemResult, separate_stems
 from pitchstems.transcription import MidiOptions, MidiResult, transcribe_stem_to_midi
-
-
-@dataclass(frozen=True)
-class PipelineResult:
-    project_dir: Path
-    normalized_audio: Path
-    stems: list[StemResult]
-    midi_files: list[MidiResult]
-    combined_midi: Path | None
-    zip_path: Path | None
-    source_audio: Path | None = None
 
 
 CancelCheck = Callable[[], bool]

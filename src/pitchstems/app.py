@@ -462,7 +462,7 @@ def main() -> int:
 
             self.run_full.clicked.connect(self.start_full_processing)
             self.run_midi.clicked.connect(self.start_midi_processing)
-            self.export_button.clicked.connect(self.export_selected_files)
+            self.export_button.clicked.connect(lambda: gui_export.export_selected_files(self))
             self.cancel_button.clicked.connect(self.cancel_processing)
             self.play_button.clicked.connect(self.toggle_playback)
             self.play_review_button.clicked.connect(self.play_editor_review_target)
@@ -670,15 +670,20 @@ def main() -> int:
 
         def create_menus(self) -> None:
             file_menu = self.menuBar().addMenu("&File")
-            self._add_action(file_menu, "&Open Audio...", "Ctrl+O", self.pick_audio)
-            self._add_action(file_menu, "Open &Project...", "Ctrl+Shift+O", self.pick_project)
+            self._add_action(file_menu, "&Open Audio...", "Ctrl+O", lambda: gui_project_flow.pick_audio(self))
+            self._add_action(file_menu, "Open &Project...", "Ctrl+Shift+O", lambda: gui_project_flow.pick_project(self))
             self.recent_projects_menu = file_menu.addMenu("Open &Recent")
-            self.refresh_recent_projects_menu()
+            gui_project_flow.refresh_recent_projects_menu(self)
             file_menu.addSeparator()
-            self._add_action(file_menu, "&Save Project", "Ctrl+S", self.save_project_now)
-            self.export_action = self._add_action(file_menu, "Export Selected Files...", None, self.export_selected_files)
+            self._add_action(file_menu, "&Save Project", "Ctrl+S", lambda: gui_project_flow.save_project_now(self))
+            self.export_action = self._add_action(
+                file_menu,
+                "Export Selected Files...",
+                None,
+                lambda: gui_export.export_selected_files(self),
+            )
             self.export_action.setEnabled(False)
-            self._add_action(file_menu, "Choose Output &Folder...", None, self.pick_output_dir)
+            self._add_action(file_menu, "Choose Output &Folder...", None, lambda: gui_project_flow.pick_output_dir(self))
             self._add_action(file_menu, "Open Output Folder", "Ctrl+E", self.open_latest_output)
             self._add_action(file_menu, "Open Logs Folder", None, self.open_logs_folder)
             file_menu.addSeparator()
@@ -733,27 +738,6 @@ def main() -> int:
 
         # Thin slot adapters keep Qt connections and cross-module callbacks on MainWindow
         # while the behavior lives in focused gui_* modules.
-        def refresh_recent_projects_menu(self) -> None:
-            gui_project_flow.refresh_recent_projects_menu(self)
-
-        def recent_project_paths(self) -> list[Path]:
-            return gui_project_flow.recent_project_paths(self)
-
-        def recent_project_label(self, manifest_path: Path) -> str:
-            return gui_project_flow.recent_project_label(manifest_path)
-
-        def remember_recent_project(self, project_dir: Path) -> None:
-            gui_project_flow.remember_recent_project(self, project_dir)
-
-        def remove_recent_project(self, manifest_path: Path) -> None:
-            gui_project_flow.remove_recent_project(self, manifest_path)
-
-        def clear_recent_projects(self) -> None:
-            gui_project_flow.clear_recent_projects(self)
-
-        def open_recent_project(self, manifest_path: Path) -> None:
-            gui_project_flow.open_recent_project(self, manifest_path)
-
         def show_timeline_controls(self) -> None:
             self.statusBar().showMessage(
                 "Timeline controls: Space plays/pauses; Play Review loops one selected range or chord; Prev/Next Chord or Alt+Left/Right steps through chords for review; Fit Song or Ctrl+Alt+0 shows the full song; Ctrl+Alt+F fits the selected review target; drag the chord lane or Shift+drag the timeline to select a chord-analysis range; Ctrl+drag adds another selected range; Esc clears selection; click/drag sets playhead; wheel scrolls vertically; Shift+wheel scrolls horizontally; Ctrl+wheel zooms time; Ctrl+Shift+wheel zooms pitch; middle/right drag pans.",
@@ -786,23 +770,8 @@ def main() -> int:
                 return
             self.toggle_playback()
 
-        def pick_audio(self) -> None:
-            gui_project_flow.pick_audio(self)
-
         def set_audio_path(self, path: Path) -> None:
             gui_project_flow.set_audio_path(self, path)
-
-        def save_project_now(self) -> None:
-            gui_project_flow.save_project_now(self)
-
-        def export_selected_files(self) -> None:
-            gui_export.export_selected_files(self)
-
-        def pick_output_dir(self) -> None:
-            gui_project_flow.pick_output_dir(self)
-
-        def pick_project(self) -> None:
-            gui_project_flow.pick_project(self)
 
         def open_project_manifest(self, manifest_path: Path) -> None:
             gui_project_flow.open_project_manifest(self, manifest_path)
