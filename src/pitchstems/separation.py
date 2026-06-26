@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from pitchstems.model_catalog import ModelChoice, model_choice
+from pitchstems.model_catalog import DEFAULT_MODEL_KEY, ModelChoice, model_choice
 
 
 @dataclass(frozen=True)
@@ -30,13 +30,13 @@ LEGACY_PROFILE_ALIASES = {
 }
 
 PROFILE_MODEL_ALIASES = {
-    DEFAULT_PROFILE_KEY: "bs_roformer_sw",
+    DEFAULT_PROFILE_KEY: DEFAULT_MODEL_KEY,
 }
 
 
 @dataclass(frozen=True)
 class SeparationOptions:
-    model_key: str = "bs_roformer_sw"
+    model_key: str = DEFAULT_MODEL_KEY
     selected_stem: str | None = None
     device: str | None = None
     device_ids: tuple[int, ...] | None = None
@@ -186,7 +186,7 @@ def get_profile(profile: str) -> SeparationProfile:
 
 
 def model_key_for_profile(profile: str) -> str:
-    return PROFILE_MODEL_ALIASES.get(get_profile(profile).key, "bs_roformer_sw")
+    return PROFILE_MODEL_ALIASES.get(get_profile(profile).key, DEFAULT_MODEL_KEY)
 
 
 def profile_keys() -> list[str]:
@@ -255,10 +255,6 @@ def _guess_stem_name(path: Path) -> str:
         "guitar",
         "piano",
         "other",
-        "dry",
-        "wet",
-        "male",
-        "female",
     ]
     for stem in known:
         if lower.endswith(f"_{stem}") or lower == stem or f"_{stem}_" in lower:

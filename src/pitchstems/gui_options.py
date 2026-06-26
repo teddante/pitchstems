@@ -8,7 +8,7 @@ def optional_frequency(value: float) -> float | None:
 
 
 def default_midi_checked(stem_name: str) -> bool:
-    return stem_name.lower() not in {*PERCUSSIVE_STEMS, "wet"}
+    return stem_name.lower() not in PERCUSSIVE_STEMS
 
 
 def device_label(device: str | None, cuda_available: bool) -> str:

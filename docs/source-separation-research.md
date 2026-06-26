@@ -106,24 +106,21 @@ Source: https://mvsep.com/en/algorithms
 
 SDR is useful but not the whole story. In the SDX23 paper, SAMI-ByteDance ranked first by SDR on the Standard leaderboard at 9.97 dB, followed by ZFTurbo at 9.26 and kimberley_jensen at 9.18. But the listening-test TrueSkill ranking put kimberley_jensen first, ZFTurbo second, and SAMI-ByteDance third.
 
-So PitchStems should support model comparison and ensembles rather than only a single "best" button.
+PitchStems now optimizes for one reliable local workflow instead of model comparison:
+BS-RoFormer SW six-stem separation followed by Basic Pitch MIDI generation.
 
 Source: https://transactions.ismir.net/articles/10.5334/tismir.171
 
-## Practical PitchStems Methods
+## Practical PitchStems Method
 
-The app now exposes a native-first BS-RoFormer catalog:
+The app uses one native-first BS-RoFormer model:
 
 - `bs_roformer_sw`: native BS-RoFormer SW for vocals, drums, bass, guitar, piano, other, plus instrumental.
-- `bs_roformer_vocals_resurrection`: native vocal-specialist BS-RoFormer.
-- `bs_roformer_vocals_revive_v3e`: native vocal-specialist BS-RoFormer with fuller capture bias.
-- `bs_roformer_instrumental_resurrection`: native instrumental-specialist BS-RoFormer.
-- `bs_roformer_dereverb`: native BS-RoFormer repair model.
 
 ## Best Next Product Features
 
-1. Add a "Compare models" workflow that runs multiple compatible models and lets the user audition outputs.
-2. Add model download status and disk usage display.
+1. Add model download status and disk usage display for the SW6 model cache.
+2. Improve audition/review tools for the SW6 stems and generated MIDI.
 3. Add a dedicated drum-to-MIDI model later; Basic Pitch should not be expected to produce good drum MIDI.
 4. Add more low-level architecture controls behind an expert toggle once the core builder is stable.
 

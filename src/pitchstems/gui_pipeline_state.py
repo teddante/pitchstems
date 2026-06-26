@@ -4,7 +4,7 @@ from pitchstems.acceleration import onnxruntime_status, torch_status
 from pitchstems.gui_helpers import clear_layout
 from pitchstems.gui_options import default_midi_checked, device_label, optional_frequency
 from pitchstems.gui_pipeline_model import PipelinePageModel
-from pitchstems.model_catalog import model_choice
+from pitchstems.model_catalog import DEFAULT_MODEL_KEY, model_choice
 from pitchstems.separation import SeparationOptions
 from pitchstems.transcription import MidiOptions
 
@@ -22,7 +22,6 @@ def set_processing_state(window, busy: bool) -> None:
     if getattr(window, "export_action", None) is not None:
         window.export_action.setEnabled(model.export_enabled)
     window.cancel_button.setEnabled(model.cancel_enabled)
-    window.model_select.setEnabled(model.settings_enabled)
     window.stem.setEnabled(model.settings_enabled)
     window.bs_device.setEnabled(model.settings_enabled)
     window.generate_midi.setEnabled(model.settings_enabled)
@@ -49,7 +48,7 @@ def set_processing_state(window, busy: bool) -> None:
 
 
 def selected_model_key(window) -> str:
-    return window.model_select.currentData() or "bs_roformer_sw"
+    return DEFAULT_MODEL_KEY
 
 
 def selected_separation_options(window) -> SeparationOptions:

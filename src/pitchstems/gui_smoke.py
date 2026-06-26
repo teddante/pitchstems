@@ -48,7 +48,7 @@ def run_startup_smoke(window) -> None:
     _assert(not hasattr(window, "create_zip"), "GUI ZIP checkbox removed")
     _assert(window.generate_midi.isChecked(), "generate MIDI default")
     _assert(set(window.workspace_nav_buttons) == {"Pipeline", "Editor"}, "workspace nav maps to real pages")
-    _assert(window.model_select.count() >= 2, "GUI model selector populated")
+    _assert(not hasattr(window, "model_select"), "GUI model selector removed")
     _assert(window.model_title.text(), "model title displayed")
     _assert(window.processing_tabs.count() == 2, "pipeline processing tabs")
     _assert(window.processing_tabs.tabText(0) == "Basic Pitch", "basic pitch tab")

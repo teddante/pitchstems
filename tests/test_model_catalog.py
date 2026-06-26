@@ -1,4 +1,4 @@
-from pitchstems.model_catalog import all_model_keys, model_choice
+from pitchstems.model_catalog import DEFAULT_MODEL_KEY, MODEL_CHOICES, model_choice
 
 
 def test_default_model_is_bs_roformer_sw() -> None:
@@ -10,5 +10,5 @@ def test_default_model_is_bs_roformer_sw() -> None:
     assert "piano" in choice.stems
 
 
-def test_public_model_keys_include_fixed_gui_model() -> None:
-    assert "bs_roformer_sw" in all_model_keys()
+def test_public_model_catalog_is_sw6_only() -> None:
+    assert list(MODEL_CHOICES) == [DEFAULT_MODEL_KEY]

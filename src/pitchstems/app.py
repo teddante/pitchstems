@@ -24,7 +24,6 @@ from pitchstems.editor_review_target import review_ranges, single_review_range
 from pitchstems.editor_loader import EditorLoadResult
 from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
 from pitchstems.midi_preview import render_note_preview
-from pitchstems.model_catalog import all_model_keys, model_choice
 from pitchstems.notation import pitch_class_for_name, pitch_class_name
 from pitchstems.pipeline import PipelineResult
 from pitchstems.harmony_inspector import (
@@ -200,12 +199,6 @@ def main() -> int:
             self.model_backend_detail.setStyleSheet("color: #4b5563;")
             self.processing_tabs = QTabWidget()
             self.processing_tabs.setDocumentMode(True)
-
-            self.model_select = NoWheelComboBox()
-            for model_key in all_model_keys():
-                choice = model_choice(model_key)
-                self.model_select.addItem(choice.display_label, model_key)
-            self.model_select.setToolTip("Choose the native BS-RoFormer model used for separation.")
 
             self.bs_device = NoWheelComboBox()
             self.bs_device.addItem("Auto: CUDA if available", None)
@@ -496,7 +489,6 @@ def main() -> int:
             self.chord_list.currentItemChanged.connect(self.handle_chord_selection_changed)
             self.timeline.verticalScrollBar().valueChanged.connect(self.sync_track_control_scroll)
             self.playback_scroll.verticalScrollBar().valueChanged.connect(self.sync_timeline_scroll)
-            self.model_select.currentIndexChanged.connect(self.refresh_model_details)
             self.bs_device.currentIndexChanged.connect(self.refresh_model_details)
             self.generate_midi.toggled.connect(self.refresh_midi_stem_checks)
             self.sonify_midi.toggled.connect(self.sonification_samplerate.setEnabled)

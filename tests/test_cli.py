@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import pitchstems.cli as cli
+from pitchstems.model_catalog import DEFAULT_MODEL_KEY
 from pitchstems.pipeline import PipelineResult
 from pitchstems.separation import SeparationOptions
 
@@ -53,4 +54,20 @@ def test_cli_explicit_model_builds_separation_options(monkeypatch, tmp_path: Pat
 
     options = captured["separation_options"]
     assert isinstance(options, SeparationOptions)
-    assert options.model_key == "bs_roformer_sw"
+    assert options.model_key == DEFAULT_MODEL_KEY
+
+
+def test_cli_download_model_defaults_to_sw6(monkeypatch, tmp_path: Path, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_download_model(model_key: str, **_kwargs):
+        captured["model_key"] = model_key
+        return tmp_path / "models"
+
+    monkeypatch.setattr(cli, "download_model", fake_download_model)
+    monkeypatch.setattr(sys, "argv", ["pitchstems", "--download-model"])
+
+    assert cli.main() == 0
+
+    assert captured["model_key"] == DEFAULT_MODEL_KEY
+    assert "Cached in:" in capsys.readouterr().out

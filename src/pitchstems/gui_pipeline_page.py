@@ -54,7 +54,6 @@ def build_pipeline_page(window) -> QWidget:
     model_layout.setSpacing(8)
     model_layout.setContentsMargins(10, 8, 10, 8)
     model_layout.addWidget(window.model_title)
-    model_layout.addWidget(window.model_select)
     model_group.setLayout(model_layout)
 
     runtime_group = QGroupBox("BS-RoFormer runtime")

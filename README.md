@@ -83,9 +83,9 @@ CLI:
 ```powershell
 pitchstems --doctor
 pitchstems --doctor --gpu
-pitchstems --download-model bs_roformer_sw
+pitchstems --download-model
 pitchstems "C:\path\to\song.mp3" --output-dir "C:\path\to\exports"
-pitchstems "C:\path\to\song.mp3" --model bs_roformer_sw --midi-policy pitched
+pitchstems "C:\path\to\song.mp3" --midi-policy pitched
 pitchstems "C:\path\to\song.mp3" --bs-device cuda --onset-threshold 0.5 --frame-threshold 0.3
 ```
 
@@ -108,7 +108,7 @@ PitchStems stores downloaded models here on Windows:
 To download a model ahead of time:
 
 ```powershell
-pitchstems --download-model bs_roformer_sw
+pitchstems --download-model
 ```
 
 For `bs_roformer_sw`, PitchStems asks the native BS-RoFormer registry for `roformer-model-bs-roformer-sw-by-jarredou`. That registry downloads `BS-Rofo-SW-Fixed.ckpt` and `BS-Rofo-SW-Fixed.yaml`, currently from the model publisher's Hugging Face assets.

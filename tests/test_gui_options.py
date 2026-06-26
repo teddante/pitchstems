@@ -12,7 +12,6 @@ def test_default_midi_checked_excludes_unpitched_or_mix_stems() -> None:
     assert default_midi_checked("drums") is False
     assert default_midi_checked("Drum") is False
     assert default_midi_checked("kick") is False
-    assert default_midi_checked("wet") is False
 
 
 def test_device_label_describes_auto_and_forced_modes() -> None:

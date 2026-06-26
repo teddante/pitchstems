@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 from pitchstems.doctor import format_checks, run_checks
-from pitchstems.model_catalog import all_model_keys, model_choice
+from pitchstems.model_catalog import DEFAULT_MODEL_KEY, model_choice
 from pitchstems.pipeline import process_audio_file
 from pitchstems.separation import download_model, model_key_for_profile, profile_keys
 from pitchstems.separation import SeparationOptions
@@ -16,11 +16,13 @@ def main() -> int:
     parser.add_argument("audio_file", nargs="?", type=Path)
     parser.add_argument("--output-dir", type=Path, default=Path.cwd() / "pitchstems-output")
     parser.add_argument("--quality", choices=profile_keys(), default="song-6-stem")
-    parser.add_argument("--model", choices=all_model_keys(), help="Choose a compatible curated model directly.")
+    parser.add_argument("--model", choices=[DEFAULT_MODEL_KEY], help=argparse.SUPPRESS)
     parser.add_argument(
         "--download-model",
-        choices=all_model_keys(),
-        help="Download a curated model to the local PitchStems cache without processing audio.",
+        nargs="?",
+        const=DEFAULT_MODEL_KEY,
+        choices=[DEFAULT_MODEL_KEY],
+        help="Download the BS-RoFormer SW six-stem model without processing audio.",
     )
     parser.add_argument("--stem", help="Only output this stem if the selected model supports it.")
     parser.add_argument(
