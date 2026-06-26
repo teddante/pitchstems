@@ -1,4 +1,4 @@
-﻿absl-py==2.4.0
+absl-py==2.4.0
 ast_serialize==0.5.0
 audioread==3.1.0
 basic-pitch==0.4.0
@@ -96,6 +96,6 @@ tomli==2.4.1
 tomli_w==1.2.0
 torch==2.11.0+cu128
 torchvision==0.26.0+cu128
-tqdm==4.67.3
+tqdm==4.68.3
 typing_extensions==4.15.0
 urllib3==2.7.0
