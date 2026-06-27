@@ -115,10 +115,10 @@ def test_create_process_worker_uses_spawn_context(monkeypatch) -> None:
     calls: list[tuple[str, object]] = []
 
     class _Context:
-        def Queue(self):  # noqa: N802 - mirrors multiprocessing API
+        def Queue(self):
             return "messages"
 
-        def Process(self, target, args):  # noqa: N802 - mirrors multiprocessing API
+        def Process(self, target, args):
             calls.append((target, args))
             return _FakeProcess()
 

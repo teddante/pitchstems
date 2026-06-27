@@ -24,6 +24,7 @@ from pitchstems.editor_review_target import review_ranges, single_review_range
 from pitchstems.editor_loader import EditorLoadResult
 from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
 from pitchstems.midi_preview import render_note_preview
+from pitchstems.model_catalog import DEFAULT_MODEL_KEY
 from pitchstems.notation import pitch_class_for_name, pitch_class_name
 from pitchstems.pipeline import PipelineResult
 from pitchstems.harmony_inspector import (
@@ -1107,7 +1108,7 @@ def main() -> int:
             self.refresh_current_harmony(self.timeline.position, force=True)
 
         def refresh_current_harmony(self, seconds: float, force: bool = False) -> None:
-            if self.harmony_refresh_gate.should_refresh(seconds, time.monotonic(), force=force):
+            if self.harmony_refresh_gate.should_refresh(time.monotonic(), force=force):
                 gui_harmony_flow.refresh_current_harmony(self, seconds)
 
         def update_harmony_context(self, mode: str) -> None:
@@ -1252,7 +1253,7 @@ def main() -> int:
             gui_pipeline_state.set_processing_state(self, busy)
 
         def selected_model_key(self) -> str:
-            return gui_pipeline_state.selected_model_key(self)
+            return DEFAULT_MODEL_KEY
 
         def selected_separation_options(self):
             return gui_pipeline_state.selected_separation_options(self)

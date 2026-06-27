@@ -58,7 +58,7 @@ def test_preflight_reports_missing_native_ml_packages(monkeypatch) -> None:
 
 
 def test_preflight_reports_unwritable_output_root(monkeypatch, tmp_path: Path) -> None:
-    def fake_write_text(self: Path, text: str, _encoding: str = "utf-8") -> int:
+    def fake_write_text(_self: Path, _text: str, _encoding: str = "utf-8") -> int:
         raise PermissionError("denied")
 
     monkeypatch.setattr(Path, "write_text", fake_write_text)

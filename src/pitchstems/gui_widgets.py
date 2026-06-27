@@ -158,7 +158,7 @@ class PianoChordWidget(QWidget):
             self.setToolTip("Select a chord candidate to see its tones on one octave of piano keys.")
         self.update()
 
-    def paintEvent(self, event) -> None:
+    def paintEvent(self, _event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         bounds = self.rect().adjusted(4, 4, -4, -4)

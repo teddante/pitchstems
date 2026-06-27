@@ -3,10 +3,10 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtCore import Qt
 
-from pitchstems.editor_project import ChordRegion  # noqa: E402
-from pitchstems.harmony_panel import refresh_chord_actions  # noqa: E402
+from pitchstems.editor_project import ChordRegion
+from pitchstems.harmony_panel import refresh_chord_actions
 
 
 class _Button:
@@ -15,13 +15,13 @@ class _Button:
         self.text = ""
         self.tooltip = ""
 
-    def setEnabled(self, enabled: bool) -> None:  # noqa: N802 - Qt API shape
+    def setEnabled(self, enabled: bool) -> None:
         self.enabled = enabled
 
-    def setText(self, text: str) -> None:  # noqa: N802 - Qt API shape
+    def setText(self, text: str) -> None:
         self.text = text
 
-    def setToolTip(self, tooltip: str) -> None:  # noqa: N802 - Qt API shape
+    def setToolTip(self, tooltip: str) -> None:
         self.tooltip = tooltip
 
 

@@ -7,9 +7,9 @@ import pytest
 pytest.importorskip("PySide6")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication
 
-from pitchstems.gui_widgets import DropZone, PianoChordWidget  # noqa: E402
+from pitchstems.gui_widgets import DropZone, PianoChordWidget
 
 
 def _app() -> QApplication:

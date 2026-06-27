@@ -6,8 +6,8 @@ import pytest
 pytest.importorskip("PySide6")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import Qt  # noqa: E402
-from PySide6.QtWidgets import (  # noqa: E402
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QLabel,
@@ -19,9 +19,9 @@ from PySide6.QtWidgets import (  # noqa: E402
     QWidget,
 )
 
-from pitchstems.gui_editor_page import build_editor_page  # noqa: E402
-from pitchstems.gui_timeline import TimelineView  # noqa: E402
-from pitchstems.gui_widgets import PianoChordWidget  # noqa: E402
+from pitchstems.gui_editor_page import build_editor_page
+from pitchstems.gui_timeline import TimelineView
+from pitchstems.gui_widgets import PianoChordWidget
 
 
 def _app() -> QApplication:

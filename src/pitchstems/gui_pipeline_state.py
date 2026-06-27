@@ -47,13 +47,9 @@ def set_processing_state(window, busy: bool) -> None:
         window.refresh_midi_stem_checks()
 
 
-def selected_model_key(window) -> str:
-    return DEFAULT_MODEL_KEY
-
-
 def selected_separation_options(window) -> SeparationOptions:
     return SeparationOptions(
-        model_key=window.selected_model_key(),
+        model_key=DEFAULT_MODEL_KEY,
         selected_stem=window.stem.currentData(),
         device=window.bs_device.currentData(),
     )
@@ -89,7 +85,7 @@ def selected_midi_stems(window) -> set[str]:
 def refresh_midi_stem_checks(window, *_args) -> None:
     from PySide6.QtWidgets import QCheckBox
 
-    choice = model_choice(window.selected_model_key())
+    choice = model_choice(DEFAULT_MODEL_KEY)
     saved_stem = window.stem.currentData()
     previous = {stem: checkbox.isChecked() for stem, checkbox in window.midi_stem_checks.items()}
     window.midi_stem_checks.clear()
@@ -112,7 +108,7 @@ def refresh_midi_stem_checks(window, *_args) -> None:
 
 
 def refresh_model_details(window, *_args) -> None:
-    choice = model_choice(window.selected_model_key())
+    choice = model_choice(DEFAULT_MODEL_KEY)
 
     window.stem.blockSignals(True)
     window.stem.clear()

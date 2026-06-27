@@ -203,7 +203,6 @@ def analyze_chord_at(
         note_weights,
         required_pitch_classes=required_pitch_classes,
         excluded_pitch_classes=excluded_pitch_classes,
-        scoring_options=options,
     )
 
 
@@ -323,7 +322,6 @@ def _analyze_region_pitch_weights(
         note_weights,
         required_pitch_classes=required_pitch_classes,
         excluded_pitch_classes=excluded_pitch_classes,
-        scoring_options=options,
     )
 
 
@@ -333,7 +331,7 @@ def analyze_chord(
     excluded_pitch_classes: set[int] | None = None,
     scoring_options: ChordScoringOptions | None = None,
 ) -> ChordAnalysis:
-    options = scoring_options or ChordScoringOptions()
+    del scoring_options
     active_note_names = [midi_note_name(pitch) for pitch in sorted(set(pitches))]
     observed_pitch_classes = {pitch % 12 for pitch in pitches}
     effective_pitch_classes = set(observed_pitch_classes)
@@ -359,7 +357,13 @@ def analyze_chord(
     bass = min(pitches) % 12 if pitches else min(effective_pitch_classes)
     scored_roots: list[tuple[str, float, int, list[str], tuple[float, ...]]] = []
     for root in range(12):
-        scored = _score_root(root, effective_pitch_classes, bass, required_pitch_classes, excluded_pitch_classes, options)
+        scored = _score_root(
+            root,
+            effective_pitch_classes,
+            bass,
+            required_pitch_classes,
+            excluded_pitch_classes,
+        )
         if scored is not None:
             label, score, explanation, rank_key = scored
             scored_roots.append((label, score, root, explanation, rank_key))
@@ -437,9 +441,7 @@ def _analyze_weighted_pitch_classes(
     note_weights: list[tuple[str, float]],
     required_pitch_classes: set[int] | None = None,
     excluded_pitch_classes: set[int] | None = None,
-    scoring_options: ChordScoringOptions | None = None,
 ) -> ChordAnalysis:
-    options = scoring_options or ChordScoringOptions()
     pitch_classes = sorted(pitch_weights)
     scored_roots = []
     for root in range(12):
@@ -449,7 +451,6 @@ def _analyze_weighted_pitch_classes(
             bass,
             required_pitch_classes,
             excluded_pitch_classes,
-            options,
         ):
             scored_roots.append((label, score, explanation, root, rank_key))
     if not scored_roots:

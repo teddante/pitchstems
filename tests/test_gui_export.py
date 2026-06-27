@@ -5,10 +5,10 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication
 
-from pitchstems.export_files import ExportItem  # noqa: E402
-from pitchstems.gui_export import ExportSelectedFilesDialog  # noqa: E402
+from pitchstems.export_files import ExportItem
+from pitchstems.gui_export import ExportSelectedFilesDialog
 
 
 def _app() -> QApplication:

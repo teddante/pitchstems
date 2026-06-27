@@ -101,6 +101,7 @@ class _CaptureProcess:
         return self.started and not self.terminated
 
     def join(self, timeout=0) -> None:
+        del timeout
         if self.terminated:
             self.exitcode = -15
 
@@ -132,6 +133,7 @@ class _FinishedProcess:
     exitcode = -15
 
     def join(self, timeout=0) -> None:
+        del timeout
         pass
 
 
@@ -329,7 +331,7 @@ class _FlushWindow:
             self.closed = True
 
 
-def test_flush_messages_reports_cancelled_completion_without_success_text(tmp_path: Path) -> None:
+def test_flush_messages_reports_cancelled_completion_without_success_text() -> None:
     window = _FlushWindow()
     window.messages.put(("WORKER_LOG", 7, "Processing cancelled."))
     window.messages.put(("ENABLE_PROCESS", 7, "cancelled"))
@@ -342,7 +344,7 @@ def test_flush_messages_reports_cancelled_completion_without_success_text(tmp_pa
     assert window.worker_jobs.active_token is None
 
 
-def test_flush_messages_reports_error_completion_without_success_text(tmp_path: Path) -> None:
+def test_flush_messages_reports_error_completion_without_success_text() -> None:
     window = _FlushWindow()
     window.messages.put(("WORKER_LOG", 7, "Error: boom"))
     window.messages.put(("ENABLE_PROCESS", 7, "error"))

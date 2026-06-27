@@ -5,9 +5,9 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import QUrl  # noqa: E402
+from PySide6.QtCore import QUrl
 
-from pitchstems.gui_transport import (  # noqa: E402
+from pitchstems.gui_transport import (
     TransportController,
     find_existing_midi_previews,
     loop_playback_start,
@@ -15,9 +15,9 @@ from pitchstems.gui_transport import (  # noqa: E402
     safe_qt_multimedia_call,
     start_player_source,
 )
-from pitchstems import gui_transport_flow  # noqa: E402
-from pitchstems.pipeline import PipelineResult  # noqa: E402
-from pitchstems.separation import StemResult  # noqa: E402
+from pitchstems import gui_transport_flow
+from pitchstems.pipeline import PipelineResult
+from pitchstems.separation import StemResult
 
 
 def _pipeline_result(project_dir: Path, stems: list[StemResult]) -> PipelineResult:
@@ -213,6 +213,7 @@ class _TransportWindow:
         save: bool = True,
         seek_players: bool = True,
     ) -> None:
+        del save, seek_players
         self.positions.append(seconds)
 
 

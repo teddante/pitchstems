@@ -21,7 +21,7 @@ class HarmonyRefreshGate:
     min_interval_seconds: float = 0.25
     last_refresh_seconds: float | None = None
 
-    def should_refresh(self, position_seconds: float, now_seconds: float, force: bool = False) -> bool:
+    def should_refresh(self, now_seconds: float, force: bool = False) -> bool:
         if force or self.last_refresh_seconds is None:
             self.last_refresh_seconds = now_seconds
             return True

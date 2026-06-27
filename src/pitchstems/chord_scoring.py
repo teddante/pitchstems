@@ -57,7 +57,6 @@ def _score_root(
     bass: int,
     required_pitch_classes: set[int] | None = None,
     excluded_pitch_classes: set[int] | None = None,
-    options: ChordScoringOptions | None = None,
 ) -> tuple[str, float, list[str], tuple[float, ...]] | None:
     intervals = {(pitch - root) % 12 for pitch in pitch_classes}
     best_quality = ""
@@ -95,10 +94,7 @@ def _score_root(
                 root=root,
                 required=required,
                 intervals=intervals,
-                bass=bass,
                 matched=matched,
-                extras=extras,
-                missing=missing,
                 coverage=coverage,
                 purity=purity,
                 score=score,
@@ -121,7 +117,6 @@ def _score_weighted_root_candidates(
     bass: int,
     required_pitch_classes: set[int] | None = None,
     excluded_pitch_classes: set[int] | None = None,
-    options: ChordScoringOptions | None = None,
 ) -> list[tuple[str, float, list[str], tuple[float, ...]]]:
     interval_weights = {
         (pitch - root) % 12: weight
@@ -174,10 +169,8 @@ def _score_weighted_root_candidates(
             root=root,
             required=required,
             interval_weights=interval_weights,
-            bass=bass,
             required_weight=required_weight,
             extra_weight=extra_weight,
-            missing=missing,
             coverage=coverage,
             score=score,
         )
@@ -280,7 +273,7 @@ def _partial_shell_candidates_from_weights(
                 continue
             omitted_tone = next(iter(missing))
             omitted_interval = (omitted_tone - root) % 12
-            omitted = _omitted_tone_suffix(omitted_interval, intervals)
+            omitted = _omitted_tone_suffix(omitted_interval)
             if omitted is None:
                 continue
             candidate_tones = [pitch_class for pitch_class in full_tones if pitch_class != omitted_tone]
@@ -337,7 +330,7 @@ def _partial_shell_candidates_from_weights(
     return candidates
 
 
-def _omitted_tone_suffix(omitted_interval: int, intervals: tuple[int, ...]) -> str | None:
+def _omitted_tone_suffix(omitted_interval: int) -> str | None:
     if omitted_interval == 7:
         return "(no5)"
     if omitted_interval in {3, 4}:
@@ -449,10 +442,7 @@ def _plain_score_explanation(
     root: int,
     required: tuple[int, ...],
     intervals: set[int],
-    bass: int,
     matched: int,
-    extras: int,
-    missing: int,
     coverage: float,
     purity: float,
     score: float,
@@ -478,10 +468,8 @@ def _weighted_score_explanation(
     root: int,
     required: tuple[int, ...],
     interval_weights: dict[int, float],
-    bass: int,
     required_weight: float,
     extra_weight: float,
-    missing: int,
     coverage: float,
     score: float,
 ) -> list[str]:

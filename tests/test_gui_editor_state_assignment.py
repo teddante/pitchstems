@@ -3,10 +3,10 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtCore import Qt
 
-from pitchstems.editor_project import ChordRegion  # noqa: E402
-from pitchstems import gui_editor_state  # noqa: E402
+from pitchstems.editor_project import ChordRegion
+from pitchstems import gui_editor_state
 
 
 class _Item:
@@ -35,7 +35,7 @@ class _StatusBar:
     def __init__(self) -> None:
         self.messages: list[str] = []
 
-    def showMessage(self, message: str, _timeout: int) -> None:  # noqa: N802 - Qt API shape
+    def showMessage(self, message: str, _timeout: int) -> None:
         self.messages.append(message)
 
 
@@ -59,7 +59,7 @@ class _Window:
     def display_chord(self, label: str) -> str:
         return label
 
-    def statusBar(self) -> _StatusBar:  # noqa: N802 - Qt API shape
+    def statusBar(self) -> _StatusBar:
         return self.status
 
 

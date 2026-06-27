@@ -7,11 +7,11 @@ import pytest
 pytest.importorskip("PySide6")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication
 
-from pitchstems.editor_project import ChordRegion, EditorProject, EditorTrack, NoteEvent  # noqa: E402
-from pitchstems.gui_track_controls import TRACK_CONTROL_MIN_HEIGHT  # noqa: E402
-from pitchstems.gui_timeline import TimelineView  # noqa: E402
+from pitchstems.editor_project import ChordRegion, EditorProject, EditorTrack, NoteEvent
+from pitchstems.gui_track_controls import TRACK_CONTROL_MIN_HEIGHT
+from pitchstems.gui_timeline import TimelineView
 
 
 def _app() -> QApplication:
@@ -172,7 +172,7 @@ def test_timeline_fit_time_range_rejects_tiny_targets(tmp_path: Path) -> None:
     assert not view.fit_time_range_to_view(1.0, 1.01)
 
 
-def test_tiny_chord_labels_fall_back_to_root_name(tmp_path: Path) -> None:
+def test_tiny_chord_labels_fall_back_to_root_name() -> None:
     _app()
     view = TimelineView()
 
