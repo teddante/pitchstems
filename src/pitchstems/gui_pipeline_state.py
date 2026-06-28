@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from pitchstems.acceleration import onnxruntime_status, torch_status
 from pitchstems.gui_helpers import blocked_signals, clear_layout
 from pitchstems.gui_import_clip import can_clear_import_clip_selection, can_play_import_clip_preview
@@ -8,6 +10,13 @@ from pitchstems.gui_pipeline_model import PipelinePageModel
 from pitchstems.model_catalog import DEFAULT_MODEL_KEY, model_choice
 from pitchstems.separation import SeparationOptions
 from pitchstems.transcription import MidiOptions
+
+
+@dataclass(frozen=True)
+class MidiStemCheckboxState:
+    checked: bool
+    enabled: bool
+    tooltip: str
 
 
 def set_processing_state(window, busy: bool) -> None:
@@ -119,18 +128,45 @@ def refresh_midi_stem_checks(window, *_args) -> None:
 
     for index, stem_name in enumerate(choice.stems):
         checkbox = QCheckBox(stem_name)
-        checkbox.setChecked(previous.get(stem_name, default_midi_checked(stem_name)))
-        can_run = window.generate_midi.isChecked() and (saved_stem is None or stem_name == saved_stem)
-        checkbox.setEnabled(can_run)
-        if saved_stem is not None and stem_name != saved_stem:
-            checkbox.setChecked(False)
-            checkbox.setToolTip("This stem is not being saved, so it cannot be analysed.")
-        elif stem_name.lower() == "drums":
-            checkbox.setToolTip("Off by default because Basic Pitch is not a drum transcription model.")
-        else:
-            checkbox.setToolTip("Run Basic Pitch on this separated stem.")
+        state = midi_stem_checkbox_state(
+            stem_name,
+            saved_stem,
+            generate_midi=window.generate_midi.isChecked(),
+            previous_checked=previous.get(stem_name),
+        )
+        checkbox.setChecked(state.checked)
+        checkbox.setEnabled(state.enabled)
+        checkbox.setToolTip(state.tooltip)
         window.midi_stem_checks[stem_name] = checkbox
         window.midi_stems_layout.addWidget(checkbox, index // 2, index % 2)
+
+
+def midi_stem_checkbox_state(
+    stem_name: str,
+    saved_stem: str | None,
+    *,
+    generate_midi: bool,
+    previous_checked: bool | None,
+) -> MidiStemCheckboxState:
+    enabled = generate_midi and (saved_stem is None or stem_name == saved_stem)
+    checked = previous_checked if previous_checked is not None else default_midi_checked(stem_name)
+    if saved_stem is not None and stem_name != saved_stem:
+        return MidiStemCheckboxState(
+            checked=False,
+            enabled=enabled,
+            tooltip="This stem is not being saved, so it cannot be analysed.",
+        )
+    if stem_name.lower() == "drums":
+        return MidiStemCheckboxState(
+            checked=checked,
+            enabled=enabled,
+            tooltip="Off by default because Basic Pitch is not a drum transcription model.",
+        )
+    return MidiStemCheckboxState(
+        checked=checked,
+        enabled=enabled,
+        tooltip="Run Basic Pitch on this separated stem.",
+    )
 
 
 def refresh_model_details(window, *_args) -> None:

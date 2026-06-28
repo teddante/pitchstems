@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from pitchstems.gui_pipeline_state import pipeline_settings_widgets, set_processing_state
+from pitchstems.gui_pipeline_state import midi_stem_checkbox_state, pipeline_settings_widgets, set_processing_state
 
 
 def test_pipeline_settings_widgets_lists_controls_in_stable_order() -> None:
@@ -26,6 +26,36 @@ def test_pipeline_settings_widgets_lists_controls_in_stable_order() -> None:
     window = SimpleNamespace(**controls)
 
     assert pipeline_settings_widgets(window) == tuple(controls[name] for name in names)
+
+
+def test_midi_stem_checkbox_state_uses_default_for_new_pitched_stem() -> None:
+    state = midi_stem_checkbox_state("bass", None, generate_midi=True, previous_checked=None)
+
+    assert state.checked is True
+    assert state.enabled is True
+    assert state.tooltip == "Run Basic Pitch on this separated stem."
+
+
+def test_midi_stem_checkbox_state_preserves_previous_choice_for_visible_stem() -> None:
+    state = midi_stem_checkbox_state("bass", "bass", generate_midi=True, previous_checked=False)
+
+    assert state.checked is False
+    assert state.enabled is True
+
+
+def test_midi_stem_checkbox_state_disables_when_midi_generation_is_off() -> None:
+    state = midi_stem_checkbox_state("bass", None, generate_midi=False, previous_checked=True)
+
+    assert state.checked is True
+    assert state.enabled is False
+
+
+def test_midi_stem_checkbox_state_excludes_unsaved_stem() -> None:
+    state = midi_stem_checkbox_state("drums", "bass", generate_midi=True, previous_checked=True)
+
+    assert state.checked is False
+    assert state.enabled is False
+    assert state.tooltip == "This stem is not being saved, so it cannot be analysed."
 
 
 def test_set_processing_state_uses_preview_range_for_import_play_button(monkeypatch) -> None:
