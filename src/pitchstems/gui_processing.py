@@ -71,10 +71,7 @@ def start_full_processing(window) -> None:
     token = start_worker_token(window)
     midi_stems = window.selected_midi_stems()
 
-    window.set_processing_state(True)
-    window.begin_activity("Running separation + MIDI...")
-    window.append_log("Starting separation + MIDI pipeline...")
-    start_process_job(
+    start_processing_request(
         window,
         token,
         target=run_full_pipeline_process,
@@ -93,6 +90,8 @@ def start_full_processing(window) -> None:
                 else None
             ),
         ),
+        activity_message="Running separation + MIDI...",
+        log_message="Starting separation + MIDI pipeline...",
     )
 
 
@@ -104,10 +103,7 @@ def start_midi_processing(window) -> None:
         return
     token = start_worker_token(window)
 
-    window.set_processing_state(True)
-    window.begin_activity("Rerunning MIDI...")
-    window.append_log("Rerunning MIDI from existing stems...")
-    start_process_job(
+    start_processing_request(
         window,
         token,
         target=run_midi_stage_process,
@@ -120,7 +116,24 @@ def start_midi_processing(window) -> None:
             midi_stems=window.selected_midi_stems(),
             create_zip=False,
         ),
+        activity_message="Rerunning MIDI...",
+        log_message="Rerunning MIDI from existing stems...",
     )
+
+
+def start_processing_request(
+    window,
+    token: int,
+    *,
+    target,
+    process_request,
+    activity_message: str,
+    log_message: str,
+) -> None:
+    window.set_processing_state(True)
+    window.begin_activity(activity_message)
+    window.append_log(log_message)
+    start_process_job(window, token, target=target, process_request=process_request)
 
 
 def start_process_job(window, token: int, target, process_request) -> None:
