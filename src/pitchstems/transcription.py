@@ -171,6 +171,12 @@ def midi_option_spec(field: str) -> MidiOptionSpec:
     return MIDI_OPTION_SPEC_BY_FIELD[field]
 
 
+def optional_frequency_limit(value: float | None) -> float | None:
+    if value is None or value <= 0:
+        return None
+    return value
+
+
 class TranscriptionDependencyError(RuntimeError):
     """Raised when Basic Pitch is not installed."""
 

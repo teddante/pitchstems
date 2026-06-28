@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from pitchstems.transcription import PERCUSSIVE_STEMS
+from pitchstems.transcription import PERCUSSIVE_STEMS, optional_frequency_limit
 
 
 def optional_frequency(value: float) -> float | None:
-    return value if value > 0 else None
+    return optional_frequency_limit(value)
 
 
 def default_midi_checked(stem_name: str) -> bool:

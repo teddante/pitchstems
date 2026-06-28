@@ -8,7 +8,7 @@ from pitchstems.model_catalog import DEFAULT_MODEL_KEY, model_choice
 from pitchstems.pipeline import process_audio_file
 from pitchstems.separation import download_model, model_key_for_profile, profile_keys
 from pitchstems.separation import SeparationOptions
-from pitchstems.transcription import MidiOptions, midi_option_spec
+from pitchstems.transcription import MidiOptions, midi_option_spec, optional_frequency_limit
 
 
 def main() -> int:
@@ -153,8 +153,8 @@ def main() -> int:
         onset_threshold=args.onset_threshold,
         frame_threshold=args.frame_threshold,
         minimum_note_length=args.minimum_note_length,
-        minimum_frequency=args.minimum_frequency,
-        maximum_frequency=args.maximum_frequency,
+        minimum_frequency=optional_frequency_limit(args.minimum_frequency),
+        maximum_frequency=optional_frequency_limit(args.maximum_frequency),
         multiple_pitch_bends=args.multiple_pitch_bends,
         melodia_trick=not args.no_melodia_trick,
         midi_tempo=args.midi_tempo,
