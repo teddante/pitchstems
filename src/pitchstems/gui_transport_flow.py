@@ -22,19 +22,7 @@ def prepare_transport_players(window, result) -> None:
 
 
 def start_midi_preview_render(window, result, requested_stems: set[str] | None = None) -> None:
-    if window.midi_preview_jobs.closing:
-        return
-    if window.editor_project is None or not window.editor_project.notes:
-        return
-    requested_keys = {stem.lower() for stem in (requested_stems or set())}
-    missing = [
-        track.name
-        for track in window.editor_project.tracks
-        if (not requested_keys or track.name.lower() in requested_keys)
-        if track.name not in window.transport.midi_preview_paths
-        and any(note.stem.lower() == track.name.lower() for note in window.editor_project.notes)
-        and not window._midi_preview_worker_running(result.project_dir, track.name)
-    ]
+    missing = midi_preview_stems_to_render(window, result, requested_stems)
     if not missing:
         return
     project = window.editor_project
@@ -78,6 +66,22 @@ def start_midi_preview_render(window, result, requested_stems: set[str] | None =
     for stem_name in missing:
         window.midi_preview_jobs.workers[(result.project_dir, stem_name.lower())] = (token, worker_thread)
     worker_thread.start()
+
+
+def midi_preview_stems_to_render(window, result, requested_stems: set[str] | None = None) -> list[str]:
+    if window.midi_preview_jobs.closing:
+        return []
+    if window.editor_project is None or not window.editor_project.notes:
+        return []
+    requested_keys = {stem.lower() for stem in (requested_stems or set())}
+    return [
+        track.name
+        for track in window.editor_project.tracks
+        if (not requested_keys or track.name.lower() in requested_keys)
+        if track.name not in window.transport.midi_preview_paths
+        and any(note.stem.lower() == track.name.lower() for note in window.editor_project.notes)
+        and not window._midi_preview_worker_running(result.project_dir, track.name)
+    ]
 
 
 def midi_preview_worker_running(window, project_dir: Path, stem_name: str) -> bool:

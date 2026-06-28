@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 import wave
 
 import pytest
@@ -16,6 +17,7 @@ from pitchstems.gui_transport import (
     start_player_source,
 )
 from pitchstems import gui_transport_flow
+from pitchstems.gui_transport_flow import midi_preview_stems_to_render
 from pitchstems.pipeline_models import PipelineResult, StemResult
 
 
@@ -50,6 +52,33 @@ def test_update_transport_position_loops_selected_chord_range() -> None:
 
     assert window.seeked_seconds == [1.0]
     assert window.positions == [1.0]
+
+
+def test_midi_preview_stems_to_render_filters_unavailable_tracks(tmp_path: Path) -> None:
+    result = _pipeline_result(tmp_path / "song.pitchstems", [])
+    window = _PreviewWindow(
+        tracks=["Bass", "Drums", "Piano", "Ready"],
+        note_stems=["bass", "drums", "ready"],
+        existing_previews={"Ready": tmp_path / "ready.wav"},
+        running={"drums"},
+    )
+
+    assert midi_preview_stems_to_render(window, result, {"BASS", "drums", "piano", "ready"}) == ["Bass"]
+    assert window.worker_checks == [
+        (result.project_dir, "Bass"),
+        (result.project_dir, "Drums"),
+    ]
+
+
+def test_midi_preview_stems_to_render_requires_project_notes(tmp_path: Path) -> None:
+    result = _pipeline_result(tmp_path / "song.pitchstems", [])
+    window = _PreviewWindow(tracks=["Bass"], note_stems=[])
+
+    assert midi_preview_stems_to_render(window, result) == []
+
+    window.editor_project = None
+
+    assert midi_preview_stems_to_render(window, result) == []
 
 
 def test_find_existing_midi_previews_returns_existing_stem_previews(tmp_path: Path) -> None:
@@ -213,6 +242,28 @@ class _TransportWindow:
     ) -> None:
         del save, seek_players
         self.positions.append(seconds)
+
+
+class _PreviewWindow:
+    def __init__(
+        self,
+        tracks: list[str],
+        note_stems: list[str],
+        existing_previews: dict[str, Path] | None = None,
+        running: set[str] | None = None,
+    ) -> None:
+        self.midi_preview_jobs = SimpleNamespace(closing=False)
+        self.editor_project = SimpleNamespace(
+            tracks=[SimpleNamespace(name=name) for name in tracks],
+            notes=[SimpleNamespace(stem=stem) for stem in note_stems],
+        )
+        self.transport = SimpleNamespace(midi_preview_paths=existing_previews or {})
+        self.running = {stem.lower() for stem in (running or set())}
+        self.worker_checks: list[tuple[Path, str]] = []
+
+    def _midi_preview_worker_running(self, project_dir: Path, stem_name: str) -> bool:
+        self.worker_checks.append((project_dir, stem_name))
+        return stem_name.lower() in self.running
 
 
 class _FakeAudioOutput:
