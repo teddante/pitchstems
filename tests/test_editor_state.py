@@ -14,7 +14,7 @@ from pitchstems.editor_state import (
     serialize_chord_overrides,
     serialize_chord_removals,
 )
-from pitchstems.pipeline import PipelineResult
+from pitchstems.pipeline_models import PipelineResult
 from pitchstems.project_store import load_project_manifest, save_project_manifest
 
 

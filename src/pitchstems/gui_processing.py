@@ -10,11 +10,11 @@ from pitchstems.audio_clip import AudioClipRange
 from pitchstems.gui_jobs import ProcessWorker, create_process_worker
 from pitchstems.pipeline import (
     PipelineCancelledError,
-    PipelineResult,
     process_audio_file,
     process_midi_from_stems,
 )
-from pitchstems.separation import SeparationOptions, StemResult
+from pitchstems.pipeline_models import PipelineResult, StemResult
+from pitchstems.separation import SeparationOptions
 from pitchstems.gui_shutdown import CANCELLING_AFTER_STAGE_MESSAGE, begin_auxiliary_shutdown
 from pitchstems.input_validation import validate_audio_input
 from pitchstems.transcription import MidiOptions

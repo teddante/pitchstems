@@ -11,7 +11,7 @@ from pitchstems.audio import normalize_to_wav
 from pitchstems.audio_clip import AudioClipRange
 from pitchstems.filename_safety import safe_file_stem
 from pitchstems.midi import combine_midi_tracks
-from pitchstems.pipeline_models import PipelineResult
+from pitchstems.pipeline_models import MidiResult, PipelineResult, StemResult
 from pitchstems.preflight import run_preflight
 from pitchstems.project_store import (
     PROJECT_FILENAME,
@@ -19,8 +19,8 @@ from pitchstems.project_store import (
     save_failed_project_manifest,
     save_project_manifest,
 )
-from pitchstems.separation import SeparationOptions, StemResult, separate_stems
-from pitchstems.transcription import MidiOptions, MidiResult, transcribe_stem_to_midi
+from pitchstems.separation import SeparationOptions, separate_stems
+from pitchstems.transcription import MidiOptions, transcribe_stem_to_midi
 
 
 CancelCheck = Callable[[], bool]

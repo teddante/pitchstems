@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pitchstems.cli as cli
 from pitchstems.model_catalog import DEFAULT_MODEL_KEY
-from pitchstems.pipeline import PipelineResult
+from pitchstems.pipeline_models import PipelineResult
 from pitchstems.separation import SeparationOptions
 
 

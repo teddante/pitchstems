@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Callable
 
 from pitchstems.acceleration import onnxruntime_status
+from pitchstems.pipeline_models import MidiResult
 
 PERCUSSIVE_STEMS = {"drums", "drum", "kick", "snare", "toms", "hh", "hats", "ride", "crash"}
 
@@ -168,19 +169,6 @@ MIDI_OPTION_SPEC_BY_FIELD = {spec.field: spec for spec in MIDI_OPTION_SPECS}
 
 def midi_option_spec(field: str) -> MidiOptionSpec:
     return MIDI_OPTION_SPEC_BY_FIELD[field]
-
-
-@dataclass(frozen=True)
-class MidiResult:
-    stem: str
-    path: Path
-    stem_id: str | None = None
-
-    @property
-    def safe_key(self) -> str:
-        from pitchstems.separation import safe_stem_key
-
-        return self.stem_id or safe_stem_key(self.stem)
 
 
 class TranscriptionDependencyError(RuntimeError):

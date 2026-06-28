@@ -10,7 +10,6 @@ from mido import Message, MidiFile, MidiTrack
 import pitchstems.pipeline as pipeline
 from pitchstems.audio_clip import AudioClipRange
 from pitchstems.pipeline import (
-    PipelineResult,
     _project_dir,
     _remove_export_stem_copies,
     _remove_staging_dir,
@@ -19,9 +18,8 @@ from pitchstems.pipeline import (
     process_audio_file,
     process_midi_from_stems,
 )
+from pitchstems.pipeline_models import MidiResult, PipelineResult, StemResult
 from pitchstems.project_store import save_project_manifest
-from pitchstems.separation import StemResult
-from pitchstems.transcription import MidiResult
 
 
 @pytest.fixture(autouse=True)

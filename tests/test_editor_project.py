@@ -23,9 +23,7 @@ from pitchstems.editor_project import (
     midi_note_name,
     read_midi_notes,
 )
-from pitchstems.pipeline import PipelineResult
-from pitchstems.separation import StemResult
-from pitchstems.transcription import MidiResult
+from pitchstems.pipeline_models import MidiResult, PipelineResult, StemResult
 
 
 def test_read_midi_notes_returns_absolute_seconds(tmp_path: Path) -> None:

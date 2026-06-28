@@ -10,9 +10,10 @@ from pathlib import Path
 from typing import Any, Callable, cast
 
 from pitchstems.audio_clip import AudioClipRange, clip_range_from_manifest
-from pitchstems.pipeline_models import PipelineResult
-from pitchstems.separation import SeparationOptions, StemResult, safe_stem_key
-from pitchstems.transcription import MidiOptions, MidiResult
+from pitchstems.filename_safety import safe_stem_key
+from pitchstems.pipeline_models import MidiResult, PipelineResult, StemResult
+from pitchstems.separation import SeparationOptions
+from pitchstems.transcription import MidiOptions
 
 
 PROJECT_FILENAME = "pitchstems.project.json"

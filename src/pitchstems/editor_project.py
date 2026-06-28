@@ -35,7 +35,7 @@ from pitchstems.chord_explanation import partial_harmony_hints
 from pitchstems.chord_scoring import ChordScoringOptions, PartialChordCandidate
 from pitchstems.editor_models import ChordRegion, NoteEvent
 from pitchstems.editor_query import ChordIndex, NoteIndex
-from pitchstems.pipeline import PipelineResult
+from pitchstems.pipeline_models import PipelineResult
 
 
 DEFAULT_TEMPO = 500000

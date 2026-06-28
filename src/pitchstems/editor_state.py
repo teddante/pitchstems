@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from pitchstems.editor_project import ChordRegion
-from pitchstems.pipeline import PipelineResult
+from pitchstems.pipeline_models import PipelineResult
 from pitchstems.project_store import PROJECT_FILENAME, load_project_manifest, save_project_manifest
 
 

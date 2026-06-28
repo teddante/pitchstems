@@ -25,7 +25,7 @@ from pitchstems.editor_loader import EditorLoadResult
 from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
 from pitchstems.midi_preview import render_note_preview
 from pitchstems.notation import pitch_class_for_name, pitch_class_name
-from pitchstems.pipeline import PipelineResult
+from pitchstems.pipeline_models import PipelineResult, StemResult
 from pitchstems.harmony_inspector import (
     chord_analysis_track_names as inspector_chord_analysis_track_names,
     resolve_notation_preference,
@@ -45,7 +45,6 @@ from pitchstems import gui_transport_flow
 from pitchstems.gui_jobs import EditorLoadJobState, MidiPreviewJobState, WorkerJobState
 from pitchstems.gui_theme import pitchstems_stylesheet
 from pitchstems.gui_track_controls import rebuild_track_controls, sync_track_control_panel as sync_track_controls
-from pitchstems.separation import StemResult
 from pitchstems.theory import (
     ChordGapAnalysis,
     TheoryAnalysis,

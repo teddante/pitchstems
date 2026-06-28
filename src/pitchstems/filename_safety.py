@@ -24,3 +24,17 @@ def safe_file_stem(value: str, fallback: str, max_length: int = 80) -> str:
     if is_windows_reserved_name(safe):
         safe = f"{fallback}_{safe}"
     return safe
+
+
+def safe_stem_key(value: str) -> str:
+    cleaned = []
+    previous_dash = False
+    for character in value.strip().lower():
+        if character.isalnum():
+            cleaned.append(character)
+            previous_dash = False
+        elif not previous_dash:
+            cleaned.append("-")
+            previous_dash = True
+    key = "".join(cleaned).strip("-")
+    return key or "stem"

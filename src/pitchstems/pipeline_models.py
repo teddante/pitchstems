@@ -4,8 +4,29 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pitchstems.audio_clip import AudioClipRange
-from pitchstems.separation import StemResult
-from pitchstems.transcription import MidiResult
+from pitchstems.filename_safety import safe_stem_key
+
+
+@dataclass(frozen=True)
+class StemResult:
+    name: str
+    path: Path
+    stem_id: str | None = None
+
+    @property
+    def safe_key(self) -> str:
+        return self.stem_id or safe_stem_key(self.name)
+
+
+@dataclass(frozen=True)
+class MidiResult:
+    stem: str
+    path: Path
+    stem_id: str | None = None
+
+    @property
+    def safe_key(self) -> str:
+        return self.stem_id or safe_stem_key(self.stem)
 
 
 @dataclass(frozen=True)

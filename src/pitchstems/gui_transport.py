@@ -7,7 +7,7 @@ from PySide6.QtCore import QUrl
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 
 from pitchstems.midi_preview import midi_preview_path, valid_preview_wav
-from pitchstems.pipeline import PipelineResult
+from pitchstems.pipeline_models import PipelineResult
 
 
 def safe_qt_multimedia_call(logger, message: str, callback: Callable[[], None]) -> bool:

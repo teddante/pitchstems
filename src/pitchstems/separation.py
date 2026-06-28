@@ -8,7 +8,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from pitchstems.filename_safety import safe_stem_key as safe_stem_key
 from pitchstems.model_catalog import DEFAULT_MODEL_KEY, ModelChoice, model_choice
+from pitchstems.pipeline_models import StemResult
 
 
 @dataclass(frozen=True)
@@ -44,31 +46,6 @@ class SeparationOptions:
     @property
     def choice(self) -> ModelChoice:
         return model_choice(self.model_key)
-
-
-@dataclass(frozen=True)
-class StemResult:
-    name: str
-    path: Path
-    stem_id: str | None = None
-
-    @property
-    def safe_key(self) -> str:
-        return self.stem_id or safe_stem_key(self.name)
-
-
-def safe_stem_key(value: str) -> str:
-    cleaned = []
-    previous_dash = False
-    for character in value.strip().lower():
-        if character.isalnum():
-            cleaned.append(character)
-            previous_dash = False
-        elif not previous_dash:
-            cleaned.append("-")
-            previous_dash = True
-    key = "".join(cleaned).strip("-")
-    return key or "stem"
 
 
 class SeparationDependencyError(RuntimeError):

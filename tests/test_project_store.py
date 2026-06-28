@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from pitchstems.audio_clip import AudioClipRange
-from pitchstems.pipeline import PipelineResult
+from pitchstems.pipeline_models import MidiResult, PipelineResult, StemResult
 from pitchstems.project_store import (
     PROJECT_FILENAME,
     load_pipeline_result,
@@ -13,8 +13,8 @@ from pitchstems.project_store import (
     save_project_manifest,
     _write_json_atomic,
 )
-from pitchstems.separation import SeparationOptions, StemResult
-from pitchstems.transcription import MidiOptions, MidiResult
+from pitchstems.separation import SeparationOptions
+from pitchstems.transcription import MidiOptions
 
 
 def test_save_and_load_project_manifest_round_trip(tmp_path: Path) -> None:

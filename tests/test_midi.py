@@ -3,7 +3,7 @@ from pathlib import Path
 from mido import Message, MidiFile, MidiTrack
 
 from pitchstems.midi import combine_midi_tracks
-from pitchstems.transcription import MidiResult
+from pitchstems.pipeline_models import MidiResult
 
 
 def _write_midi(path: Path, note: int, ticks_per_beat: int = 480, note_off_ticks: int = 120) -> None:

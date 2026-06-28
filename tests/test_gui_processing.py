@@ -7,8 +7,8 @@ import pitchstems.gui_processing as gui_processing
 import pitchstems.gui_shutdown as gui_shutdown
 from pitchstems.audio_clip import AudioClipRange
 from pitchstems.gui_jobs import EditorLoadJobState, MidiPreviewJobState, WorkerJobState
-from pitchstems.pipeline import PipelineResult
-from pitchstems.separation import SeparationOptions, StemResult
+from pitchstems.pipeline_models import PipelineResult, StemResult
+from pitchstems.separation import SeparationOptions
 from pitchstems.transcription import MidiOptions
 
 

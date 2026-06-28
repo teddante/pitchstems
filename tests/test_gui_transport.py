@@ -16,8 +16,7 @@ from pitchstems.gui_transport import (
     start_player_source,
 )
 from pitchstems import gui_transport_flow
-from pitchstems.pipeline import PipelineResult
-from pitchstems.separation import StemResult
+from pitchstems.pipeline_models import PipelineResult, StemResult
 
 
 def _pipeline_result(project_dir: Path, stems: list[StemResult]) -> PipelineResult:

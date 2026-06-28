@@ -4,7 +4,7 @@ from pathlib import Path
 
 from mido import MidiFile, MidiTrack, MetaMessage
 
-from pitchstems.transcription import MidiResult
+from pitchstems.pipeline_models import MidiResult
 
 
 def combine_midi_tracks(midi_results: list[MidiResult], output_path: Path) -> Path | None:

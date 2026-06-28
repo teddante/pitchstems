@@ -5,10 +5,8 @@ from mido import Message, MidiFile, MidiTrack
 
 from pitchstems.editor_loader import apply_chord_edits, build_editor_load_result
 from pitchstems.editor_project import ChordRegion, EditorProject
-from pitchstems.pipeline import PipelineResult
+from pitchstems.pipeline_models import MidiResult, PipelineResult, StemResult
 from pitchstems.project_store import save_project_manifest
-from pitchstems.separation import StemResult
-from pitchstems.transcription import MidiResult
 
 
 def test_apply_chord_edits_replaces_only_overlapping_time_ranges() -> None:

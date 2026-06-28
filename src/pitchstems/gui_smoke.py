@@ -13,11 +13,9 @@ from PySide6.QtWidgets import QApplication
 from pitchstems.editor_loader import EditorLoadResult
 from pitchstems.export_files import build_export_items, copy_export_items
 from pitchstems import gui_editor_actions
-from pitchstems.pipeline import PipelineResult
+from pitchstems.pipeline_models import MidiResult, PipelineResult, StemResult
 from pitchstems.project_store import save_project_manifest
-from pitchstems.separation import StemResult
 from pitchstems.harmony_report import current_chord_analysis_report
-from pitchstems.transcription import MidiResult
 
 
 def run_startup_smoke(window) -> None:

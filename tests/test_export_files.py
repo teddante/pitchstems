@@ -3,9 +3,7 @@ from pathlib import Path
 import pytest
 
 from pitchstems.export_files import build_export_items, copy_export_items
-from pitchstems.pipeline import PipelineResult
-from pitchstems.separation import StemResult
-from pitchstems.transcription import MidiResult
+from pitchstems.pipeline_models import MidiResult, PipelineResult, StemResult
 
 
 def _write(path: Path, content: bytes = b"data") -> Path:

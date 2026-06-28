@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pitchstems.filename_safety import safe_file_stem
-from pitchstems.pipeline import PipelineResult
+from pitchstems.pipeline_models import PipelineResult
 
 
 @dataclass(frozen=True)
