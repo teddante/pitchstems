@@ -20,7 +20,6 @@ from pitchstems.editor_project import (
     midi_note_name,
 )
 from pitchstems.editor_playback import review_playback_loop_range
-from pitchstems.editor_review_target import review_ranges, single_review_range
 from pitchstems.editor_loader import EditorLoadResult
 from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
 from pitchstems.midi_preview import render_note_preview
@@ -45,12 +44,7 @@ from pitchstems import gui_transport_flow
 from pitchstems.gui_jobs import EditorLoadJobState, MidiPreviewJobState, WorkerJobState
 from pitchstems.gui_theme import pitchstems_stylesheet
 from pitchstems.gui_track_controls import rebuild_track_controls, sync_track_control_panel as sync_track_controls
-from pitchstems.theory import (
-    ChordGapAnalysis,
-    TheoryAnalysis,
-    analyze_theory_at,
-    analyze_theory_region,
-)
+from pitchstems.theory import ChordGapAnalysis, TheoryAnalysis
 from pitchstems.time_format import format_time
 from pitchstems.transcription import midi_option_spec
 
@@ -977,20 +971,7 @@ def main() -> int:
             self.chord_context.setToolTip(text)
 
         def refresh_current_theory(self, source_notes: list[NoteEvent], seconds: float) -> None:
-            if self.editor_project is None:
-                self.set_theory_analysis(None)
-                return
-            selection_ranges = review_ranges(self.timeline.selection_ranges(), self.timeline.selected_chord)
-            if len(selection_ranges) > 1:
-                self.set_theory_analysis(None)
-                return
-            selection = single_review_range(selection_ranges)
-            if selection is not None:
-                start, end = selection
-                analysis = analyze_theory_region(source_notes, self.editor_project.chords, start, end)
-            else:
-                analysis = analyze_theory_at(source_notes, self.editor_project.chords, seconds)
-            self.set_theory_analysis(analysis)
+            gui_harmony_flow.refresh_current_theory(self, source_notes, seconds)
 
         def set_theory_analysis(self, analysis: TheoryAnalysis | None) -> None:
             self.current_theory_analysis = analysis

@@ -18,6 +18,7 @@ from pitchstems.harmony_inspector import (
     selected_chord_analysis_notes,
 )
 from pitchstems import harmony_panel
+from pitchstems.theory import analyze_theory_at, analyze_theory_region
 
 
 @dataclass
@@ -135,6 +136,23 @@ def chord_context_key(window, seconds: float):
         single_review_range(ranges),
         ranges,
     )
+
+
+def refresh_current_theory(window, source_notes, seconds: float) -> None:
+    if window.editor_project is None:
+        window.set_theory_analysis(None)
+        return
+    selection_ranges = review_ranges(window.timeline.selection_ranges(), window.timeline.selected_chord)
+    if len(selection_ranges) > 1:
+        window.set_theory_analysis(None)
+        return
+    selection = single_review_range(selection_ranges)
+    if selection is not None:
+        start, end = selection
+        analysis = analyze_theory_region(source_notes, window.editor_project.chords, start, end)
+    else:
+        analysis = analyze_theory_at(source_notes, window.editor_project.chords, seconds)
+    window.set_theory_analysis(analysis)
 
 
 def refresh_current_gap_suggestions(window, source_notes) -> None:

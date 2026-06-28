@@ -7,6 +7,7 @@ from pitchstems.gui_harmony_flow import (
     chord_context_key,
     current_chord_gap_range,
     refresh_current_gap_suggestions,
+    refresh_current_theory,
 )
 
 
@@ -86,6 +87,57 @@ def test_refresh_current_gap_suggestions_clears_when_no_gap() -> None:
     assert window.gap_analyses == [None]
 
 
+def test_refresh_current_theory_clears_without_project() -> None:
+    window = _TheoryWindow(ranges=[])
+    window.editor_project = None
+
+    refresh_current_theory(window, [], 1.25)
+
+    assert window.theory_analyses == [None]
+
+
+def test_refresh_current_theory_clears_multiple_review_ranges() -> None:
+    window = _TheoryWindow(ranges=[(1.0, 2.0), (3.0, 4.0)])
+
+    refresh_current_theory(window, [], 1.25)
+
+    assert window.theory_analyses == [None]
+
+
+def test_refresh_current_theory_uses_selected_region(monkeypatch) -> None:
+    window = _TheoryWindow(ranges=[(1.0, 2.0)])
+    source_notes = [object()]
+    calls = []
+
+    def fake_analyze_theory_region(notes, chords, start, end):
+        calls.append((notes, chords, start, end))
+        return "region analysis"
+
+    monkeypatch.setattr(gui_harmony_flow, "analyze_theory_region", fake_analyze_theory_region)
+
+    refresh_current_theory(window, source_notes, 9.0)
+
+    assert calls == [(source_notes, window.editor_project.chords, 1.0, 2.0)]
+    assert window.theory_analyses == ["region analysis"]
+
+
+def test_refresh_current_theory_uses_playhead_without_selection(monkeypatch) -> None:
+    window = _TheoryWindow(ranges=[])
+    source_notes = [object()]
+    calls = []
+
+    def fake_analyze_theory_at(notes, chords, seconds):
+        calls.append((notes, chords, seconds))
+        return "point analysis"
+
+    monkeypatch.setattr(gui_harmony_flow, "analyze_theory_at", fake_analyze_theory_at)
+
+    refresh_current_theory(window, source_notes, 9.0)
+
+    assert calls == [(source_notes, window.editor_project.chords, 9.0)]
+    assert window.theory_analyses == ["point analysis"]
+
+
 class _Timeline:
     def __init__(
         self,
@@ -149,3 +201,22 @@ class _GapWindow:
 
     def set_gap_analysis(self, analysis) -> None:
         self.gap_analyses.append(analysis)
+
+
+class _TheoryProject:
+    def __init__(self) -> None:
+        self.chords = [ChordRegion(0.0, 1.0, "C", 0.8)]
+
+
+class _TheoryWindow:
+    def __init__(
+        self,
+        ranges: list[tuple[float, float]],
+        selected_chord: ChordRegion | None = None,
+    ) -> None:
+        self.timeline = _Timeline(ranges, selected_chord)
+        self.editor_project: _TheoryProject | None = _TheoryProject()
+        self.theory_analyses = []
+
+    def set_theory_analysis(self, analysis) -> None:
+        self.theory_analyses.append(analysis)
