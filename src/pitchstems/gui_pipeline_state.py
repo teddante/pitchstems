@@ -38,7 +38,14 @@ def set_processing_state(window, busy: bool) -> None:
     window.generate_midi.setEnabled(model.settings_enabled)
     for checkbox in window.midi_stem_checks.values():
         checkbox.setEnabled(model.midi_stem_checks_enabled)
-    for widget in [
+    for widget in pipeline_settings_widgets(window):
+        widget.setEnabled(model.settings_enabled)
+    if not busy:
+        refresh_midi_stem_checks(window)
+
+
+def pipeline_settings_widgets(window) -> tuple[object, ...]:
+    return (
         window.onset_threshold,
         window.frame_threshold,
         window.minimum_note_length,
@@ -52,10 +59,7 @@ def set_processing_state(window, busy: bool) -> None:
         window.sonify_midi,
         window.sonification_samplerate,
         window.open_when_done,
-    ]:
-        widget.setEnabled(model.settings_enabled)
-    if not busy:
-        window.refresh_midi_stem_checks()
+    )
 
 
 def selected_separation_options(window) -> SeparationOptions:
@@ -127,7 +131,7 @@ def refresh_model_details(window, *_args) -> None:
     for stem_name in choice.stems:
         window.stem.addItem(stem_name, stem_name)
     window.stem.blockSignals(False)
-    window.refresh_midi_stem_checks()
+    refresh_midi_stem_checks(window)
 
     torch = torch_status()
     ort = onnxruntime_status()
