@@ -48,7 +48,6 @@ from pitchstems.gui_track_controls import rebuild_track_controls, sync_track_con
 from pitchstems.theory import (
     ChordGapAnalysis,
     TheoryAnalysis,
-    analyze_chord_gap,
     analyze_theory_at,
     analyze_theory_region,
 )
@@ -1035,33 +1034,10 @@ def main() -> int:
                 )
 
         def refresh_current_gap_suggestions(self, source_notes: list[NoteEvent]) -> None:
-            if self.editor_project is None:
-                self.set_gap_analysis(None)
-                return
-            gap = self.current_chord_gap_range()
-            if gap is None:
-                self.set_gap_analysis(None)
-                return
-            start, end = gap
-            analysis = analyze_chord_gap(
-                source_notes,
-                self.editor_project.chords,
-                start,
-                end,
-                scoring_options=self.chord_scoring_options(),
-            )
-            self.set_gap_analysis(analysis)
+            gui_harmony_flow.refresh_current_gap_suggestions(self, source_notes)
 
         def current_chord_gap_range(self) -> tuple[float, float] | None:
-            if self.editor_project is None:
-                return None
-            selection = self.timeline.selection_range()
-            if selection is not None:
-                start, end = selection
-                if end - start >= 0.05:
-                    return start, end
-                return None
-            return self.editor_project.chord_index.gap_at(self.timeline.position)
+            return gui_harmony_flow.current_chord_gap_range(self)
 
         def set_gap_analysis(self, analysis: ChordGapAnalysis | None) -> None:
             harmony_panel.set_gap_analysis(self, analysis)

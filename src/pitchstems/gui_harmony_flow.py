@@ -8,6 +8,7 @@ from pitchstems.editor_review_target import (
     single_review_range,
 )
 from pitchstems.editor_project import analyze_chord_at, analyze_chord_regions
+from pitchstems.chord_gap_analysis import analyze_chord_gap
 from pitchstems.harmony_inspector import (
     chord_base_pitch_weights as inspector_chord_base_pitch_weights,
     chord_note_constraints as inspector_chord_note_constraints,
@@ -134,6 +135,37 @@ def chord_context_key(window, seconds: float):
         single_review_range(ranges),
         ranges,
     )
+
+
+def refresh_current_gap_suggestions(window, source_notes) -> None:
+    if window.editor_project is None:
+        window.set_gap_analysis(None)
+        return
+    gap = current_chord_gap_range(window)
+    if gap is None:
+        window.set_gap_analysis(None)
+        return
+    start, end = gap
+    analysis = analyze_chord_gap(
+        source_notes,
+        window.editor_project.chords,
+        start,
+        end,
+        scoring_options=window.chord_scoring_options(),
+    )
+    window.set_gap_analysis(analysis)
+
+
+def current_chord_gap_range(window) -> tuple[float, float] | None:
+    if window.editor_project is None:
+        return None
+    selection = window.timeline.selection_range()
+    if selection is not None:
+        start, end = selection
+        if end - start >= 0.05:
+            return start, end
+        return None
+    return window.editor_project.chord_index.gap_at(window.timeline.position)
 
 
 def chord_analysis_notes(window):
