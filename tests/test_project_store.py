@@ -196,7 +196,14 @@ def test_load_pipeline_result_rejects_failed_manifest_with_last_error(tmp_path: 
     normalized.parent.mkdir(parents=True)
     source.write_bytes(b"source")
     normalized.write_bytes(b"wav")
-    save_failed_project_manifest(project_dir, source, normalized, "native failed")
+    manifest_path = save_failed_project_manifest(project_dir, source, normalized, "native failed")
+    manifest = load_project_manifest(manifest_path)
+
+    assert manifest["format"] == "pitchstems-project"
+    assert manifest["format_version"] == 2
+    assert manifest["name"] == "song"
+    assert manifest["status"] == "failed"
+    assert manifest["last_error"] == "native failed"
 
     with pytest.raises(ValueError, match="Project processing failed: native failed"):
         load_pipeline_result(project_dir)

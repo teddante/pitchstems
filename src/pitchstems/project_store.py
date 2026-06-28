@@ -67,11 +67,7 @@ def save_project_manifest(
         editor = _existing_manifest_section(existing, "editor")
 
         manifest = {
-            "format": "pitchstems-project",
-            "format_version": PROJECT_FORMAT_VERSION,
-            "created_at": created_at,
-            "updated_at": _now(),
-            "name": project_dir.name.removesuffix(".pitchstems"),
+            **_project_manifest_envelope(project_dir, created_at=created_at),
             "source_audio": _relative_or_absolute(project_dir, source_audio),
             "normalized_audio": _relative_or_absolute(project_dir, result.normalized_audio),
             "stems": [
@@ -131,11 +127,7 @@ def save_failed_project_manifest(
     project_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = project_manifest_path(project_dir)
     manifest = {
-        "format": "pitchstems-project",
-        "format_version": PROJECT_FORMAT_VERSION,
-        "created_at": _now(),
-        "updated_at": _now(),
-        "name": project_dir.name.removesuffix(".pitchstems"),
+        **_project_manifest_envelope(project_dir),
         "status": "failed",
         "last_error": error,
         "source_audio": _relative_or_absolute(project_dir, source_audio),
@@ -264,6 +256,21 @@ def _editor_state_manifest(
         "chord_overrides": _manifest_field(chord_overrides, existing_editor, "chord_overrides", []),
         "chord_removals": _manifest_field(chord_removals, existing_editor, "chord_removals", []),
         "note_edits": existing_editor.get("note_edits", []),
+    }
+
+
+def _project_manifest_envelope(
+    project_dir: Path,
+    *,
+    created_at: str | None = None,
+    updated_at: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "format": "pitchstems-project",
+        "format_version": PROJECT_FORMAT_VERSION,
+        "created_at": created_at or _now(),
+        "updated_at": updated_at or _now(),
+        "name": project_dir.name.removesuffix(".pitchstems"),
     }
 
 
