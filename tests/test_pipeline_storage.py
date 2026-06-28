@@ -10,6 +10,7 @@ from mido import Message, MidiFile, MidiTrack
 import pitchstems.pipeline as pipeline
 from pitchstems.audio_clip import AudioClipRange
 from pitchstems.pipeline import (
+    _ProjectWorkspace,
     _project_dir,
     _remove_export_stem_copies,
     _remove_staging_dir,
@@ -783,6 +784,33 @@ def test_project_dir_avoids_same_second_name_collision(tmp_path: Path) -> None:
 
     assert second != first
     assert second.name.endswith("-2.pitchstems")
+
+
+def test_project_workspace_names_and_creates_pipeline_directories(tmp_path: Path) -> None:
+    audio_path = tmp_path / "Song Title!.mp3"
+    audio_path.write_bytes(b"audio")
+
+    workspace = _ProjectWorkspace.from_input(tmp_path / "out", audio_path)
+    workspace.create_directories()
+
+    assert workspace.input_stem == "Song_Title"
+    assert workspace.audio_dir == workspace.project_dir / "audio"
+    assert workspace.work_dir == workspace.project_dir / "work"
+    assert workspace.stems_dir == workspace.project_dir / "stems"
+    assert workspace.midi_dir == workspace.project_dir / "midi"
+    assert workspace.export_dir == workspace.project_dir / "export"
+    assert workspace.normalized_audio == workspace.work_dir / "Song_Title.wav"
+    assert workspace.zip_path == workspace.project_dir / "Song_Title_pitchstems.zip"
+    assert all(
+        path.is_dir()
+        for path in [
+            workspace.audio_dir,
+            workspace.work_dir,
+            workspace.stems_dir,
+            workspace.midi_dir,
+            workspace.export_dir,
+        ]
+    )
 
 
 def test_pipeline_uses_bounded_safe_names_for_long_audio_files(tmp_path: Path, monkeypatch) -> None:

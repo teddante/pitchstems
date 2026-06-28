@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import shutil
 import zipfile
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -28,6 +29,49 @@ CancelCheck = Callable[[], bool]
 
 class PipelineCancelledError(RuntimeError):
     """Raised when a user-requested cancellation stops pipeline orchestration."""
+
+
+@dataclass(frozen=True)
+class _ProjectWorkspace:
+    project_dir: Path
+    input_stem: str
+    audio_dir: Path
+    work_dir: Path
+    stems_dir: Path
+    midi_dir: Path
+    export_dir: Path
+
+    @classmethod
+    def from_input(cls, output_root: Path, input_path: Path) -> "_ProjectWorkspace":
+        project_dir = _project_dir(output_root, input_path)
+        input_stem = _safe_stem(input_path.stem)
+        return cls(
+            project_dir=project_dir,
+            input_stem=input_stem,
+            audio_dir=project_dir / "audio",
+            work_dir=project_dir / "work",
+            stems_dir=project_dir / "stems",
+            midi_dir=project_dir / "midi",
+            export_dir=project_dir / "export",
+        )
+
+    @property
+    def normalized_audio(self) -> Path:
+        return self.work_dir / f"{self.input_stem}.wav"
+
+    @property
+    def zip_path(self) -> Path:
+        return self.project_dir / f"{self.input_stem}_pitchstems.zip"
+
+    def create_directories(self) -> None:
+        for directory in [
+            self.audio_dir,
+            self.work_dir,
+            self.stems_dir,
+            self.midi_dir,
+            self.export_dir,
+        ]:
+            directory.mkdir(parents=True, exist_ok=True)
 
 
 def process_audio_file(
@@ -60,29 +104,21 @@ def process_audio_file(
     if not report.ok:
         raise RuntimeError(f"Preflight failed: {report.failure_summary()}")
 
-    input_stem = _safe_stem(input_path.stem)
-    project_dir = _project_dir(output_root, input_path)
-    audio_dir = project_dir / "audio"
-    work_dir = project_dir / "work"
-    stems_dir = project_dir / "stems"
-    midi_dir = project_dir / "midi"
-    export_dir = project_dir / "export"
-
-    for directory in [audio_dir, work_dir, stems_dir, midi_dir, export_dir]:
-        directory.mkdir(parents=True, exist_ok=True)
+    workspace = _ProjectWorkspace.from_input(output_root, input_path)
+    workspace.create_directories()
     if project_created is not None:
-        project_created(project_dir)
+        project_created(workspace.project_dir)
 
     project_source_audio: Path | None = None
     original_source_audio: Path | None = None
-    normalized_audio = work_dir / f"{input_stem}.wav"
+    normalized_audio = workspace.normalized_audio
     project_manifest_written = False
     try:
         if source_clip is None:
-            project_source_audio = _copy_source_audio(input_path, audio_dir)
+            project_source_audio = _copy_source_audio(input_path, workspace.audio_dir)
             normalize_input = project_source_audio
         else:
-            project_source_audio = audio_dir / f"{input_stem}_clip.wav"
+            project_source_audio = workspace.audio_dir / f"{workspace.input_stem}_clip.wav"
             original_source_audio = input_path
             normalize_input = input_path
         _raise_if_cancelled(cancelled)
@@ -104,7 +140,7 @@ def process_audio_file(
 
         stems = separate_stems(
             normalized_audio,
-            stems_dir,
+            workspace.stems_dir,
             profile=quality,
             options=separation_options,
             log=log,
@@ -116,8 +152,8 @@ def process_audio_file(
         zip_path = None
         if generate_midi and midi_policy != "none":
             midi_result = process_midi_from_stems(
-                project_dir=project_dir,
-                input_stem=input_stem,
+                project_dir=workspace.project_dir,
+                input_stem=workspace.input_stem,
                 normalized_audio=normalized_audio,
                 stems=stems,
                 source_audio=project_source_audio,
@@ -132,14 +168,14 @@ def process_audio_file(
             )
             midi_files = midi_result.midi_files
             combined_midi = midi_result.combined_midi
-            zip_path = project_dir / f"{input_stem}_pitchstems.zip" if create_zip else None
+            zip_path = workspace.zip_path if create_zip else None
         else:
             if log:
                 log("Skipping MIDI transcription.")
-            zip_path = project_dir / f"{input_stem}_pitchstems.zip" if create_zip else None
+            zip_path = workspace.zip_path if create_zip else None
 
         result = PipelineResult(
-            project_dir=project_dir,
+            project_dir=workspace.project_dir,
             normalized_audio=normalized_audio,
             stems=stems,
             midi_files=midi_files,
@@ -160,16 +196,21 @@ def process_audio_file(
         )
         project_manifest_written = True
         if zip_path:
-            _zip_project_outputs(project_dir, stems, midi_files, combined_midi, zip_path)
+            _zip_project_outputs(workspace.project_dir, stems, midi_files, combined_midi, zip_path)
         if log:
-            log(f"Done: {zip_path or project_dir}")
+            log(f"Done: {zip_path or workspace.project_dir}")
         return result
     except PipelineCancelledError:
-        _remove_new_project_dir(project_dir, output_root)
+        _remove_new_project_dir(workspace.project_dir, output_root)
         raise
     except Exception as exc:
         if not project_manifest_written:
-            save_failed_project_manifest(project_dir, project_source_audio, normalized_audio, str(exc))
+            save_failed_project_manifest(
+                workspace.project_dir,
+                project_source_audio,
+                normalized_audio,
+                str(exc),
+            )
         raise
 
 
