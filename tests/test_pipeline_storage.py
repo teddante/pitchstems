@@ -13,6 +13,7 @@ from pitchstems.pipeline import (
     _MidiWorkspace,
     _ProjectWorkspace,
     _package_pipeline_outputs,
+    _prepare_source_audio_input,
     _project_dir,
     _remove_export_stem_copies,
     _remove_staging_dir,
@@ -55,6 +56,41 @@ def test_selected_midi_stem_keys_normalizes_explicit_selection() -> None:
 def test_selected_midi_stem_keys_rejects_empty_explicit_selection() -> None:
     with pytest.raises(ValueError, match="Choose at least one stem"):
         _selected_midi_stem_keys(set())
+
+
+def test_prepare_source_audio_input_copies_whole_file_import(tmp_path: Path) -> None:
+    input_path = _write_file(tmp_path / "Song.MP3", b"audio")
+    workspace = _ProjectWorkspace.from_input(tmp_path / "out", input_path)
+    workspace.create_directories()
+
+    project_source_audio, original_source_audio, normalize_input = _prepare_source_audio_input(
+        input_path,
+        workspace,
+        None,
+    )
+
+    assert project_source_audio == workspace.audio_dir / "Song.mp3"
+    assert project_source_audio.read_bytes() == b"audio"
+    assert original_source_audio is None
+    assert normalize_input == project_source_audio
+
+
+def test_prepare_source_audio_input_uses_original_for_clip_import(tmp_path: Path) -> None:
+    input_path = _write_file(tmp_path / "Song.wav", b"audio")
+    workspace = _ProjectWorkspace.from_input(tmp_path / "out", input_path)
+    workspace.create_directories()
+    source_clip = AudioClipRange(1.0, 4.0)
+
+    project_source_audio, original_source_audio, normalize_input = _prepare_source_audio_input(
+        input_path,
+        workspace,
+        source_clip,
+    )
+
+    assert project_source_audio == workspace.audio_dir / "Song_clip.wav"
+    assert not project_source_audio.exists()
+    assert original_source_audio == input_path
+    assert normalize_input == input_path
 
 
 def _fake_normalize(_input_path, output_path, **_kwargs):

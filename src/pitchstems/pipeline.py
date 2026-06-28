@@ -148,13 +148,11 @@ def process_audio_file(
     normalized_audio = workspace.normalized_audio
     project_manifest_written = False
     try:
-        if source_clip is None:
-            project_source_audio = _copy_source_audio(input_path, workspace.audio_dir)
-            normalize_input = project_source_audio
-        else:
-            project_source_audio = workspace.audio_dir / f"{workspace.input_stem}_clip.wav"
-            original_source_audio = input_path
-            normalize_input = input_path
+        project_source_audio, original_source_audio, normalize_input = _prepare_source_audio_input(
+            input_path,
+            workspace,
+            source_clip,
+        )
         _raise_if_cancelled(cancelled)
         if log:
             log(f"Preparing {input_path.name}...")
@@ -439,6 +437,18 @@ def _copy_source_audio(input_path: Path, audio_dir: Path) -> Path:
     target = audio_dir / f"{_safe_stem(input_path.stem)}{input_path.suffix.lower()}"
     shutil.copy2(input_path, target)
     return target
+
+
+def _prepare_source_audio_input(
+    input_path: Path,
+    workspace: _ProjectWorkspace,
+    source_clip: AudioClipRange | None,
+) -> tuple[Path, Path | None, Path]:
+    if source_clip is None:
+        project_source_audio = _copy_source_audio(input_path, workspace.audio_dir)
+        return project_source_audio, None, project_source_audio
+    project_source_audio = workspace.audio_dir / f"{workspace.input_stem}_clip.wav"
+    return project_source_audio, input_path, input_path
 
 
 def _existing_source_metadata(project_dir: Path) -> tuple[Path | None, AudioClipRange | None, Path | None]:
