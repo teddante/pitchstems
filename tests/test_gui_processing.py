@@ -488,6 +488,17 @@ def test_flush_messages_reports_error_completion_without_success_text() -> None:
     assert window.worker_jobs.active_token is None
 
 
+def test_flush_messages_does_not_show_track_progress_as_activity() -> None:
+    window = _FlushWindow()
+    window.messages.put(("WORKER_LOG", 7, "Tracks: bass, drums"))
+    window.messages.put("Tracks: vocals")
+
+    gui_processing.flush_messages(window)
+
+    assert window.logs == ["Tracks: bass, drums", "Tracks: vocals"]
+    assert window.activity_messages == []
+
+
 def test_flush_messages_allows_deferred_close_after_worker_completion() -> None:
     window = _FlushWindow()
     window.close_after_worker = True

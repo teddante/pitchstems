@@ -264,9 +264,7 @@ def flush_messages(window) -> None:
         elif isinstance(message, tuple) and message[0] == "WORKER_LOG":
             _kind, token, text = message
             if window.is_active_worker_token(int(token)):
-                window.append_log(str(text))
-                if text and not str(text).startswith("Tracks:"):
-                    window.set_activity_message(str(text)[:120])
+                append_worker_log_message(window, str(text))
             else:
                 window.logger.info("Ignored stale worker log: %s", text)
         elif isinstance(message, tuple) and message[0] == "EDITOR_LOADED":
@@ -290,11 +288,15 @@ def flush_messages(window) -> None:
             if window.open_when_done.isChecked():
                 window.open_latest_output()
         elif isinstance(message, str):
-            window.append_log(message)
-            if message and not message.startswith("Tracks:"):
-                window.set_activity_message(message[:120])
+            append_worker_log_message(window, message)
         else:
             window.logger.warning("Ignored unknown worker message: %r", message)
+
+
+def append_worker_log_message(window, message: str) -> None:
+    window.append_log(message)
+    if message and not message.startswith("Tracks:"):
+        window.set_activity_message(message[:120])
 
 
 def finish_worker_completion(window, token: int, status: str) -> None:
