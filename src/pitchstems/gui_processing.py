@@ -139,20 +139,18 @@ def supervise_process_job(window, token: int, process_worker: ProcessWorker) -> 
     forward_process_messages(window, process_worker)
     if process_worker.terminated:
         if process_worker.cleanup_error:
-            window.messages.put(
-                (
-                    "WORKER_LOG",
-                    token,
-                    f"Cancelled project cleanup warning: {process_worker.cleanup_error}",
-                )
+            put_worker_log(
+                window.messages,
+                token,
+                f"Cancelled project cleanup warning: {process_worker.cleanup_error}",
             )
-        window.messages.put(("WORKER_LOG", token, "Processing cancelled."))
-        window.messages.put(("ENABLE_PROCESS", token, "cancelled"))
+        put_worker_log(window.messages, token, "Processing cancelled.")
+        put_worker_completion(window.messages, token, "cancelled")
     elif process_worker.process.exitcode == 0:
-        window.messages.put(("ENABLE_PROCESS", token, "success"))
+        put_worker_completion(window.messages, token, "success")
     else:
-        window.messages.put(("WORKER_LOG", token, f"Worker process exited with code {process_worker.process.exitcode}."))
-        window.messages.put(("ENABLE_PROCESS", token, "error"))
+        put_worker_log(window.messages, token, f"Worker process exited with code {process_worker.process.exitcode}.")
+        put_worker_completion(window.messages, token, "error")
 
 
 def forward_process_messages(window, process_worker: ProcessWorker) -> None:
@@ -193,18 +191,18 @@ def run_full_pipeline_process(token: int, request: FullProcessRunRequest, messag
             midi_options=request.midi_options,
             midi_stems=request.midi_stems,
             create_zip=request.create_zip,
-            log=lambda message: messages.put(("WORKER_LOG", token, message)),
+            log=lambda message: put_worker_log(messages, token, message),
             cancelled=None,
-            project_created=lambda project_dir: messages.put(("PROJECT_DIR", token, project_dir)),
+            project_created=lambda project_dir: put_project_dir_message(messages, token, project_dir),
             source_clip=request.source_clip,
         )
-        messages.put(("RESULT", token, result))
-        messages.put(("WORKER_LOG", token, f"Project ready: {result.project_dir}"))
+        put_worker_result(messages, token, result)
+        put_worker_log(messages, token, f"Project ready: {result.project_dir}")
     except PipelineCancelledError:
-        messages.put(("WORKER_LOG", token, "Processing cancelled."))
+        put_worker_log(messages, token, "Processing cancelled.")
         raise
     except Exception as exc:
-        messages.put(("WORKER_LOG", token, f"Error: {exc}"))
+        put_worker_log(messages, token, f"Error: {exc}")
         raise
 
 
@@ -222,17 +220,33 @@ def run_midi_stage_process(token: int, request: MidiProcessRunRequest, messages)
             midi_options=request.midi_options,
             midi_stems=request.midi_stems,
             create_zip=request.create_zip,
-            log=lambda message: messages.put(("WORKER_LOG", token, message)),
+            log=lambda message: put_worker_log(messages, token, message),
             cancelled=None,
         )
-        messages.put(("RESULT", token, result))
-        messages.put(("WORKER_LOG", token, f"Updated project MIDI: {result.project_dir}"))
+        put_worker_result(messages, token, result)
+        put_worker_log(messages, token, f"Updated project MIDI: {result.project_dir}")
     except PipelineCancelledError:
-        messages.put(("WORKER_LOG", token, "Processing cancelled."))
+        put_worker_log(messages, token, "Processing cancelled.")
         raise
     except Exception as exc:
-        messages.put(("WORKER_LOG", token, f"Error: {exc}"))
+        put_worker_log(messages, token, f"Error: {exc}")
         raise
+
+
+def put_worker_log(messages, token: int, text: str) -> None:
+    messages.put(("WORKER_LOG", token, text))
+
+
+def put_worker_result(messages, token: int, result: PipelineResult) -> None:
+    messages.put(("RESULT", token, result))
+
+
+def put_project_dir_message(messages, token: int, project_dir: Path) -> None:
+    messages.put(("PROJECT_DIR", token, project_dir))
+
+
+def put_worker_completion(messages, token: int, status: str) -> None:
+    messages.put(("ENABLE_PROCESS", token, status))
 
 
 def flush_messages(window) -> None:
