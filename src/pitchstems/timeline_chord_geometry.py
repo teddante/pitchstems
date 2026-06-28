@@ -19,6 +19,26 @@ def compact_chord_label(label: str) -> str:
     return match.group(1) if match else label.strip()[:2]
 
 
+def timeline_x_for_seconds(
+    seconds: float,
+    *,
+    label_width: float,
+    pixels_per_second: float,
+) -> float:
+    return label_width + seconds * pixels_per_second
+
+
+def timeline_seconds_for_x(
+    x: float,
+    *,
+    label_width: float,
+    pixels_per_second: float,
+    clamp_minimum: bool = True,
+) -> float:
+    seconds = (x - label_width) / pixels_per_second
+    return max(0.0, seconds) if clamp_minimum else seconds
+
+
 def snap_seconds_to_timeline_targets(
     *,
     seconds: float,

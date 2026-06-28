@@ -17,6 +17,8 @@ from pitchstems.timeline_chord_geometry import (
     dragged_chord_region,
     neighbour_chords,
     snap_seconds_to_timeline_targets,
+    timeline_seconds_for_x,
+    timeline_x_for_seconds,
 )
 from pitchstems.timeline_render_policy import TimelineRenderPolicy
 from pitchstems.timeline_selection import (
@@ -319,8 +321,20 @@ class TimelineView(QGraphicsView):
             self.scene.setSceneRect(0, 0, width, height)
             self.scene.addRect(0, 0, width, height, QPen(Qt.NoPen), QBrush(QColor("#f8fafc")))
             visible_rect = self._visible_scene_rect().adjusted(-160, -90, 220, 90)
-            visible_start = max(0.0, (visible_rect.left() - self.label_width) / self.pixels_per_second)
-            visible_end = min(duration, (visible_rect.right() - self.label_width) / self.pixels_per_second)
+            visible_start = timeline_seconds_for_x(
+                visible_rect.left(),
+                label_width=self.label_width,
+                pixels_per_second=self.pixels_per_second,
+            )
+            visible_end = min(
+                duration,
+                timeline_seconds_for_x(
+                    visible_rect.right(),
+                    label_width=self.label_width,
+                    pixels_per_second=self.pixels_per_second,
+                    clamp_minimum=False,
+                ),
+            )
             if visible_end < visible_start:
                 visible_start, visible_end = 0.0, duration
             note_count = self._count_visible_notes(visible_start, visible_end, visible_rect)
@@ -971,7 +985,7 @@ class TimelineView(QGraphicsView):
         point = self.mapToScene(event.pos())
         if point.x() < self.label_width:
             return False
-        seconds = (point.x() - self.label_width) / self.pixels_per_second
+        seconds = self._seconds_from_scene_x(point.x())
         if self.on_position_changed:
             self.on_position_changed(seconds)
         else:
@@ -1118,7 +1132,7 @@ class TimelineView(QGraphicsView):
 
     def _seconds_from_event(self, event) -> float:
         point = self.mapToScene(event.pos())
-        return max(0.0, (point.x() - self.label_width) / self.pixels_per_second)
+        return self._seconds_from_scene_x(point.x())
 
     def _start_selection_from_event(self, event) -> bool:
         if self.project is None:
@@ -1128,7 +1142,7 @@ class TimelineView(QGraphicsView):
             return False
         if not self._event_in_chord_lane(event) and not (event.modifiers() & Qt.ShiftModifier):
             return False
-        seconds = (point.x() - self.label_width) / self.pixels_per_second
+        seconds = self._seconds_from_scene_x(point.x())
         self._selection_anchor = max(0.0, min(seconds, max(self.project.duration, 0.0)))
         self._selection_additive = bool(event.modifiers() & Qt.ControlModifier)
         if not self._selection_additive:
@@ -1141,16 +1155,28 @@ class TimelineView(QGraphicsView):
         if self.project is None or self._selection_anchor is None:
             return False
         point = self.mapToScene(event.pos())
-        seconds = (point.x() - self.label_width) / self.pixels_per_second
+        seconds = self._seconds_from_scene_x(point.x())
         self._set_selection(self._selection_anchor, seconds, notify=notify)
         return True
 
     def _x(self, seconds: float) -> float:
-        return self.label_width + seconds * self.pixels_per_second
+        return timeline_x_for_seconds(
+            seconds,
+            label_width=self.label_width,
+            pixels_per_second=self.pixels_per_second,
+        )
 
     def _view_center_seconds(self) -> float:
         point = self.mapToScene(self.viewport().rect().center())
-        return max(0.0, (point.x() - self.label_width) / self.pixels_per_second)
+        return self._seconds_from_scene_x(point.x())
+
+    def _seconds_from_scene_x(self, x: float, *, clamp_minimum: bool = True) -> float:
+        return timeline_seconds_for_x(
+            x,
+            label_width=self.label_width,
+            pixels_per_second=self.pixels_per_second,
+            clamp_minimum=clamp_minimum,
+        )
 
     def _center_on_seconds(self, seconds: float) -> None:
         center = self.mapToScene(self.viewport().rect().center())

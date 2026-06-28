@@ -8,6 +8,8 @@ from pitchstems.timeline_chord_geometry import (
     dragged_chord_region,
     neighbour_chords,
     snap_seconds_to_timeline_targets,
+    timeline_seconds_for_x,
+    timeline_x_for_seconds,
 )
 
 
@@ -45,6 +47,18 @@ def test_build_track_geometries_uses_default_pitch_range_for_empty_tracks() -> N
 def test_compact_chord_label_falls_back_to_root_name() -> None:
     assert compact_chord_label("Bb7/D") == "Bb"
     assert compact_chord_label("not-a-chord") == "no"
+
+
+def test_timeline_coordinate_helpers_convert_between_seconds_and_scene_x() -> None:
+    assert timeline_x_for_seconds(2.5, label_width=72, pixels_per_second=40) == 172
+    assert timeline_seconds_for_x(172, label_width=72, pixels_per_second=40) == 2.5
+    assert timeline_seconds_for_x(52, label_width=72, pixels_per_second=40) == 0.0
+    assert timeline_seconds_for_x(
+        52,
+        label_width=72,
+        pixels_per_second=40,
+        clamp_minimum=False,
+    ) == -0.5
 
 
 def test_snap_seconds_to_timeline_targets_prefers_nearby_target() -> None:
