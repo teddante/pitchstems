@@ -1,4 +1,4 @@
-from pitchstems.chord_preview import chord_preview_pitches
+from pitchstems.chord_preview import chord_preview_notes, chord_preview_pitches
 
 
 def test_chord_preview_pitches_stack_notes_upward_from_c3() -> None:
@@ -15,3 +15,13 @@ def test_chord_preview_pitches_insert_slash_chord_bass() -> None:
 
 def test_chord_preview_pitches_support_flat_names() -> None:
     assert chord_preview_pitches("Gb", ["Gb", "Bb", "Db"]) == [54, 58, 61]
+
+
+def test_chord_preview_notes_use_official_preview_envelope() -> None:
+    notes = chord_preview_notes("C/E", ["C", "E", "G"])
+
+    assert [note.pitch for note in notes] == [40, 48, 52, 55]
+    assert {note.stem for note in notes} == {"official-chord"}
+    assert {note.start for note in notes} == {0.0}
+    assert {note.end for note in notes} == {1.45}
+    assert {note.velocity for note in notes} == {92}

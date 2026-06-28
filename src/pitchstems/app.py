@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pitchstems.app_logging import app_logger, setup_app_logging
-from pitchstems.chord_preview import chord_preview_pitches
+from pitchstems.chord_preview import chord_preview_notes
 from pitchstems.editor_project import (
     ChordRegion,
     ChordScoringOptions,
@@ -1151,7 +1151,7 @@ def main() -> int:
             note_names = item.data(Qt.UserRole + 2) or []
             if not label or not note_names:
                 return
-            notes = self.preview_notes_for_chord(label, note_names)
+            notes = chord_preview_notes(label, note_names)
             preview_dir = self.current_result.project_dir / "editor" / "chord-preview"
             if not safe_qt_multimedia_call(
                 self.logger,
@@ -1168,19 +1168,6 @@ def main() -> int:
                 lambda: start_player_source(self.chord_preview_player, QUrl.fromLocalFile(str(preview))),
             ):
                 self.statusBar().showMessage(f"Playing official {self.display_chord(label)} chord.", 3000)
-
-        def preview_notes_for_chord(self, label: str, note_names: list[str]) -> list[NoteEvent]:
-            pitches = chord_preview_pitches(label, note_names)
-            return [
-                NoteEvent(
-                    stem="official-chord",
-                    start=0.0,
-                    end=1.45,
-                    pitch=pitch,
-                    velocity=92,
-                )
-                for pitch in pitches
-            ]
 
         def assign_selected_chord_to_selection(self) -> None:
             gui_editor_state.assign_selected_chord_to_selection(self)

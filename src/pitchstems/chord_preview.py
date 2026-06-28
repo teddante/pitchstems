@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pitchstems.editor_models import NoteEvent
 from pitchstems.notation import pitch_class_for_name
 
 
@@ -18,6 +19,19 @@ def chord_preview_pitches(label: str, note_names: list[str]) -> list[int]:
         bass_pitch = 36 + _pitch_class(bass_name)
         pitches.insert(0, bass_pitch)
     return pitches
+
+
+def chord_preview_notes(label: str, note_names: list[str]) -> list[NoteEvent]:
+    return [
+        NoteEvent(
+            stem="official-chord",
+            start=0.0,
+            end=1.45,
+            pitch=pitch,
+            velocity=92,
+        )
+        for pitch in chord_preview_pitches(label, note_names)
+    ]
 
 
 def _pitch_class(note_name: str) -> int:
