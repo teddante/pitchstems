@@ -11,6 +11,7 @@ import pitchstems.pipeline as pipeline
 from pitchstems.audio_clip import AudioClipRange
 from pitchstems.pipeline import (
     _ProjectWorkspace,
+    _package_pipeline_outputs,
     _project_dir,
     _remove_export_stem_copies,
     _remove_staging_dir,
@@ -297,6 +298,48 @@ def test_save_pipeline_manifest_passes_pipeline_options(monkeypatch, tmp_path: P
             },
         )
     ]
+
+
+def test_package_pipeline_outputs_skips_when_zip_is_not_requested(monkeypatch, tmp_path: Path) -> None:
+    result = PipelineResult(
+        project_dir=tmp_path / "song.pitchstems",
+        normalized_audio=tmp_path / "song.pitchstems" / "work" / "song.wav",
+        stems=[],
+        midi_files=[],
+        combined_midi=None,
+        zip_path=None,
+    )
+    calls = []
+    monkeypatch.setattr(pipeline, "_zip_project_outputs", lambda *args: calls.append(args))
+
+    assert _package_pipeline_outputs(result) is None
+    assert calls == []
+
+
+def test_package_pipeline_outputs_forwards_result_assets(monkeypatch, tmp_path: Path) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    stem = StemResult("bass", project_dir / "stems" / "bass.wav")
+    midi = MidiResult("bass", project_dir / "midi" / "bass.mid")
+    combined = project_dir / "export" / "song_combined.mid"
+    zip_path = project_dir / "song_pitchstems.zip"
+    result = PipelineResult(
+        project_dir=project_dir,
+        normalized_audio=project_dir / "work" / "song.wav",
+        stems=[stem],
+        midi_files=[midi],
+        combined_midi=combined,
+        zip_path=zip_path,
+    )
+    calls = []
+
+    def fake_zip_project_outputs(*args):
+        calls.append(args)
+        return zip_path
+
+    monkeypatch.setattr(pipeline, "_zip_project_outputs", fake_zip_project_outputs)
+
+    assert _package_pipeline_outputs(result) == zip_path
+    assert calls == [(project_dir, [stem], [midi], combined, zip_path)]
 
 
 def test_midi_rerun_keeps_existing_outputs_when_transcription_fails(tmp_path: Path, monkeypatch) -> None:

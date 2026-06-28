@@ -195,8 +195,7 @@ def process_audio_file(
             create_zip=create_zip,
         )
         project_manifest_written = True
-        if zip_path:
-            _zip_project_outputs(workspace.project_dir, stems, midi_files, combined_midi, zip_path)
+        _package_pipeline_outputs(result)
         if log:
             log(f"Done: {zip_path or workspace.project_dir}")
         return result
@@ -338,8 +337,7 @@ def process_midi_from_stems(
         midi_policy=midi_policy,
         create_zip=create_zip,
     )
-    if zip_path:
-        _zip_project_outputs(project_dir, stems, midi_files, combined_midi, zip_path)
+    _package_pipeline_outputs(result)
     return result
 
 
@@ -361,6 +359,18 @@ def _save_pipeline_manifest(
         generate_midi=generate_midi,
         midi_policy=midi_policy,
         create_zip=create_zip,
+    )
+
+
+def _package_pipeline_outputs(result: PipelineResult) -> Path | None:
+    if result.zip_path is None:
+        return None
+    return _zip_project_outputs(
+        result.project_dir,
+        result.stems,
+        result.midi_files,
+        result.combined_midi,
+        result.zip_path,
     )
 
 
