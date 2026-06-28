@@ -4,6 +4,7 @@ from typing import Protocol
 
 from pitchstems.editor_project import ChordRegion
 from pitchstems.editor_review_target import review_ranges, single_review_range
+from pitchstems.time_format import format_time
 
 
 class _StatusBar(Protocol):
@@ -12,6 +13,7 @@ class _StatusBar(Protocol):
 
 class _Timeline(Protocol):
     selected_chord: ChordRegion | None
+    position: float
 
     def selection_ranges(self) -> list[tuple[float, float]]: ...
 
@@ -30,6 +32,8 @@ class _EditorWindow(Protocol):
 
     def refresh_chord_actions(self) -> None: ...
 
+    def refresh_current_harmony(self, seconds: float, force: bool = False) -> None: ...
+
     def set_editor_position_seconds(
         self,
         seconds: float,
@@ -39,6 +43,27 @@ class _EditorWindow(Protocol):
     ) -> None: ...
 
     def play_transport(self) -> None: ...
+
+
+def set_editor_selection(window: _EditorWindow, selection: tuple[float, float] | None) -> None:
+    window.refresh_current_harmony(window.timeline.position, force=True)
+    window.refresh_chord_actions()
+    selection_ranges = window.timeline.selection_ranges()
+    if len(selection_ranges) > 1:
+        total = sum(end - start for start, end in selection_ranges)
+        window.statusBar().showMessage(
+            f"Chord analysis selection active: {len(selection_ranges)} ranges, {total:.2f}s total.",
+            5000,
+        )
+        return
+    if selection is None:
+        window.statusBar().showMessage("Timeline selection cleared.", 3000)
+        return
+    start, end = selection
+    window.statusBar().showMessage(
+        f"Loop selection active: {format_time(start)} - {format_time(end)}. Press Play to loop this range.",
+        5000,
+    )
 
 
 def fit_editor_song_to_view(window: _EditorWindow) -> None:

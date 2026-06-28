@@ -8,6 +8,7 @@ from pitchstems.gui_editor_actions import (
     fit_editor_song_to_view,
     play_editor_review_target,
     select_review_chord,
+    set_editor_selection,
 )
 
 
@@ -23,6 +24,7 @@ class FakeStatusBar:
 class FakeTimeline:
     ranges: list[tuple[float, float]] = field(default_factory=list)
     selected_chord: ChordRegion | None = None
+    position: float = 0.0
     fit_range_result: bool = True
     next_chord: ChordRegion | None = None
     fitted_song: bool = False
@@ -50,6 +52,7 @@ class FakeWindow:
     timeline: FakeTimeline = field(default_factory=FakeTimeline)
     status_bar: FakeStatusBar = field(default_factory=FakeStatusBar)
     chord_actions_refreshed: int = 0
+    harmony_refreshes: list[tuple[float, bool]] = field(default_factory=list)
     positions: list[tuple[float, bool, bool, bool]] = field(default_factory=list)
     play_count: int = 0
 
@@ -58,6 +61,9 @@ class FakeWindow:
 
     def refresh_chord_actions(self) -> None:
         self.chord_actions_refreshed += 1
+
+    def refresh_current_harmony(self, seconds: float, force: bool = False) -> None:
+        self.harmony_refreshes.append((seconds, force))
 
     def set_editor_position_seconds(
         self,
@@ -88,6 +94,45 @@ def test_fit_song_runs_on_loaded_project() -> None:
 
     assert window.timeline.fitted_song
     assert window.status_bar.messages == [("Showing the whole song horizontally and vertically.", 4000)]
+
+
+def test_set_editor_selection_reports_multiple_selection_ranges() -> None:
+    window = FakeWindow(
+        timeline=FakeTimeline(
+            ranges=[(0.0, 1.5), (3.0, 4.25)],
+            position=2.0,
+        )
+    )
+
+    set_editor_selection(window, None)
+
+    assert window.harmony_refreshes == [(2.0, True)]
+    assert window.chord_actions_refreshed == 1
+    assert window.status_bar.messages == [
+        ("Chord analysis selection active: 2 ranges, 2.75s total.", 5000)
+    ]
+
+
+def test_set_editor_selection_reports_cleared_selection() -> None:
+    window = FakeWindow(timeline=FakeTimeline(position=4.0))
+
+    set_editor_selection(window, None)
+
+    assert window.harmony_refreshes == [(4.0, True)]
+    assert window.chord_actions_refreshed == 1
+    assert window.status_bar.messages == [("Timeline selection cleared.", 3000)]
+
+
+def test_set_editor_selection_reports_single_loop_selection() -> None:
+    window = FakeWindow(timeline=FakeTimeline(ranges=[(1.25, 3.5)], position=1.25))
+
+    set_editor_selection(window, (1.25, 3.5))
+
+    assert window.harmony_refreshes == [(1.25, True)]
+    assert window.chord_actions_refreshed == 1
+    assert window.status_bar.messages == [
+        ("Loop selection active: 00:01.250 - 00:03.500. Press Play to loop this range.", 5000)
+    ]
 
 
 def test_fit_review_target_prefers_explicit_ranges() -> None:

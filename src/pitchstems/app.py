@@ -964,24 +964,7 @@ def main() -> int:
                 self.request_editor_state_save()
 
         def set_editor_selection(self, selection: tuple[float, float] | None) -> None:
-            self.refresh_current_harmony(self.timeline.position, force=True)
-            self.refresh_chord_actions()
-            selection_ranges = self.timeline.selection_ranges()
-            if len(selection_ranges) > 1:
-                total = sum(end - start for start, end in selection_ranges)
-                self.statusBar().showMessage(
-                    f"Chord analysis selection active: {len(selection_ranges)} ranges, {total:.2f}s total.",
-                    5000,
-                )
-                return
-            if selection is None:
-                self.statusBar().showMessage("Timeline selection cleared.", 3000)
-                return
-            start, end = selection
-            self.statusBar().showMessage(
-                f"Loop selection active: {format_time(start)} - {format_time(end)}. Press Play to loop this range.",
-                5000,
-            )
+            gui_editor_actions.set_editor_selection(self, selection)
 
         def clear_editor_selection(self) -> None:
             self.timeline.clear_selection()
