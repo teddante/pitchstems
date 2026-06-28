@@ -50,7 +50,7 @@ def refresh_editor_project_from_chord_edits(
 def assign_selected_chord_to_selection(window) -> None:
     from PySide6.QtCore import Qt
 
-    if window.editor_project is None or window.current_result is None:
+    if not _has_loaded_editor_project(window):
         return
     explicit_ranges = window.timeline.selection_ranges()
     selection_ranges = chord_assignment_ranges(
@@ -78,7 +78,7 @@ def assign_selected_chord_to_selection(window) -> None:
 
 
 def delete_selected_chord(window) -> None:
-    if window.editor_project is None or window.current_result is None:
+    if not _has_loaded_editor_project(window):
         return
     if window.timeline.selection_ranges():
         window.statusBar().showMessage("Clear the timeline range before deleting a chord.", 4000)
@@ -157,7 +157,7 @@ def show_all_timeline_tracks(window) -> None:
 
 
 def save_editor_state(window) -> bool:
-    if window.current_result is None or window.editor_project is None:
+    if not _has_loaded_editor_project(window):
         return False
     if window.editor_save_timer.isActive():
         window.editor_save_timer.stop()
@@ -183,6 +183,10 @@ def save_editor_state(window) -> bool:
 
 
 def request_editor_state_save(window, delay_ms: int = 750) -> None:
-    if window.current_result is None or window.editor_project is None:
+    if not _has_loaded_editor_project(window):
         return
     window.editor_save_timer.start(delay_ms)
+
+
+def _has_loaded_editor_project(window) -> bool:
+    return window.current_result is not None and window.editor_project is not None

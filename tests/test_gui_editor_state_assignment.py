@@ -74,6 +74,21 @@ def test_assign_selected_chord_to_selection_uses_selected_chord_when_no_range() 
     assert window.status.messages == ["Assigned C to selected chord."]
 
 
+def test_has_loaded_editor_project_requires_result_and_editor_project() -> None:
+    window = _Window()
+
+    assert gui_editor_state._has_loaded_editor_project(window)
+
+    window.current_result = None
+
+    assert not gui_editor_state._has_loaded_editor_project(window)
+
+    window.current_result = object()
+    window.editor_project = None
+
+    assert not gui_editor_state._has_loaded_editor_project(window)
+
+
 def test_delete_selected_chord_uses_visible_selected_chord_target() -> None:
     window = _Window()
     chord = window.timeline.selected_chord
