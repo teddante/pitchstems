@@ -97,7 +97,12 @@ def main() -> int:
         NoWheelSpinBox,
         PianoChordWidget,
     )
-    from pitchstems.gui_import_clip import ImportClipPicker, clip_status_text, import_preview_range
+    from pitchstems.gui_import_clip import (
+        ImportClipPicker,
+        can_play_import_clip_preview,
+        clip_status_text,
+        import_preview_range,
+    )
     from pitchstems.gui_editor_page import build_editor_page
     from pitchstems.gui_pipeline_page import build_pipeline_page
     from pitchstems.gui_timeline import TimelineView
@@ -1207,9 +1212,12 @@ def main() -> int:
             duration = self.import_clip_picker.duration_seconds if duration_seconds is None else duration_seconds
             self.import_clip_status.setText(clip_status_text(clip_range, duration))
             self.import_clip_play.setEnabled(
-                self.import_clip_picker.path is not None
-                and import_preview_range(clip_range, duration) is not None
-                and self.worker_jobs.active_token is None
+                can_play_import_clip_preview(
+                    self.import_clip_picker.path,
+                    clip_range,
+                    duration,
+                    self.worker_jobs.active_token,
+                )
             )
             self.import_clip_clear.setEnabled(
                 clip_range is not None and self.worker_jobs.active_token is None
@@ -1254,13 +1262,12 @@ def main() -> int:
                 self.import_clip_stop.setEnabled(False)
             if hasattr(self, "import_clip_play"):
                 self.import_clip_play.setEnabled(
-                    self.import_clip_picker.path is not None
-                    and import_preview_range(
+                    can_play_import_clip_preview(
+                        self.import_clip_picker.path,
                         self.import_clip_picker.selected_clip_range(),
                         self.import_clip_picker.duration_seconds,
+                        self.worker_jobs.active_token,
                     )
-                    is not None
-                    and self.worker_jobs.active_token is None
                 )
 
         def poll_import_clip_preview(self) -> None:

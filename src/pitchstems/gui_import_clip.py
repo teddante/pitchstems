@@ -168,3 +168,16 @@ def import_preview_range(
     if duration < MIN_CLIP_SECONDS:
         return None
     return 0.0, duration
+
+
+def can_play_import_clip_preview(
+    path: Path | None,
+    clip_range: AudioClipRange | None,
+    duration_seconds: float,
+    active_worker_token: int | None,
+) -> bool:
+    return (
+        path is not None
+        and import_preview_range(clip_range, duration_seconds) is not None
+        and active_worker_token is None
+    )
