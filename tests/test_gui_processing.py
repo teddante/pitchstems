@@ -340,6 +340,19 @@ class _FlushWindow:
         self.activity_messages: list[str] = []
         self.editor_load_jobs = EditorLoadJobState()
         self.midi_preview_jobs = MidiPreviewJobState()
+        self.midi_preview_jobs.token = 11
+        self.current_result = PipelineResult(
+            project_dir=Path("song.pitchstems"),
+            normalized_audio=Path("song.pitchstems/work/song.wav"),
+            stems=[],
+            midi_files=[],
+            combined_midi=None,
+            zip_path=None,
+        )
+        self.rendering_midi_previews: set[str] = set()
+        self.cleared_midi_preview_workers: list[tuple[Path, str, int]] = []
+        self.attached_midi_previews: list[dict[str, Path]] = []
+        self.timeline_refreshes = 0
 
     def is_active_worker_token(self, token: int) -> bool:
         return self.worker_jobs.is_active(token)
@@ -363,6 +376,15 @@ class _FlushWindow:
         self.close_attempts += 1
         if gui_shutdown.request_window_close(self):
             self.closed = True
+
+    def clear_midi_preview_worker(self, project_dir: Path, stem_name: str, token: int) -> None:
+        self.cleared_midi_preview_workers.append((project_dir, stem_name, token))
+
+    def attach_midi_preview_players(self, previews: dict[str, Path]) -> None:
+        self.attached_midi_previews.append(previews)
+
+    def refresh_timeline_track_summaries(self) -> None:
+        self.timeline_refreshes += 1
 
 
 def test_flush_messages_reports_cancelled_completion_without_success_text() -> None:
@@ -413,3 +435,59 @@ def test_finish_worker_completion_ignores_stale_token() -> None:
     assert window.processing_states == []
     assert window.activity_messages == []
     assert window.logger.infos == [("Ignored stale worker completion for token %s", 42)]
+
+
+def test_finish_midi_preview_render_attaches_current_preview() -> None:
+    window = _FlushWindow()
+    window.rendering_midi_previews.update({"piano", "bass"})
+    preview = Path("song.pitchstems/editor/midi-preview/piano_midi_preview.wav")
+
+    gui_processing.finish_midi_preview_render(
+        window,
+        11,
+        Path("song.pitchstems"),
+        {"piano"},
+        {"piano": preview},
+    )
+
+    assert window.cleared_midi_preview_workers == [(Path("song.pitchstems"), "piano", 11)]
+    assert window.rendering_midi_previews == {"bass"}
+    assert window.attached_midi_previews == [{"piano": preview}]
+    assert window.logger.infos == []
+
+
+def test_finish_midi_preview_render_ignores_stale_preview() -> None:
+    window = _FlushWindow()
+    window.rendering_midi_previews.add("piano")
+
+    gui_processing.finish_midi_preview_render(
+        window,
+        10,
+        Path("song.pitchstems"),
+        {"piano"},
+        {"piano": Path("stale.wav")},
+    )
+
+    assert window.cleared_midi_preview_workers == [(Path("song.pitchstems"), "piano", 10)]
+    assert window.rendering_midi_previews == {"piano"}
+    assert window.attached_midi_previews == []
+    assert window.logger.infos == [("Ignored stale MIDI preview render for %s", Path("song.pitchstems"))]
+
+
+def test_finish_midi_preview_failure_reports_current_error() -> None:
+    window = _FlushWindow()
+    window.rendering_midi_previews.update({"piano", "bass"})
+
+    gui_processing.finish_midi_preview_failure(
+        window,
+        11,
+        Path("song.pitchstems"),
+        {"piano"},
+        "preview failed",
+    )
+
+    assert window.cleared_midi_preview_workers == [(Path("song.pitchstems"), "piano", 11)]
+    assert window.rendering_midi_previews == {"bass"}
+    assert window.timeline_refreshes == 1
+    assert window.logs == ["preview failed"]
+    assert window.activity_messages[-1] == "MIDI preview audio failed"

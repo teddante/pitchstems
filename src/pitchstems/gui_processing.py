@@ -259,32 +259,10 @@ def flush_messages(window) -> None:
             window.finish_editor_project_load_failed(int(token), project_dir, error)
         elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEWS":
             _kind, token, project_dir, requested_stems, previews = message
-            for stem_name in requested_stems:
-                window.clear_midi_preview_worker(project_dir, stem_name, int(token))
-            if (
-                token == window.midi_preview_jobs.token
-                and window.current_result is not None
-                and window.current_result.project_dir == project_dir
-            ):
-                window.rendering_midi_previews.difference_update(requested_stems)
-                window.attach_midi_preview_players(previews)
-            else:
-                window.logger.info("Ignored stale MIDI preview render for %s", project_dir)
+            finish_midi_preview_render(window, int(token), project_dir, requested_stems, previews)
         elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEW_FAILED":
             _kind, token, project_dir, requested_stems, error = message
-            for stem_name in requested_stems:
-                window.clear_midi_preview_worker(project_dir, stem_name, int(token))
-            if (
-                token == window.midi_preview_jobs.token
-                and window.current_result is not None
-                and window.current_result.project_dir == project_dir
-            ):
-                window.rendering_midi_previews.difference_update(requested_stems)
-                window.refresh_timeline_track_summaries()
-                window.append_log(error)
-                window.end_activity("MIDI preview audio failed")
-            else:
-                window.logger.info("Ignored stale MIDI preview failure for %s: %s", project_dir, error)
+            finish_midi_preview_failure(window, int(token), project_dir, requested_stems, str(error))
         elif isinstance(message, tuple) and message[0] == "ENABLE_PROCESS":
             _kind, token, *status_parts = message
             status = str(status_parts[0]) if status_parts else "success"
@@ -320,3 +298,50 @@ def close_after_worker_if_requested(window) -> None:
     window.worker = None
     begin_auxiliary_shutdown(window)
     window.close()
+
+
+def finish_midi_preview_render(
+    window,
+    token: int,
+    project_dir: Path,
+    requested_stems: set[str],
+    previews: dict[str, Path],
+) -> None:
+    clear_midi_preview_workers(window, token, project_dir, requested_stems)
+    if not is_current_midi_preview_message(window, token, project_dir):
+        window.logger.info("Ignored stale MIDI preview render for %s", project_dir)
+        return
+
+    window.rendering_midi_previews.difference_update(requested_stems)
+    window.attach_midi_preview_players(previews)
+
+
+def finish_midi_preview_failure(
+    window,
+    token: int,
+    project_dir: Path,
+    requested_stems: set[str],
+    error: str,
+) -> None:
+    clear_midi_preview_workers(window, token, project_dir, requested_stems)
+    if not is_current_midi_preview_message(window, token, project_dir):
+        window.logger.info("Ignored stale MIDI preview failure for %s: %s", project_dir, error)
+        return
+
+    window.rendering_midi_previews.difference_update(requested_stems)
+    window.refresh_timeline_track_summaries()
+    window.append_log(error)
+    window.end_activity("MIDI preview audio failed")
+
+
+def clear_midi_preview_workers(window, token: int, project_dir: Path, stem_names: set[str]) -> None:
+    for stem_name in stem_names:
+        window.clear_midi_preview_worker(project_dir, stem_name, token)
+
+
+def is_current_midi_preview_message(window, token: int, project_dir: Path) -> bool:
+    return (
+        token == window.midi_preview_jobs.token
+        and window.current_result is not None
+        and window.current_result.project_dir == project_dir
+    )
