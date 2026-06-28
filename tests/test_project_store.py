@@ -114,6 +114,51 @@ def test_save_project_manifest_preserves_existing_note_edits(tmp_path: Path) -> 
     assert updated["editor"]["note_edits"] == [{"stem": "bass", "pitch": 48, "start": 1.25}]
 
 
+def test_save_project_manifest_writes_explicit_falsey_editor_values(tmp_path: Path) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    normalized = project_dir / "work" / "song.wav"
+    stem = project_dir / "stems" / "song_bass.wav"
+    for path in [normalized, stem]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("placeholder", encoding="utf-8")
+    result = PipelineResult(
+        project_dir=project_dir,
+        normalized_audio=normalized,
+        stems=[StemResult("bass", stem)],
+        midi_files=[],
+        combined_midi=None,
+        zip_path=None,
+    )
+    manifest_path = save_project_manifest(
+        result,
+        track_visibility={"bass": True},
+        track_audio_enabled={"bass": True},
+        track_audio_volume={"bass": 80},
+        playhead_seconds=12.5,
+        chord_overrides=[{"start": 1.0, "end": 2.0, "label": "G", "confidence": 0.9}],
+    )
+    manifest = load_project_manifest(manifest_path)
+    manifest["editor"]["note_edits"] = [{"stem": "bass", "pitch": 48, "start": 1.25}]
+    _write_json_atomic(manifest_path, manifest)
+
+    save_project_manifest(
+        result,
+        track_visibility={},
+        track_audio_enabled={"bass": False},
+        track_audio_volume={"bass": 0},
+        playhead_seconds=0.0,
+        chord_overrides=[],
+    )
+    updated = load_project_manifest(manifest_path)
+
+    assert updated["editor"]["track_visibility"] == {}
+    assert updated["editor"]["track_audio_enabled"] == {"bass": False}
+    assert updated["editor"]["track_audio_volume"] == {"bass": 0}
+    assert updated["editor"]["playhead_seconds"] == 0.0
+    assert updated["editor"]["chord_overrides"] == []
+    assert updated["editor"]["note_edits"] == [{"stem": "bass", "pitch": 48, "start": 1.25}]
+
+
 def test_manifest_saves_and_loads_stem_ids(tmp_path: Path) -> None:
     project_dir = tmp_path / "song.pitchstems"
     normalized = project_dir / "work" / "song.wav"

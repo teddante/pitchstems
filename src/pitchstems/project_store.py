@@ -214,14 +214,15 @@ def _pipeline_settings_manifest(
         "separation": _dataclass_dict(separation_options)
         or existing_settings.get("separation", {}),
         "midi": _dataclass_dict(midi_options) or existing_settings.get("midi", {}),
-        "midi_stems": sorted(midi_stems)
-        if midi_stems is not None
-        else existing_settings.get("midi_stems", []),
-        "generate_midi": generate_midi
-        if generate_midi is not None
-        else existing_settings.get("generate_midi"),
+        "midi_stems": _manifest_field(
+            sorted(midi_stems) if midi_stems is not None else None,
+            existing_settings,
+            "midi_stems",
+            [],
+        ),
+        "generate_midi": _manifest_field(generate_midi, existing_settings, "generate_midi", None),
         "midi_policy": midi_policy or existing_settings.get("midi_policy"),
-        "create_zip": create_zip if create_zip is not None else existing_settings.get("create_zip"),
+        "create_zip": _manifest_field(create_zip, existing_settings, "create_zip", None),
     }
     source_clip_manifest = _source_clip_manifest(source_clip, original_source_audio)
     existing_source_clip = existing_settings.get("source_clip")
@@ -247,38 +248,34 @@ def _editor_state_manifest(
     chord_removals: list[dict[str, Any]] | None,
 ) -> dict[str, Any]:
     return {
-        "track_visibility": track_visibility
-        if track_visibility is not None
-        else existing_editor.get("track_visibility", {}),
-        "track_analysis_enabled": track_analysis_enabled
-        if track_analysis_enabled is not None
-        else existing_editor.get("track_analysis_enabled", {}),
-        "track_audio_enabled": track_audio_enabled
-        if track_audio_enabled is not None
-        else existing_editor.get("track_audio_enabled", {}),
-        "track_audio_volume": track_audio_volume
-        if track_audio_volume is not None
-        else existing_editor.get("track_audio_volume", {}),
-        "track_midi_enabled": track_midi_enabled
-        if track_midi_enabled is not None
-        else existing_editor.get("track_midi_enabled", {}),
-        "track_midi_volume": track_midi_volume
-        if track_midi_volume is not None
-        else existing_editor.get("track_midi_volume", {}),
-        "notation_spelling": notation_spelling
-        if notation_spelling is not None
-        else existing_editor.get("notation_spelling", "auto"),
-        "playhead_seconds": playhead_seconds
-        if playhead_seconds is not None
-        else existing_editor.get("playhead_seconds", 0.0),
-        "chord_overrides": chord_overrides
-        if chord_overrides is not None
-        else existing_editor.get("chord_overrides", []),
-        "chord_removals": chord_removals
-        if chord_removals is not None
-        else existing_editor.get("chord_removals", []),
+        "track_visibility": _manifest_field(track_visibility, existing_editor, "track_visibility", {}),
+        "track_analysis_enabled": _manifest_field(
+            track_analysis_enabled,
+            existing_editor,
+            "track_analysis_enabled",
+            {},
+        ),
+        "track_audio_enabled": _manifest_field(track_audio_enabled, existing_editor, "track_audio_enabled", {}),
+        "track_audio_volume": _manifest_field(track_audio_volume, existing_editor, "track_audio_volume", {}),
+        "track_midi_enabled": _manifest_field(track_midi_enabled, existing_editor, "track_midi_enabled", {}),
+        "track_midi_volume": _manifest_field(track_midi_volume, existing_editor, "track_midi_volume", {}),
+        "notation_spelling": _manifest_field(notation_spelling, existing_editor, "notation_spelling", "auto"),
+        "playhead_seconds": _manifest_field(playhead_seconds, existing_editor, "playhead_seconds", 0.0),
+        "chord_overrides": _manifest_field(chord_overrides, existing_editor, "chord_overrides", []),
+        "chord_removals": _manifest_field(chord_removals, existing_editor, "chord_removals", []),
         "note_edits": existing_editor.get("note_edits", []),
     }
+
+
+def _manifest_field(
+    value: Any,
+    existing: dict[str, Any],
+    field: str,
+    default: Any,
+) -> Any:
+    if value is not None:
+        return value
+    return existing.get(field, default)
 
 
 def _existing_manifest_section(manifest: dict[str, Any], field: str) -> dict[str, Any]:
