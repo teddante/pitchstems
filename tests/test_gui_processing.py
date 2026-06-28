@@ -358,6 +358,13 @@ def test_run_midi_stage_process_uses_request_midi_policy(monkeypatch, tmp_path: 
     assert messages.get_nowait() == ("RESULT", 5, result)
 
 
+def test_worker_message_kind_reads_tuple_worker_message_names() -> None:
+    assert gui_processing.worker_message_kind(("RESULT", 7, object())) == "RESULT"
+    assert gui_processing.worker_message_kind(()) is None
+    assert gui_processing.worker_message_kind((7, "RESULT")) is None
+    assert gui_processing.worker_message_kind("RESULT") is None
+
+
 def test_cancel_processing_requests_active_worker_and_updates_activity() -> None:
     window = DummyWindow()
     token = window.worker_jobs.start()

@@ -256,37 +256,45 @@ def put_worker_completion(messages, token: int, status: str) -> None:
     messages.put(("ENABLE_PROCESS", token, status))
 
 
+def worker_message_kind(message: object) -> str | None:
+    if not isinstance(message, tuple) or not message:
+        return None
+    kind = message[0]
+    return kind if isinstance(kind, str) else None
+
+
 def flush_messages(window) -> None:
     while True:
         try:
             message = window.messages.get_nowait()
         except queue.Empty:
             return
-        if isinstance(message, tuple) and message[0] == "RESULT":
+        kind = worker_message_kind(message)
+        if kind == "RESULT":
             _kind, token, result = message
             if window.is_active_worker_token(int(token)):
                 window.set_current_result(result)
             else:
                 window.logger.info("Ignored stale worker result for %s", result.project_dir)
-        elif isinstance(message, tuple) and message[0] == "WORKER_LOG":
+        elif kind == "WORKER_LOG":
             _kind, token, text = message
             if window.is_active_worker_token(int(token)):
                 append_worker_log_message(window, str(text))
             else:
                 window.logger.info("Ignored stale worker log: %s", text)
-        elif isinstance(message, tuple) and message[0] == "EDITOR_LOADED":
+        elif kind == "EDITOR_LOADED":
             _kind, token, loaded = message
             window.finish_editor_project_load(int(token), loaded)
-        elif isinstance(message, tuple) and message[0] == "EDITOR_LOAD_FAILED":
+        elif kind == "EDITOR_LOAD_FAILED":
             _kind, token, project_dir, error = message
             window.finish_editor_project_load_failed(int(token), project_dir, error)
-        elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEWS":
+        elif kind == "MIDI_PREVIEWS":
             _kind, token, project_dir, requested_stems, previews = message
             finish_midi_preview_render(window, int(token), project_dir, requested_stems, previews)
-        elif isinstance(message, tuple) and message[0] == "MIDI_PREVIEW_FAILED":
+        elif kind == "MIDI_PREVIEW_FAILED":
             _kind, token, project_dir, requested_stems, error = message
             finish_midi_preview_failure(window, int(token), project_dir, requested_stems, str(error))
-        elif isinstance(message, tuple) and message[0] == "ENABLE_PROCESS":
+        elif kind == "ENABLE_PROCESS":
             _kind, token, *status_parts = message
             status = str(status_parts[0]) if status_parts else "success"
             finish_worker_completion(window, int(token), status)
