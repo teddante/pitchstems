@@ -18,6 +18,7 @@ from pitchstems.pipeline import (
     _remove_staging_dir,
     _save_pipeline_manifest,
     _safe_stem,
+    _selected_midi_stem_keys,
     _zip_project_outputs,
     process_audio_file,
     process_midi_from_stems,
@@ -41,6 +42,19 @@ def _write_file(path: Path, content: bytes = b"placeholder") -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content)
     return path
+
+
+def test_selected_midi_stem_keys_all_stems() -> None:
+    assert _selected_midi_stem_keys(None) is None
+
+
+def test_selected_midi_stem_keys_normalizes_explicit_selection() -> None:
+    assert _selected_midi_stem_keys({"Bass", "DRUMS"}) == {"bass", "drums"}
+
+
+def test_selected_midi_stem_keys_rejects_empty_explicit_selection() -> None:
+    with pytest.raises(ValueError, match="Choose at least one stem"):
+        _selected_midi_stem_keys(set())
 
 
 def _fake_normalize(_input_path, output_path, **_kwargs):

@@ -269,9 +269,7 @@ def process_midi_from_stems(
     source_clip = source_clip or existing_source_clip
     original_source_audio = original_source_audio or existing_original_source_audio
     workspace = _MidiWorkspace.from_project(project_dir, input_stem)
-    selected_midi_stems = {stem.lower() for stem in midi_stems} if midi_stems is not None else None
-    if selected_midi_stems is not None and not selected_midi_stems:
-        raise ValueError("Choose at least one stem before rerunning MIDI.")
+    selected_midi_stems = _selected_midi_stem_keys(midi_stems)
     workspace.midi_dir.mkdir(parents=True, exist_ok=True)
     workspace.export_dir.mkdir(parents=True, exist_ok=True)
 
@@ -426,6 +424,15 @@ def _project_dir(output_root: Path, input_path: Path) -> Path:
 def _raise_if_cancelled(cancelled: CancelCheck | None) -> None:
     if cancelled is not None and cancelled():
         raise PipelineCancelledError("Processing cancelled.")
+
+
+def _selected_midi_stem_keys(midi_stems: set[str] | None) -> set[str] | None:
+    if midi_stems is None:
+        return None
+    selected_midi_stems = {stem.lower() for stem in midi_stems}
+    if not selected_midi_stems:
+        raise ValueError("Choose at least one stem before rerunning MIDI.")
+    return selected_midi_stems
 
 
 def _copy_source_audio(input_path: Path, audio_dir: Path) -> Path:
