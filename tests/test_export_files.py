@@ -80,6 +80,31 @@ def test_build_export_items_names_multiple_note_csvs_safely(tmp_path: Path) -> N
     ]
 
 
+def test_build_export_items_uses_windows_safe_export_filenames(tmp_path: Path) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    source = _write(project_dir / "audio" / "CON.wav")
+    combined = _write(project_dir / "export" / "NUL.mid")
+    midi = _write(project_dir / "midi" / "Lead" / "lead.mid")
+    _write(project_dir / "midi" / "Lead" / "COM1.csv")
+    _write(project_dir / "midi" / "Lead" / "AUX.csv")
+    result = PipelineResult(
+        project_dir=project_dir,
+        normalized_audio=project_dir / "work" / "song.wav",
+        stems=[],
+        midi_files=[MidiResult("Lead", midi, stem_id="lead")],
+        combined_midi=combined,
+        zip_path=None,
+        source_audio=source,
+    )
+
+    paths = [item.relative_path.as_posix() for item in build_export_items(result)]
+
+    assert "audio/file_con.wav" in paths
+    assert "midi/file_nul.mid" in paths
+    assert "notes/lead-notes_com1.csv" in paths
+    assert "notes/lead-notes_aux.csv" in paths
+
+
 def test_copy_export_items_copies_selected_files_and_overwrites(tmp_path: Path) -> None:
     project_dir = tmp_path / "song.pitchstems"
     _write(project_dir / "pitchstems.project.json", b"manifest")

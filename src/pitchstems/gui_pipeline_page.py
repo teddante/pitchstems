@@ -64,13 +64,6 @@ def build_pipeline_page(window) -> QWidget:
     selected_panel.setSpacing(8)
     selected_panel.addWidget(section_label("Controls"))
 
-    model_group = QGroupBox("Separation model")
-    model_layout = QVBoxLayout()
-    model_layout.setSpacing(8)
-    model_layout.setContentsMargins(10, 8, 10, 8)
-    model_layout.addWidget(window.model_title)
-    model_group.setLayout(model_layout)
-
     runtime_group = QGroupBox("BS-RoFormer runtime")
     runtime_layout = QVBoxLayout()
     runtime_layout.setSpacing(8)
@@ -173,7 +166,6 @@ def build_pipeline_page(window) -> QWidget:
     advanced_panel.setVisible(False)
     advanced_toggle.toggled.connect(advanced_panel.setVisible)
 
-    selected_panel.addWidget(model_group)
     selected_panel.addWidget(stem_group)
     selected_panel.addWidget(midi_group)
     selected_panel.addWidget(advanced_toggle)

@@ -202,8 +202,6 @@ def main() -> int:
             self.workflow_note.setWordWrap(True)
             self.workflow_note.setStyleSheet("color: #4b5563;")
 
-            self.model_title = QLabel()
-            self.model_title.setStyleSheet("font-size: 18px; font-weight: 700;")
             self.model_summary = QLabel()
             self.model_summary.setWordWrap(True)
             self.model_facts = QLabel()
@@ -488,12 +486,18 @@ def main() -> int:
             self.export_button.clicked.connect(lambda: gui_export.export_selected_files(self))
             self.cancel_button.clicked.connect(self.cancel_processing)
             self.play_button.clicked.connect(self.toggle_playback)
-            self.play_review_button.clicked.connect(self.play_editor_review_target)
+            self.play_review_button.clicked.connect(
+                lambda: gui_editor_actions.play_editor_review_target(self)
+            )
             self.previous_chord_button.clicked.connect(lambda: self.select_review_chord(-1))
             self.next_chord_button.clicked.connect(lambda: self.select_review_chord(1))
             self.stop_button.clicked.connect(self.stop_transport)
-            self.fit_song_button.clicked.connect(self.fit_editor_song_to_view)
-            self.fit_review_button.clicked.connect(self.fit_editor_review_to_view)
+            self.fit_song_button.clicked.connect(
+                lambda: gui_editor_actions.fit_editor_song_to_view(self)
+            )
+            self.fit_review_button.clicked.connect(
+                lambda: gui_editor_actions.fit_editor_review_to_view(self)
+            )
             self.preview_chord_button.clicked.connect(self.preview_selected_chord)
             self.use_chord_button.clicked.connect(self.assign_selected_chord_to_selection)
             self.delete_chord_button.clicked.connect(self.delete_selected_chord)
@@ -742,8 +746,18 @@ def main() -> int:
                 lambda: self.timeline.zoom_vertical(1 / 1.18),
             )
             self._add_action(view_menu, "Reset Timeline Zoom", "Ctrl+0", self.timeline.reset_zoom)
-            self._add_action(view_menu, "Fit Whole Song", "Ctrl+Alt+0", self.fit_editor_song_to_view)
-            self._add_action(view_menu, "Fit Review Target", "Ctrl+Alt+F", self.fit_editor_review_to_view)
+            self._add_action(
+                view_menu,
+                "Fit Whole Song",
+                "Ctrl+Alt+0",
+                lambda: gui_editor_actions.fit_editor_song_to_view(self),
+            )
+            self._add_action(
+                view_menu,
+                "Fit Review Target",
+                "Ctrl+Alt+F",
+                lambda: gui_editor_actions.fit_editor_review_to_view(self),
+            )
             view_menu.addSeparator()
             self._add_action(view_menu, "Previous Chord", "Alt+Left", lambda: self.select_review_chord(-1))
             self._add_action(view_menu, "Next Chord", "Alt+Right", lambda: self.select_review_chord(1))
@@ -766,15 +780,6 @@ def main() -> int:
                 "Timeline controls: Space plays/pauses; Play Review loops one selected range or chord; Prev/Next Chord or Alt+Left/Right steps through chords for review; Fit Song or Ctrl+Alt+0 shows the full song; Ctrl+Alt+F fits the selected review target; drag the chord lane or Shift+drag the timeline to select a chord-analysis range; Ctrl+drag adds another selected range; Esc clears selection; click/drag sets playhead; wheel scrolls vertically; Shift+wheel scrolls horizontally; Ctrl+wheel zooms time; Ctrl+Shift+wheel zooms pitch; middle/right drag pans.",
                 12000,
             )
-
-        def fit_editor_song_to_view(self) -> None:
-            gui_editor_actions.fit_editor_song_to_view(self)
-
-        def fit_editor_review_to_view(self) -> None:
-            gui_editor_actions.fit_editor_review_to_view(self)
-
-        def play_editor_review_target(self) -> None:
-            gui_editor_actions.play_editor_review_target(self)
 
         def toggle_playback_from_shortcut(self) -> None:
             focused = QApplication.focusWidget()

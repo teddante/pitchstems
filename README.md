@@ -6,7 +6,7 @@ PitchStems is a local-first desktop and CLI app for turning ordinary audio files
 - separated stems
 - per-stem MIDI files
 - one combined multitrack MIDI file
-- a ZIP archive for easy export
+- optional CLI ZIP packaging for compatibility
 
 The intended pipeline is:
 
@@ -143,7 +143,8 @@ audio in sync, with per-track mute and volume controls saved in the project.
 Each full GUI or CLI run creates a project folder ending in `.pitchstems`. The folder keeps
 one canonical copy of the project audio assets: the copied source audio, normalized work
 audio, generated stems, MIDI, and a `pitchstems.project.json` manifest. ZIP packages are
-optional, and stem WAVs are not duplicated into `export`.
+kept for CLI and backward-compatible packaging, while the GUI exports selected loose files.
+Stem WAVs are not duplicated into `export`.
 Use **Open Project** in the GUI to reopen that manifest without rerunning the expensive
 separation step.
 

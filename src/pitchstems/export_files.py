@@ -4,8 +4,8 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from pitchstems.filename_safety import safe_file_stem
 from pitchstems.pipeline import PipelineResult
-from pitchstems.separation import safe_stem_key
 
 
 @dataclass(frozen=True)
@@ -114,12 +114,29 @@ def _note_csv_paths(safe_key: str, paths: list[Path]) -> list[tuple[Path, Path]]
     if len(paths) == 1:
         return [(Path("notes") / f"{safe_key}.csv", paths[0])]
     return [
-        (Path("notes") / f"{safe_key}-{safe_stem_key(path.stem)}.csv", path)
+        (Path("notes") / f"{safe_key}-{_export_file_stem(path.stem, fallback='notes')}.csv", path)
         for path in paths
     ]
 
 
 def _safe_filename(name: str) -> str:
-    stem = safe_stem_key(Path(name).stem)
+    stem = _export_file_stem(Path(name).stem, fallback="file")
     suffix = Path(name).suffix.lower()
     return f"{stem}{suffix or '.mid'}"
+
+
+def _export_file_stem(value: str, fallback: str) -> str:
+    return safe_file_stem(_export_slug(value), fallback=fallback)
+
+
+def _export_slug(value: str) -> str:
+    cleaned = []
+    previous_dash = False
+    for character in value.strip().lower():
+        if character.isalnum():
+            cleaned.append(character)
+            previous_dash = False
+        elif not previous_dash:
+            cleaned.append("-")
+            previous_dash = True
+    return "".join(cleaned).strip("-")

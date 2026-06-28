@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QApplication
 
 from pitchstems.editor_loader import EditorLoadResult
 from pitchstems.export_files import build_export_items, copy_export_items
+from pitchstems import gui_editor_actions
 from pitchstems.pipeline import PipelineResult
 from pitchstems.project_store import save_project_manifest
 from pitchstems.separation import StemResult
@@ -49,7 +50,8 @@ def run_startup_smoke(window) -> None:
     _assert(window.generate_midi.isChecked(), "generate MIDI default")
     _assert(set(window.workspace_nav_buttons) == {"Pipeline", "Editor"}, "workspace nav maps to real pages")
     _assert(not hasattr(window, "model_select"), "GUI model selector removed")
-    _assert(window.model_title.text(), "model title displayed")
+    _assert(not hasattr(window, "model_title"), "redundant model title label removed")
+    _assert(window.separation_card.title(), "model title displayed on separation card")
     _assert(window.processing_tabs.count() == 2, "pipeline processing tabs")
     _assert(window.processing_tabs.tabText(0) == "Basic Pitch", "basic pitch tab")
     _assert(window.processing_tabs.tabText(1) == "Runtime", "runtime tab")
@@ -167,7 +169,7 @@ def run_project_smoke(window) -> None:
     QApplication.processEvents()
     _assert(note_pitch_class not in window.chord_note_overrides, "note evidence auto override")
 
-    window.fit_editor_song_to_view()
+    gui_editor_actions.fit_editor_song_to_view(window)
     _assert(window.timeline.horizontalScrollBar().value() == 0, "fit song horizontal start")
     toggle_row, audio_row, midi_row = window.track_control_detail_rows["bass"]
     _assert(toggle_row.isVisible(), "fit song track toggles visible")
@@ -316,13 +318,13 @@ def run_real_audio_project_smoke(window, manifest_path: Path) -> None:
     _assert(any(midi.path.is_file() for midi in window.current_result.midi_files), "real-audio MIDI files exist")
     _assert(window.timeline.project is window.editor_project, "real-audio timeline project attached")
 
-    window.fit_editor_song_to_view()
+    gui_editor_actions.fit_editor_song_to_view(window)
     window.timeline._set_selection(0.0, min(1.0, max(0.1, window.editor_project.duration)), notify=True)
     window.refresh_current_harmony(0.0)
     _assert(window.current_harmony_context is not None, "real-audio harmony review context")
 
     _assert(window.play_review_button.isEnabled(), "real-audio play review enabled")
-    window.play_editor_review_target()
+    gui_editor_actions.play_editor_review_target(window)
     QApplication.processEvents()
     _assert(window.transport.is_playing, "real-audio review playback starts")
     _assert(window.timeline.position == 0.0, "real-audio review playback starts at selection")
