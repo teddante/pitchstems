@@ -310,24 +310,24 @@ def _validate_manifest(path: Path, manifest: dict[str, Any]) -> None:
     for field_name, expected_type in required_fields.items():
         if not isinstance(manifest.get(field_name), expected_type):
             raise ValueError(f"{path} is missing required project field: {field_name}")
-    for index, item in enumerate(manifest.get("stems", [])):
-        if (
-            not isinstance(item, dict)
-            or not _non_empty_string(item.get("name"))
-            or not _non_empty_string(item.get("path"))
-        ):
-            raise ValueError(f"{path} has an invalid stem entry at index {index}")
-        _validate_safe_display_name(path, item["name"], "stem name")
-        _validate_project_path_value(path, project_dir, item["path"], f"stems[{index}].path")
-    for index, item in enumerate(manifest.get("midi_files", [])):
-        if (
-            not isinstance(item, dict)
-            or not _non_empty_string(item.get("stem"))
-            or not _non_empty_string(item.get("path"))
-        ):
-            raise ValueError(f"{path} has an invalid MIDI entry at index {index}")
-        _validate_safe_display_name(path, item["stem"], "MIDI stem name")
-        _validate_project_path_value(path, project_dir, item["path"], f"midi_files[{index}].path")
+    _validate_generated_asset_entries(
+        path,
+        project_dir,
+        manifest.get("stems", []),
+        collection_field="stems",
+        name_field="name",
+        entry_label="stem",
+        name_label="stem name",
+    )
+    _validate_generated_asset_entries(
+        path,
+        project_dir,
+        manifest.get("midi_files", []),
+        collection_field="midi_files",
+        name_field="stem",
+        entry_label="MIDI",
+        name_label="MIDI stem name",
+    )
     _validate_project_path_value(path, project_dir, manifest["normalized_audio"], "normalized_audio")
     for field_name in ("source_audio", "combined_midi", "zip_path"):
         value = manifest.get(field_name)
@@ -341,6 +341,32 @@ def _validate_manifest(path: Path, manifest: dict[str, Any]) -> None:
                 field_name,
                 allow_external_absolute=field_name == "source_audio",
             )
+
+
+def _validate_generated_asset_entries(
+    manifest_path: Path,
+    project_dir: Path,
+    entries: list[Any],
+    *,
+    collection_field: str,
+    name_field: str,
+    entry_label: str,
+    name_label: str,
+) -> None:
+    for index, item in enumerate(entries):
+        if (
+            not isinstance(item, dict)
+            or not _non_empty_string(item.get(name_field))
+            or not _non_empty_string(item.get("path"))
+        ):
+            raise ValueError(f"{manifest_path} has an invalid {entry_label} entry at index {index}")
+        _validate_safe_display_name(manifest_path, item[name_field], name_label)
+        _validate_project_path_value(
+            manifest_path,
+            project_dir,
+            item["path"],
+            f"{collection_field}[{index}].path",
+        )
 
 
 def _validate_project_path_value(

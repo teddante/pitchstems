@@ -352,6 +352,29 @@ def test_load_project_manifest_rejects_malformed_asset_entries(tmp_path: Path) -
         raise AssertionError("Expected malformed stem entry to be rejected")
 
 
+def test_load_project_manifest_rejects_malformed_midi_asset_entries(tmp_path: Path) -> None:
+    manifest_path = tmp_path / PROJECT_FILENAME
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "format": "pitchstems-project",
+                "format_version": 2,
+                "normalized_audio": "work/source.wav",
+                "stems": [{"name": "bass", "path": "stems/bass.wav"}],
+                "midi_files": [{"stem": "bass"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        load_pipeline_result(manifest_path)
+    except ValueError as exc:
+        assert "invalid MIDI entry" in str(exc)
+    else:
+        raise AssertionError("Expected malformed MIDI entry to be rejected")
+
+
 def test_load_project_manifest_rejects_empty_required_asset_paths(tmp_path: Path) -> None:
     manifest_path = tmp_path / PROJECT_FILENAME
     manifest_path.write_text(
