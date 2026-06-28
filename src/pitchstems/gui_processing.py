@@ -347,7 +347,7 @@ def finish_midi_preview_render(
         window.logger.info("Ignored stale MIDI preview render for %s", project_dir)
         return
 
-    window.rendering_midi_previews.difference_update(requested_stems)
+    clear_rendering_midi_previews(window, requested_stems)
     window.attach_midi_preview_players(previews)
 
 
@@ -363,10 +363,14 @@ def finish_midi_preview_failure(
         window.logger.info("Ignored stale MIDI preview failure for %s: %s", project_dir, error)
         return
 
-    window.rendering_midi_previews.difference_update(requested_stems)
+    clear_rendering_midi_previews(window, requested_stems)
     window.refresh_timeline_track_summaries()
     window.append_log(error)
     window.end_activity("MIDI preview audio failed")
+
+
+def clear_rendering_midi_previews(window, stem_names: set[str]) -> None:
+    window.rendering_midi_previews.difference_update(stem_names)
 
 
 def clear_midi_preview_workers(window, token: int, project_dir: Path, stem_names: set[str]) -> None:

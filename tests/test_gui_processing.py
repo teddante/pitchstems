@@ -588,3 +588,12 @@ def test_finish_midi_preview_failure_reports_current_error() -> None:
     assert window.timeline_refreshes == 1
     assert window.logs == ["preview failed"]
     assert window.activity_messages[-1] == "MIDI preview audio failed"
+
+
+def test_clear_rendering_midi_previews_removes_requested_stems() -> None:
+    window = _FlushWindow()
+    window.rendering_midi_previews.update({"piano", "bass", "drums"})
+
+    gui_processing.clear_rendering_midi_previews(window, {"piano", "drums"})
+
+    assert window.rendering_midi_previews == {"bass"}
