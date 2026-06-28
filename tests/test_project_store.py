@@ -11,6 +11,8 @@ from pitchstems.project_store import (
     load_project_manifest,
     save_failed_project_manifest,
     save_project_manifest,
+    _midi_results_from_manifest,
+    _stem_results_from_manifest,
     _write_json_atomic,
 )
 from pitchstems.separation import SeparationOptions
@@ -186,6 +188,19 @@ def test_manifest_saves_and_loads_stem_ids(tmp_path: Path) -> None:
     assert manifest["midi_files"][0]["stem_id"] == "vocals-lead"
     assert loaded.stems == [StemResult("Vocals Lead", stem, "vocals-lead")]
     assert loaded.midi_files == [MidiResult("Vocals Lead", midi, "vocals-lead")]
+
+
+def test_manifest_asset_result_helpers_resolve_project_paths(tmp_path: Path) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+
+    assert _stem_results_from_manifest(
+        project_dir,
+        [{"name": "Bass", "stem_id": "bass", "path": "stems/bass.wav"}],
+    ) == [StemResult("Bass", project_dir / "stems" / "bass.wav", "bass")]
+    assert _midi_results_from_manifest(
+        project_dir,
+        [{"stem": "Bass", "stem_id": "bass", "path": "midi/bass/song.mid"}],
+    ) == [MidiResult("Bass", project_dir / "midi" / "bass" / "song.mid", "bass")]
 
 
 def test_load_pipeline_result_rejects_failed_manifest_with_last_error(tmp_path: Path) -> None:

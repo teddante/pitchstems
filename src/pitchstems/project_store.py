@@ -159,22 +159,8 @@ def load_pipeline_result(path: Path) -> PipelineResult:
     return PipelineResult(
         project_dir=project_dir,
         normalized_audio=_resolve_project_path(project_dir, manifest.get("normalized_audio")),
-        stems=[
-            StemResult(
-                name=item["name"],
-                path=_resolve_project_path(project_dir, item["path"]),
-                stem_id=item.get("stem_id"),
-            )
-            for item in manifest.get("stems", [])
-        ],
-        midi_files=[
-            MidiResult(
-                stem=item["stem"],
-                path=_resolve_project_path(project_dir, item["path"]),
-                stem_id=item.get("stem_id"),
-            )
-            for item in manifest.get("midi_files", [])
-        ],
+        stems=_stem_results_from_manifest(project_dir, manifest.get("stems", [])),
+        midi_files=_midi_results_from_manifest(project_dir, manifest.get("midi_files", [])),
         combined_midi=_optional_project_path(project_dir, manifest.get("combined_midi")),
         zip_path=_optional_project_path(project_dir, manifest.get("zip_path")),
         source_audio=_optional_project_path(project_dir, manifest.get("source_audio")),
@@ -188,6 +174,28 @@ def load_project_manifest(path: Path) -> dict[str, Any]:
     manifest = _migrate_manifest(_read_json(manifest_path))
     _validate_manifest(manifest_path, manifest)
     return manifest
+
+
+def _stem_results_from_manifest(project_dir: Path, entries: list[dict[str, Any]]) -> list[StemResult]:
+    return [
+        StemResult(
+            name=item["name"],
+            path=_resolve_project_path(project_dir, item["path"]),
+            stem_id=item.get("stem_id"),
+        )
+        for item in entries
+    ]
+
+
+def _midi_results_from_manifest(project_dir: Path, entries: list[dict[str, Any]]) -> list[MidiResult]:
+    return [
+        MidiResult(
+            stem=item["stem"],
+            path=_resolve_project_path(project_dir, item["path"]),
+            stem_id=item.get("stem_id"),
+        )
+        for item in entries
+    ]
 
 
 def _pipeline_settings_manifest(
