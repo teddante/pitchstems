@@ -10,6 +10,7 @@ from mido import Message, MidiFile, MidiTrack
 import pitchstems.pipeline as pipeline
 from pitchstems.audio_clip import AudioClipRange
 from pitchstems.pipeline import (
+    _MidiWorkspace,
     _ProjectWorkspace,
     _package_pipeline_outputs,
     _project_dir,
@@ -940,6 +941,23 @@ def test_project_workspace_names_and_creates_pipeline_directories(tmp_path: Path
             workspace.export_dir,
         ]
     )
+
+
+def test_midi_workspace_names_rerun_directories(tmp_path: Path) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+
+    workspace = _MidiWorkspace.from_project(project_dir, "Song Title!")
+
+    assert workspace.project_dir == project_dir
+    assert workspace.input_stem == "Song_Title"
+    assert workspace.midi_dir == project_dir / "midi"
+    assert workspace.export_dir == project_dir / "export"
+    assert workspace.staged_midi_dir == project_dir / "midi.tmp"
+    assert workspace.staged_export_dir == project_dir / "export.tmp"
+    assert workspace.backup_midi_dir == project_dir / "midi.backup.tmp"
+    assert workspace.backup_export_dir == project_dir / "export.backup.tmp"
+    assert workspace.normalized_audio == project_dir / "work" / "Song_Title.wav"
+    assert workspace.zip_path == project_dir / "Song_Title_pitchstems.zip"
 
 
 def test_pipeline_uses_bounded_safe_names_for_long_audio_files(tmp_path: Path, monkeypatch) -> None:

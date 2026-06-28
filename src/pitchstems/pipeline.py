@@ -74,6 +74,40 @@ class _ProjectWorkspace:
             directory.mkdir(parents=True, exist_ok=True)
 
 
+@dataclass(frozen=True)
+class _MidiWorkspace:
+    project_dir: Path
+    input_stem: str
+    midi_dir: Path
+    export_dir: Path
+    staged_midi_dir: Path
+    staged_export_dir: Path
+    backup_midi_dir: Path
+    backup_export_dir: Path
+
+    @classmethod
+    def from_project(cls, project_dir: Path, input_stem: str) -> "_MidiWorkspace":
+        input_stem = _safe_stem(input_stem)
+        return cls(
+            project_dir=project_dir,
+            input_stem=input_stem,
+            midi_dir=project_dir / "midi",
+            export_dir=project_dir / "export",
+            staged_midi_dir=project_dir / "midi.tmp",
+            staged_export_dir=project_dir / "export.tmp",
+            backup_midi_dir=project_dir / "midi.backup.tmp",
+            backup_export_dir=project_dir / "export.backup.tmp",
+        )
+
+    @property
+    def normalized_audio(self) -> Path:
+        return self.project_dir / "work" / f"{self.input_stem}.wav"
+
+    @property
+    def zip_path(self) -> Path:
+        return self.project_dir / f"{self.input_stem}_pitchstems.zip"
+
+
 def process_audio_file(
     input_path: Path,
     output_root: Path,
@@ -234,23 +268,17 @@ def process_midi_from_stems(
     source_audio = source_audio or existing_source_audio
     source_clip = source_clip or existing_source_clip
     original_source_audio = original_source_audio or existing_original_source_audio
-    midi_dir = project_dir / "midi"
-    export_dir = project_dir / "export"
-    staged_midi_dir = project_dir / "midi.tmp"
-    staged_export_dir = project_dir / "export.tmp"
-    backup_midi_dir = project_dir / "midi.backup.tmp"
-    backup_export_dir = project_dir / "export.backup.tmp"
-    input_stem = _safe_stem(input_stem)
+    workspace = _MidiWorkspace.from_project(project_dir, input_stem)
     selected_midi_stems = {stem.lower() for stem in midi_stems} if midi_stems is not None else None
     if selected_midi_stems is not None and not selected_midi_stems:
         raise ValueError("Choose at least one stem before rerunning MIDI.")
-    midi_dir.mkdir(parents=True, exist_ok=True)
-    export_dir.mkdir(parents=True, exist_ok=True)
+    workspace.midi_dir.mkdir(parents=True, exist_ok=True)
+    workspace.export_dir.mkdir(parents=True, exist_ok=True)
 
-    _reset_staging_dir(staged_midi_dir, project_dir)
-    _reset_staging_dir(staged_export_dir, project_dir)
-    _remove_staging_dir(backup_midi_dir, project_dir)
-    _remove_staging_dir(backup_export_dir, project_dir)
+    _reset_staging_dir(workspace.staged_midi_dir, workspace.project_dir)
+    _reset_staging_dir(workspace.staged_export_dir, workspace.project_dir)
+    _remove_staging_dir(workspace.backup_midi_dir, workspace.project_dir)
+    _remove_staging_dir(workspace.backup_export_dir, workspace.project_dir)
 
     midi_files: list[MidiResult] = []
     skip_percussion = midi_policy != "all" and selected_midi_stems is None
@@ -268,7 +296,7 @@ def process_midi_from_stems(
             midi = transcribe_stem_to_midi(
                 stem.name,
                 stem.path,
-                staged_midi_dir / stem.safe_key,
+                workspace.staged_midi_dir / stem.safe_key,
                 skip_percussion=skip_percussion,
                 options=midi_options,
                 log=log,
@@ -277,50 +305,57 @@ def process_midi_from_stems(
                 midi_files.append(MidiResult(midi.stem, midi.path, stem.safe_key))
             _raise_if_cancelled(cancelled)
 
-        staged_combined_midi = combine_midi_tracks(midi_files, staged_export_dir / f"{input_stem}_combined.mid")
+        staged_combined_midi = combine_midi_tracks(
+            midi_files,
+            workspace.staged_export_dir / f"{workspace.input_stem}_combined.mid",
+        )
         for midi in midi_files:
-            shutil.copy2(midi.path, staged_export_dir / f"{midi.safe_key}.mid")
+            shutil.copy2(midi.path, workspace.staged_export_dir / f"{midi.safe_key}.mid")
 
         final_midi_files = [
-            MidiResult(midi.stem, midi_dir / midi.path.relative_to(staged_midi_dir), midi.safe_key)
+            MidiResult(
+                midi.stem,
+                workspace.midi_dir / midi.path.relative_to(workspace.staged_midi_dir),
+                midi.safe_key,
+            )
             for midi in midi_files
         ]
         combined_midi = None
         if staged_combined_midi is not None:
-            combined_midi = export_dir / staged_combined_midi.name
-        staged_export_paths = list(staged_export_dir.iterdir())
+            combined_midi = workspace.export_dir / staged_combined_midi.name
+        staged_export_paths = list(workspace.staged_export_dir.iterdir())
 
-        generated_export_midi = {f"{input_stem}_combined.mid"} | {
+        generated_export_midi = {f"{workspace.input_stem}_combined.mid"} | {
             f"{stem.safe_key}.mid"
             for stem in stems
         }
         _raise_if_cancelled(cancelled)
         _replace_midi_outputs(
-            midi_dir,
-            staged_midi_dir,
-            export_dir,
+            workspace.midi_dir,
+            workspace.staged_midi_dir,
+            workspace.export_dir,
             staged_export_paths,
             generated_export_midi,
-            backup_midi_dir,
-            backup_export_dir,
+            workspace.backup_midi_dir,
+            workspace.backup_export_dir,
         )
-        _remove_midi_preview_cache(project_dir)
-        _remove_export_stem_copies(export_dir, stems)
+        _remove_midi_preview_cache(workspace.project_dir)
+        _remove_export_stem_copies(workspace.export_dir, stems)
         midi_files = final_midi_files
     except Exception:
-        _remove_staging_dir(staged_midi_dir, project_dir)
-        _remove_staging_dir(staged_export_dir, project_dir)
-        _remove_staging_dir(backup_midi_dir, project_dir)
-        _remove_staging_dir(backup_export_dir, project_dir)
+        _remove_staging_dir(workspace.staged_midi_dir, workspace.project_dir)
+        _remove_staging_dir(workspace.staged_export_dir, workspace.project_dir)
+        _remove_staging_dir(workspace.backup_midi_dir, workspace.project_dir)
+        _remove_staging_dir(workspace.backup_export_dir, workspace.project_dir)
         raise
 
-    zip_path = project_dir / f"{input_stem}_pitchstems.zip" if create_zip else None
+    zip_path = workspace.zip_path if create_zip else None
     if log:
-        log(f"MIDI stage done: {zip_path or project_dir}")
+        log(f"MIDI stage done: {zip_path or workspace.project_dir}")
 
     result = PipelineResult(
-        project_dir=project_dir,
-        normalized_audio=normalized_audio or project_dir / "work" / f"{input_stem}.wav",
+        project_dir=workspace.project_dir,
+        normalized_audio=normalized_audio or workspace.normalized_audio,
         stems=stems,
         midi_files=midi_files,
         combined_midi=combined_midi,
