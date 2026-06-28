@@ -26,9 +26,6 @@ class AudioClipRange:
     def duration_seconds(self) -> float:
         return self.end_seconds - self.start_seconds
 
-    def clamped(self, duration_seconds: float) -> AudioClipRange | None:
-        return clamp_clip_range(self.start_seconds, self.end_seconds, duration_seconds)
-
     def to_manifest(self) -> dict[str, float]:
         return {
             "start_seconds": self.start_seconds,

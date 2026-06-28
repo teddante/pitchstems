@@ -143,7 +143,6 @@ class _FinishedProcess:
 
     def join(self, timeout=0) -> None:
         del timeout
-        pass
 
 
 class _TerminatedProcessWorker:

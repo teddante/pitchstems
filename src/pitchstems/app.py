@@ -24,7 +24,6 @@ from pitchstems.editor_review_target import review_ranges, single_review_range
 from pitchstems.editor_loader import EditorLoadResult
 from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
 from pitchstems.midi_preview import render_note_preview
-from pitchstems.model_catalog import DEFAULT_MODEL_KEY
 from pitchstems.notation import pitch_class_for_name, pitch_class_name
 from pitchstems.pipeline import PipelineResult
 from pitchstems.harmony_inspector import (
@@ -616,7 +615,7 @@ def main() -> int:
                 button = QPushButton(label)
                 button.setObjectName("navButton")
                 button.setCheckable(True)
-                button.clicked.connect(lambda checked=False, index=tab_index: self.main_tabs.setCurrentIndex(index))
+                button.clicked.connect(lambda _checked=False, index=tab_index: self.main_tabs.setCurrentIndex(index))
                 self.workspace_nav_group.addButton(button)
                 rail_layout.addWidget(button)
                 self.workspace_nav_buttons[label] = button
@@ -1343,9 +1342,6 @@ def main() -> int:
 
         def set_processing_state(self, busy: bool) -> None:
             gui_pipeline_state.set_processing_state(self, busy)
-
-        def selected_model_key(self) -> str:
-            return DEFAULT_MODEL_KEY
 
         def selected_separation_options(self):
             return gui_pipeline_state.selected_separation_options(self)

@@ -161,13 +161,12 @@ class _Logger:
 class _FakePlayer:
     def __init__(self, *_args) -> None:
         self.actions: list[str] = []
-        self.audio_output = None
 
     def pause(self) -> None:
         self.actions.append("pause")
 
     def setAudioOutput(self, output) -> None:
-        self.audio_output = output
+        del output
         self.actions.append("setAudioOutput")
 
     def setSource(self, source: QUrl) -> None:
