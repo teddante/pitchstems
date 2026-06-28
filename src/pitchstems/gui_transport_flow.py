@@ -74,14 +74,19 @@ def midi_preview_stems_to_render(window, result, requested_stems: set[str] | Non
     if window.editor_project is None or not window.editor_project.notes:
         return []
     requested_keys = {stem.lower() for stem in (requested_stems or set())}
+    note_stems = midi_preview_note_stems(window.editor_project.notes)
     return [
         track.name
         for track in window.editor_project.tracks
         if (not requested_keys or track.name.lower() in requested_keys)
         if track.name not in window.transport.midi_preview_paths
-        and any(note.stem.lower() == track.name.lower() for note in window.editor_project.notes)
+        and track.name.lower() in note_stems
         and not window._midi_preview_worker_running(result.project_dir, track.name)
     ]
+
+
+def midi_preview_note_stems(notes) -> set[str]:
+    return {note.stem.lower() for note in notes}
 
 
 def midi_preview_worker_running(window, project_dir: Path, stem_name: str) -> bool:

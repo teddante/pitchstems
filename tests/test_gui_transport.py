@@ -17,7 +17,7 @@ from pitchstems.gui_transport import (
     start_player_source,
 )
 from pitchstems import gui_transport_flow
-from pitchstems.gui_transport_flow import midi_preview_stems_to_render
+from pitchstems.gui_transport_flow import midi_preview_note_stems, midi_preview_stems_to_render
 from pitchstems.pipeline_models import PipelineResult, StemResult
 
 
@@ -79,6 +79,16 @@ def test_midi_preview_stems_to_render_requires_project_notes(tmp_path: Path) -> 
     window.editor_project = None
 
     assert midi_preview_stems_to_render(window, result) == []
+
+
+def test_midi_preview_note_stems_normalizes_note_stem_names() -> None:
+    notes = [
+        SimpleNamespace(stem="Bass"),
+        SimpleNamespace(stem="bass"),
+        SimpleNamespace(stem="PIANO"),
+    ]
+
+    assert midi_preview_note_stems(notes) == {"bass", "piano"}
 
 
 def test_find_existing_midi_previews_returns_existing_stem_previews(tmp_path: Path) -> None:
