@@ -99,8 +99,7 @@ class WorkerJobState:
         if self.active_token is None:
             return False
         self.cancel_requested_token = self.active_token
-        if self.active_process is not None:
-            self.active_process.terminate()
+        self._terminate_active_process()
         return True
 
     def request_cancel(self, token: int) -> bool:
@@ -121,8 +120,7 @@ class WorkerJobState:
 
     def invalidate(self) -> bool:
         had_active = self.active_token is not None
-        if self.active_process is not None:
-            self.active_process.terminate()
+        self._terminate_active_process()
         self.next_token += 1
         self.active_token = None
         self.cancel_requested_token = None
@@ -137,6 +135,10 @@ class WorkerJobState:
             return False
         self.active_process = process
         return True
+
+    def _terminate_active_process(self) -> None:
+        if self.active_process is not None:
+            self.active_process.terminate()
 
 
 @dataclass
