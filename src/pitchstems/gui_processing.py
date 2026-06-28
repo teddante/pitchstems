@@ -26,6 +26,7 @@ class FullProcessRunRequest:
     output_root: Path
     separation_options: SeparationOptions
     generate_midi: bool
+    midi_policy: str
     midi_options: MidiOptions
     midi_stems: set[str]
     create_zip: bool
@@ -37,6 +38,7 @@ class MidiProcessRunRequest:
     result: PipelineResult
     input_stem: str
     stems: list[StemResult]
+    midi_policy: str
     midi_options: MidiOptions
     midi_stems: set[str]
     create_zip: bool
@@ -73,6 +75,7 @@ def start_full_processing(window) -> None:
             output_root=Path(window.output_dir.text()),
             separation_options=window.selected_separation_options(),
             generate_midi=window.generate_midi.isChecked() and bool(midi_stems),
+            midi_policy="all",
             midi_options=window.selected_midi_options(),
             midi_stems=midi_stems,
             create_zip=False,
@@ -104,6 +107,7 @@ def start_midi_processing(window) -> None:
             result=window.current_result,
             input_stem=window.current_input_stem,
             stems=list(window.current_stems),
+            midi_policy="all",
             midi_options=window.selected_midi_options(),
             midi_stems=window.selected_midi_stems(),
             create_zip=False,
@@ -185,7 +189,7 @@ def run_full_pipeline_process(token: int, request: FullProcessRunRequest, messag
             request.output_root,
             separation_options=request.separation_options,
             generate_midi=request.generate_midi,
-            midi_policy="all",
+            midi_policy=request.midi_policy,
             midi_options=request.midi_options,
             midi_stems=request.midi_stems,
             create_zip=request.create_zip,
@@ -214,7 +218,7 @@ def run_midi_stage_process(token: int, request: MidiProcessRunRequest, messages)
             source_audio=request.result.source_audio,
             source_clip=request.result.source_clip,
             original_source_audio=request.result.original_source_audio,
-            midi_policy="all",
+            midi_policy=request.midi_policy,
             midi_options=request.midi_options,
             midi_stems=request.midi_stems,
             create_zip=request.create_zip,

@@ -217,6 +217,7 @@ def test_start_full_processing_requests_no_zip_from_gui(monkeypatch, tmp_path: P
     request = process_workers[0].args[1]
     assert process_workers[0].target is gui_processing.run_full_pipeline_process
     assert request.create_zip is False
+    assert request.midi_policy == "all"
     assert request.source_clip is None
     assert window.worker.started is True
 
@@ -276,7 +277,81 @@ def test_start_midi_processing_requests_no_zip_from_gui(monkeypatch, tmp_path: P
     request = process_workers[0].args[1]
     assert process_workers[0].target is gui_processing.run_midi_stage_process
     assert request.create_zip is False
+    assert request.midi_policy == "all"
     assert window.worker.started is True
+
+
+def test_run_full_pipeline_process_uses_request_midi_policy(monkeypatch, tmp_path: Path) -> None:
+    calls: list[dict[str, object]] = []
+    result = PipelineResult(
+        project_dir=tmp_path / "song.pitchstems",
+        normalized_audio=tmp_path / "song.pitchstems" / "work" / "song.wav",
+        stems=[],
+        midi_files=[],
+        combined_midi=None,
+        zip_path=None,
+    )
+
+    def fake_process_audio_file(*_args, **kwargs):
+        calls.append(kwargs)
+        return result
+
+    monkeypatch.setattr(gui_processing, "process_audio_file", fake_process_audio_file)
+    messages: queue.Queue[object] = queue.Queue()
+
+    gui_processing.run_full_pipeline_process(
+        4,
+        gui_processing.FullProcessRunRequest(
+            input_path=tmp_path / "song.wav",
+            output_root=tmp_path / "out",
+            separation_options=SeparationOptions(),
+            generate_midi=True,
+            midi_policy="pitched",
+            midi_options=MidiOptions(),
+            midi_stems={"bass"},
+            create_zip=False,
+        ),
+        messages,
+    )
+
+    assert calls[0]["midi_policy"] == "pitched"
+    assert messages.get_nowait() == ("RESULT", 4, result)
+
+
+def test_run_midi_stage_process_uses_request_midi_policy(monkeypatch, tmp_path: Path) -> None:
+    calls: list[dict[str, object]] = []
+    result = PipelineResult(
+        project_dir=tmp_path / "song.pitchstems",
+        normalized_audio=tmp_path / "song.pitchstems" / "work" / "song.wav",
+        stems=[StemResult("bass", tmp_path / "song.pitchstems" / "stems" / "bass.wav")],
+        midi_files=[],
+        combined_midi=None,
+        zip_path=None,
+    )
+
+    def fake_process_midi_from_stems(**kwargs):
+        calls.append(kwargs)
+        return result
+
+    monkeypatch.setattr(gui_processing, "process_midi_from_stems", fake_process_midi_from_stems)
+    messages: queue.Queue[object] = queue.Queue()
+
+    gui_processing.run_midi_stage_process(
+        5,
+        gui_processing.MidiProcessRunRequest(
+            result=result,
+            input_stem="song",
+            stems=result.stems,
+            midi_policy="pitched",
+            midi_options=MidiOptions(),
+            midi_stems={"bass"},
+            create_zip=False,
+        ),
+        messages,
+    )
+
+    assert calls[0]["midi_policy"] == "pitched"
+    assert messages.get_nowait() == ("RESULT", 5, result)
 
 
 def test_cancel_processing_requests_active_worker_and_updates_activity() -> None:
