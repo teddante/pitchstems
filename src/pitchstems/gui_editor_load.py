@@ -82,11 +82,7 @@ def finish_editor_project_load(window, token: int, loaded) -> None:
         window.finish_editor_load_activity(token, "Ready")
         return
 
-    window.base_editor_project = loaded.base_project
-    window.editor_project = loaded.editor_project
-    editor_state = loaded.editor_state
-    window.manual_chords = loaded.manual_chords
-    window.removed_chord_ranges = loaded.removed_chord_ranges
+    editor_state = _apply_loaded_editor_result(window, loaded)
     window.logger.info(
         "Editor model built: tracks=%d notes=%d chords=%d",
         len(window.editor_project.tracks),
@@ -127,6 +123,14 @@ def finish_editor_project_load(window, token: int, loaded) -> None:
     window.main_tabs.setCurrentIndex(1)
     window.logger.info("Editor project loaded")
     window.finish_editor_load_activity(token, "Editor project loaded")
+
+
+def _apply_loaded_editor_result(window, loaded) -> dict:
+    window.base_editor_project = loaded.base_project
+    window.editor_project = loaded.editor_project
+    window.manual_chords = loaded.manual_chords
+    window.removed_chord_ranges = loaded.removed_chord_ranges
+    return loaded.editor_state
 
 
 def finish_editor_project_load_failed(window, token: int, project_dir: Path, error: str) -> None:
