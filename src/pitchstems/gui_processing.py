@@ -32,6 +32,10 @@ class FullProcessRunRequest:
     create_zip: bool
     source_clip: AudioClipRange | None = None
 
+    @property
+    def cleanup_root(self) -> Path | None:
+        return self.output_root
+
 
 @dataclass(frozen=True)
 class MidiProcessRunRequest:
@@ -42,6 +46,10 @@ class MidiProcessRunRequest:
     midi_options: MidiOptions
     midi_stems: set[str]
     create_zip: bool
+
+    @property
+    def cleanup_root(self) -> Path | None:
+        return None
 
 
 WORKER_COMPLETION_MESSAGES = {
@@ -117,8 +125,7 @@ def start_midi_processing(window) -> None:
 
 def start_process_job(window, token: int, target, process_request) -> None:
     process_worker = create_process_worker(target, (token, process_request))
-    if isinstance(process_request, FullProcessRunRequest):
-        process_worker.cleanup_root = process_request.output_root
+    process_worker.cleanup_root = process_request.cleanup_root
     if not window.worker_jobs.attach_process(token, process_worker):
         process_worker.terminate(timeout_seconds=0.5)
         return

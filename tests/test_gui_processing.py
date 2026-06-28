@@ -214,8 +214,10 @@ def test_start_full_processing_requests_no_zip_from_gui(monkeypatch, tmp_path: P
     assert process_workers
     assert process_workers[0].process.started is True
     assert window.worker_jobs.active_process is process_workers[0]
+    assert process_workers[0].cleanup_root == tmp_path / "out"
     request = process_workers[0].args[1]
     assert process_workers[0].target is gui_processing.run_full_pipeline_process
+    assert request.cleanup_root == tmp_path / "out"
     assert request.create_zip is False
     assert request.midi_policy == "all"
     assert request.source_clip is None
@@ -274,8 +276,10 @@ def test_start_midi_processing_requests_no_zip_from_gui(monkeypatch, tmp_path: P
     assert process_workers
     assert process_workers[0].process.started is True
     assert window.worker_jobs.active_process is process_workers[0]
+    assert process_workers[0].cleanup_root is None
     request = process_workers[0].args[1]
     assert process_workers[0].target is gui_processing.run_midi_stage_process
+    assert request.cleanup_root is None
     assert request.create_zip is False
     assert request.midi_policy == "all"
     assert window.worker.started is True
