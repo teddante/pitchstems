@@ -16,7 +16,7 @@ from pitchstems.pipeline_models import MidiResult, PipelineResult, StemResult
 from pitchstems.preflight import run_preflight
 from pitchstems.project_store import (
     PROJECT_FILENAME,
-    load_project_manifest,
+    load_pipeline_result,
     save_failed_project_manifest,
     save_project_manifest,
 )
@@ -401,24 +401,8 @@ def _copy_source_audio(input_path: Path, audio_dir: Path) -> Path:
 
 def _existing_source_metadata(project_dir: Path) -> tuple[Path | None, AudioClipRange | None, Path | None]:
     with contextlib.suppress(Exception):
-        manifest = load_project_manifest(project_dir / PROJECT_FILENAME)
-        value = manifest.get("source_audio")
-        settings = manifest.get("settings", {})
-        source_clip = None
-        original_source_audio = None
-        if isinstance(settings, dict):
-            from pitchstems.audio_clip import clip_range_from_manifest
-
-            clip_data = settings.get("source_clip")
-            source_clip = clip_range_from_manifest(clip_data)
-            if isinstance(clip_data, dict):
-                original = clip_data.get("original_source_audio")
-                if isinstance(original, str) and original.strip():
-                    original_source_audio = Path(original)
-        if isinstance(value, str) and value:
-            path = Path(value)
-            source_audio = path if path.is_absolute() else project_dir / path
-            return source_audio, source_clip, original_source_audio
+        result = load_pipeline_result(project_dir / PROJECT_FILENAME)
+        return result.source_audio, result.source_clip, result.original_source_audio
     return None, None, None
 
 

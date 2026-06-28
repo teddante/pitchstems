@@ -257,6 +257,46 @@ def test_midi_rerun_result_preserves_existing_source_audio(tmp_path: Path, monke
     assert result.source_audio == source_path
 
 
+def test_midi_rerun_result_preserves_existing_source_clip_metadata(tmp_path: Path, monkeypatch) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    source_path = project_dir / "audio" / "source_clip.wav"
+    original_path = tmp_path / "source.mp3"
+    normalized_path = project_dir / "work" / "source.wav"
+    stem_path = project_dir / "stems" / "song_bass.wav"
+    clip = AudioClipRange(2.0, 8.5)
+    for path in [source_path, original_path, normalized_path, stem_path]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"placeholder")
+    save_project_manifest(
+        PipelineResult(
+            project_dir=project_dir,
+            normalized_audio=normalized_path,
+            stems=[StemResult("bass", stem_path)],
+            midi_files=[],
+            combined_midi=None,
+            zip_path=None,
+            source_audio=source_path,
+            source_clip=clip,
+            original_source_audio=original_path,
+        )
+    )
+
+    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", _fake_transcribe)
+
+    result = process_midi_from_stems(
+        project_dir=project_dir,
+        input_stem="source",
+        normalized_audio=normalized_path,
+        stems=[StemResult("bass", stem_path)],
+        midi_stems={"bass"},
+        create_zip=False,
+    )
+
+    assert result.source_audio == source_path
+    assert result.source_clip == clip
+    assert result.original_source_audio == original_path
+
+
 def test_save_pipeline_manifest_passes_pipeline_options(monkeypatch, tmp_path: Path) -> None:
     result = PipelineResult(
         project_dir=tmp_path / "song.pitchstems",
