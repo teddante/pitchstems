@@ -63,22 +63,8 @@ def save_project_manifest(
         created_at = existing.get("created_at") or _now()
         source_audio = result.source_audio or _optional_project_path(project_dir, existing.get("source_audio"))
 
-        settings = existing.get("settings", {})
-        if not isinstance(settings, dict):
-            settings = {}
-        source_clip = _source_clip_manifest(result.source_clip, result.original_source_audio)
-        manifest_settings = {
-            "separation": _dataclass_dict(separation_options)
-            or settings.get("separation", {}),
-            "midi": _dataclass_dict(midi_options) or settings.get("midi", {}),
-            "midi_stems": sorted(midi_stems) if midi_stems is not None else settings.get("midi_stems", []),
-            "generate_midi": generate_midi if generate_midi is not None else settings.get("generate_midi"),
-            "midi_policy": midi_policy or settings.get("midi_policy"),
-            "create_zip": create_zip if create_zip is not None else settings.get("create_zip"),
-        }
-        existing_source_clip = settings.get("source_clip")
-        if source_clip is not None or existing_source_clip is not None:
-            manifest_settings["source_clip"] = source_clip if source_clip is not None else existing_source_clip
+        settings = _existing_manifest_section(existing, "settings")
+        editor = _existing_manifest_section(existing, "editor")
 
         manifest = {
             "format": "pitchstems-project",
@@ -106,40 +92,30 @@ def save_project_manifest(
             ],
             "combined_midi": _relative_or_absolute(project_dir, result.combined_midi),
             "zip_path": _relative_or_absolute(project_dir, result.zip_path),
-            "settings": manifest_settings,
-            "editor": {
-                "track_visibility": track_visibility
-                if track_visibility is not None
-                else existing.get("editor", {}).get("track_visibility", {}),
-                "track_analysis_enabled": track_analysis_enabled
-                if track_analysis_enabled is not None
-                else existing.get("editor", {}).get("track_analysis_enabled", {}),
-                "track_audio_enabled": track_audio_enabled
-                if track_audio_enabled is not None
-                else existing.get("editor", {}).get("track_audio_enabled", {}),
-                "track_audio_volume": track_audio_volume
-                if track_audio_volume is not None
-                else existing.get("editor", {}).get("track_audio_volume", {}),
-                "track_midi_enabled": track_midi_enabled
-                if track_midi_enabled is not None
-                else existing.get("editor", {}).get("track_midi_enabled", {}),
-                "track_midi_volume": track_midi_volume
-                if track_midi_volume is not None
-                else existing.get("editor", {}).get("track_midi_volume", {}),
-                "notation_spelling": notation_spelling
-                if notation_spelling is not None
-                else existing.get("editor", {}).get("notation_spelling", "auto"),
-                "playhead_seconds": playhead_seconds
-                if playhead_seconds is not None
-                else existing.get("editor", {}).get("playhead_seconds", 0.0),
-                "chord_overrides": chord_overrides
-                if chord_overrides is not None
-                else existing.get("editor", {}).get("chord_overrides", []),
-                "chord_removals": chord_removals
-                if chord_removals is not None
-                else existing.get("editor", {}).get("chord_removals", []),
-                "note_edits": existing.get("editor", {}).get("note_edits", []),
-            },
+            "settings": _pipeline_settings_manifest(
+                settings,
+                separation_options=separation_options,
+                midi_options=midi_options,
+                midi_stems=midi_stems,
+                generate_midi=generate_midi,
+                midi_policy=midi_policy,
+                create_zip=create_zip,
+                source_clip=result.source_clip,
+                original_source_audio=result.original_source_audio,
+            ),
+            "editor": _editor_state_manifest(
+                editor,
+                track_visibility=track_visibility,
+                track_analysis_enabled=track_analysis_enabled,
+                track_audio_enabled=track_audio_enabled,
+                track_audio_volume=track_audio_volume,
+                track_midi_enabled=track_midi_enabled,
+                track_midi_volume=track_midi_volume,
+                notation_spelling=notation_spelling,
+                playhead_seconds=playhead_seconds,
+                chord_overrides=chord_overrides,
+                chord_removals=chord_removals,
+            ),
         }
         _write_json_atomic(manifest_path, manifest)
     return manifest_path
@@ -220,6 +196,94 @@ def load_project_manifest(path: Path) -> dict[str, Any]:
     manifest = _migrate_manifest(_read_json(manifest_path))
     _validate_manifest(manifest_path, manifest)
     return manifest
+
+
+def _pipeline_settings_manifest(
+    existing_settings: dict[str, Any],
+    *,
+    separation_options: SeparationOptions | None,
+    midi_options: MidiOptions | None,
+    midi_stems: set[str] | None,
+    generate_midi: bool | None,
+    midi_policy: str | None,
+    create_zip: bool | None,
+    source_clip: AudioClipRange | None,
+    original_source_audio: Path | None,
+) -> dict[str, Any]:
+    manifest_settings = {
+        "separation": _dataclass_dict(separation_options)
+        or existing_settings.get("separation", {}),
+        "midi": _dataclass_dict(midi_options) or existing_settings.get("midi", {}),
+        "midi_stems": sorted(midi_stems)
+        if midi_stems is not None
+        else existing_settings.get("midi_stems", []),
+        "generate_midi": generate_midi
+        if generate_midi is not None
+        else existing_settings.get("generate_midi"),
+        "midi_policy": midi_policy or existing_settings.get("midi_policy"),
+        "create_zip": create_zip if create_zip is not None else existing_settings.get("create_zip"),
+    }
+    source_clip_manifest = _source_clip_manifest(source_clip, original_source_audio)
+    existing_source_clip = existing_settings.get("source_clip")
+    if source_clip_manifest is not None or existing_source_clip is not None:
+        manifest_settings["source_clip"] = (
+            source_clip_manifest if source_clip_manifest is not None else existing_source_clip
+        )
+    return manifest_settings
+
+
+def _editor_state_manifest(
+    existing_editor: dict[str, Any],
+    *,
+    track_visibility: dict[str, bool] | None,
+    track_analysis_enabled: dict[str, bool] | None,
+    track_audio_enabled: dict[str, bool] | None,
+    track_audio_volume: dict[str, int] | None,
+    track_midi_enabled: dict[str, bool] | None,
+    track_midi_volume: dict[str, int] | None,
+    notation_spelling: str | None,
+    playhead_seconds: float | None,
+    chord_overrides: list[dict[str, Any]] | None,
+    chord_removals: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    return {
+        "track_visibility": track_visibility
+        if track_visibility is not None
+        else existing_editor.get("track_visibility", {}),
+        "track_analysis_enabled": track_analysis_enabled
+        if track_analysis_enabled is not None
+        else existing_editor.get("track_analysis_enabled", {}),
+        "track_audio_enabled": track_audio_enabled
+        if track_audio_enabled is not None
+        else existing_editor.get("track_audio_enabled", {}),
+        "track_audio_volume": track_audio_volume
+        if track_audio_volume is not None
+        else existing_editor.get("track_audio_volume", {}),
+        "track_midi_enabled": track_midi_enabled
+        if track_midi_enabled is not None
+        else existing_editor.get("track_midi_enabled", {}),
+        "track_midi_volume": track_midi_volume
+        if track_midi_volume is not None
+        else existing_editor.get("track_midi_volume", {}),
+        "notation_spelling": notation_spelling
+        if notation_spelling is not None
+        else existing_editor.get("notation_spelling", "auto"),
+        "playhead_seconds": playhead_seconds
+        if playhead_seconds is not None
+        else existing_editor.get("playhead_seconds", 0.0),
+        "chord_overrides": chord_overrides
+        if chord_overrides is not None
+        else existing_editor.get("chord_overrides", []),
+        "chord_removals": chord_removals
+        if chord_removals is not None
+        else existing_editor.get("chord_removals", []),
+        "note_edits": existing_editor.get("note_edits", []),
+    }
+
+
+def _existing_manifest_section(manifest: dict[str, Any], field: str) -> dict[str, Any]:
+    section = manifest.get(field, {})
+    return section if isinstance(section, dict) else {}
 
 
 def _validate_manifest(path: Path, manifest: dict[str, Any]) -> None:

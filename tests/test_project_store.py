@@ -86,6 +86,34 @@ def test_save_and_load_project_manifest_round_trip(tmp_path: Path) -> None:
     assert manifest["editor"]["notation_spelling"] == "flat"
 
 
+def test_save_project_manifest_preserves_existing_note_edits(tmp_path: Path) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    normalized = project_dir / "work" / "song.wav"
+    stem = project_dir / "stems" / "song_bass.wav"
+    for path in [normalized, stem]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("placeholder", encoding="utf-8")
+    result = PipelineResult(
+        project_dir=project_dir,
+        normalized_audio=normalized,
+        stems=[StemResult("bass", stem)],
+        midi_files=[],
+        combined_midi=None,
+        zip_path=None,
+    )
+    manifest_path = save_project_manifest(result)
+    manifest = load_project_manifest(manifest_path)
+    manifest["editor"]["note_edits"] = [{"stem": "bass", "pitch": 48, "start": 1.25}]
+    _write_json_atomic(manifest_path, manifest)
+
+    save_project_manifest(result, track_visibility={"bass": False}, notation_spelling="sharp")
+    updated = load_project_manifest(manifest_path)
+
+    assert updated["editor"]["track_visibility"] == {"bass": False}
+    assert updated["editor"]["notation_spelling"] == "sharp"
+    assert updated["editor"]["note_edits"] == [{"stem": "bass", "pitch": 48, "start": 1.25}]
+
+
 def test_manifest_saves_and_loads_stem_ids(tmp_path: Path) -> None:
     project_dir = tmp_path / "song.pitchstems"
     normalized = project_dir / "work" / "song.wav"
