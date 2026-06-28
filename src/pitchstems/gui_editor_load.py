@@ -6,6 +6,7 @@ from pathlib import Path
 from pitchstems.editor_loader import build_editor_load_result
 from pitchstems.editor_state import editor_float
 from pitchstems.gui_editor_model import EditorSummaryModel
+from pitchstems.gui_helpers import blocked_signals
 from pitchstems.gui_project_flow import remember_recent_project
 from pitchstems.time_format import format_time
 
@@ -97,9 +98,8 @@ def finish_editor_project_load(window, token: int, loaded) -> None:
     notation_spelling = editor_state.get("notation_spelling", "auto")
     notation_index = window.notation_spelling.findData(notation_spelling)
     if notation_index >= 0:
-        window.notation_spelling.blockSignals(True)
-        window.notation_spelling.setCurrentIndex(notation_index)
-        window.notation_spelling.blockSignals(False)
+        with blocked_signals(window.notation_spelling):
+            window.notation_spelling.setCurrentIndex(notation_index)
     playhead_seconds = editor_float(editor_state.get("playhead_seconds"), 0.0, low=0.0)
     summary = EditorSummaryModel(
         track_count=len(project.tracks),

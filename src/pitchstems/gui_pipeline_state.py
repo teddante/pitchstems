@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pitchstems.acceleration import onnxruntime_status, torch_status
-from pitchstems.gui_helpers import clear_layout
+from pitchstems.gui_helpers import blocked_signals, clear_layout
 from pitchstems.gui_options import default_midi_checked, device_label, optional_frequency
 from pitchstems.gui_pipeline_model import PipelinePageModel
 from pitchstems.model_catalog import DEFAULT_MODEL_KEY, model_choice
@@ -125,12 +125,11 @@ def refresh_midi_stem_checks(window, *_args) -> None:
 def refresh_model_details(window, *_args) -> None:
     choice = model_choice(DEFAULT_MODEL_KEY)
 
-    window.stem.blockSignals(True)
-    window.stem.clear()
-    window.stem.addItem("All stems from this model", None)
-    for stem_name in choice.stems:
-        window.stem.addItem(stem_name, stem_name)
-    window.stem.blockSignals(False)
+    with blocked_signals(window.stem):
+        window.stem.clear()
+        window.stem.addItem("All stems from this model", None)
+        for stem_name in choice.stems:
+            window.stem.addItem(stem_name, stem_name)
     refresh_midi_stem_checks(window)
 
     torch = torch_status()

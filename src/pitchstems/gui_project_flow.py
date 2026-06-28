@@ -5,7 +5,7 @@ from pathlib import Path
 from pitchstems.app_logging import logs_dir
 from pitchstems.file_opening import open_folder
 from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
-from pitchstems.gui_helpers import clear_layout
+from pitchstems.gui_helpers import blocked_signals, clear_layout
 from pitchstems.input_validation import validate_audio_input
 from pitchstems.project_store import PROJECT_FILENAME, load_pipeline_result
 from pitchstems.recent_projects import (
@@ -193,9 +193,8 @@ def reset_stage_state(window, path: Path | None = None) -> None:
     window.current_harmony_context = None
     window.current_theory_analysis = None
     window.current_chord_gap_analysis = None
-    window.notation_spelling.blockSignals(True)
-    window.notation_spelling.setCurrentIndex(0)
-    window.notation_spelling.blockSignals(False)
+    with blocked_signals(window.notation_spelling):
+        window.notation_spelling.setCurrentIndex(0)
     window.rendering_midi_previews.clear()
     window.clear_transport_players()
     window.track_audio_checks.clear()

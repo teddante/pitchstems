@@ -5,6 +5,7 @@ from pitchstems.editor_chord_assignment import chord_assignment_ranges, chord_as
 from pitchstems.editor_loader import apply_chord_edits
 from pitchstems.editor_project import ChordRegion
 from pitchstems.editor_state import build_editor_state_snapshot, save_editor_state_snapshot
+from pitchstems.gui_helpers import blocked_signals
 from pitchstems.time_format import format_time
 
 
@@ -150,9 +151,8 @@ def refresh_visible_tracks(window) -> None:
 
 def show_all_timeline_tracks(window) -> None:
     for checkbox in window.track_visibility_checks.values():
-        checkbox.blockSignals(True)
-        checkbox.setChecked(True)
-        checkbox.blockSignals(False)
+        with blocked_signals(checkbox):
+            checkbox.setChecked(True)
     window.refresh_visible_tracks()
 
 
