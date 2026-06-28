@@ -12,7 +12,9 @@ from pitchstems.project_store import (
     save_failed_project_manifest,
     save_project_manifest,
     _midi_results_from_manifest,
+    _midi_results_manifest,
     _stem_results_from_manifest,
+    _stem_results_manifest,
     _write_json_atomic,
 )
 from pitchstems.separation import SeparationOptions
@@ -86,6 +88,24 @@ def test_save_and_load_project_manifest_round_trip(tmp_path: Path) -> None:
     assert manifest["editor"]["chord_removals"] == [{"start": 8.0, "end": 9.5}]
     assert manifest["editor"]["track_analysis_enabled"] == {"bass": True}
     assert manifest["editor"]["notation_spelling"] == "flat"
+
+
+def test_stem_results_manifest_uses_project_relative_paths(tmp_path: Path) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    stem_path = project_dir / "stems" / "song_bass.wav"
+
+    assert _stem_results_manifest(project_dir, [StemResult("Bass", stem_path, "bass")]) == [
+        {"name": "Bass", "stem_id": "bass", "path": "stems/song_bass.wav"}
+    ]
+
+
+def test_midi_results_manifest_uses_project_relative_paths(tmp_path: Path) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    midi_path = project_dir / "midi" / "bass" / "song.mid"
+
+    assert _midi_results_manifest(project_dir, [MidiResult("Bass", midi_path, "bass")]) == [
+        {"stem": "Bass", "stem_id": "bass", "path": "midi/bass/song.mid"}
+    ]
 
 
 def test_save_project_manifest_preserves_existing_note_edits(tmp_path: Path) -> None:

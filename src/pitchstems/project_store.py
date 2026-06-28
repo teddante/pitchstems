@@ -70,22 +70,8 @@ def save_project_manifest(
             **_project_manifest_envelope(project_dir, created_at=created_at),
             "source_audio": _relative_or_absolute(project_dir, source_audio),
             "normalized_audio": _relative_or_absolute(project_dir, result.normalized_audio),
-            "stems": [
-                {
-                    "name": stem.name,
-                    "stem_id": stem.safe_key,
-                    "path": _relative_or_absolute(project_dir, stem.path),
-                }
-                for stem in result.stems
-            ],
-            "midi_files": [
-                {
-                    "stem": midi.stem,
-                    "stem_id": midi.safe_key,
-                    "path": _relative_or_absolute(project_dir, midi.path),
-                }
-                for midi in result.midi_files
-            ],
+            "stems": _stem_results_manifest(project_dir, result.stems),
+            "midi_files": _midi_results_manifest(project_dir, result.midi_files),
             "combined_midi": _relative_or_absolute(project_dir, result.combined_midi),
             "zip_path": _relative_or_absolute(project_dir, result.zip_path),
             "settings": _pipeline_settings_manifest(
@@ -187,6 +173,17 @@ def _stem_results_from_manifest(project_dir: Path, entries: list[dict[str, Any]]
     ]
 
 
+def _stem_results_manifest(project_dir: Path, stems: list[StemResult]) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": stem.name,
+            "stem_id": stem.safe_key,
+            "path": _relative_or_absolute(project_dir, stem.path),
+        }
+        for stem in stems
+    ]
+
+
 def _midi_results_from_manifest(project_dir: Path, entries: list[dict[str, Any]]) -> list[MidiResult]:
     return [
         MidiResult(
@@ -195,6 +192,17 @@ def _midi_results_from_manifest(project_dir: Path, entries: list[dict[str, Any]]
             stem_id=item.get("stem_id"),
         )
         for item in entries
+    ]
+
+
+def _midi_results_manifest(project_dir: Path, midi_files: list[MidiResult]) -> list[dict[str, Any]]:
+    return [
+        {
+            "stem": midi.stem,
+            "stem_id": midi.safe_key,
+            "path": _relative_or_absolute(project_dir, midi.path),
+        }
+        for midi in midi_files
     ]
 
 
