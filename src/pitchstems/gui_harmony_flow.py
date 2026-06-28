@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pitchstems.editor_review_target import review_ranges, single_review_range
+from pitchstems.editor_review_target import (
+    review_ranges,
+    review_ranges_brief_text,
+    single_review_range,
+)
 from pitchstems.editor_project import analyze_chord_at, analyze_chord_regions
 from pitchstems.harmony_inspector import (
     chord_base_pitch_weights as inspector_chord_base_pitch_weights,
@@ -13,7 +17,6 @@ from pitchstems.harmony_inspector import (
     selected_chord_analysis_notes,
 )
 from pitchstems import harmony_panel
-from pitchstems.time_format import format_time
 
 
 @dataclass
@@ -70,7 +73,7 @@ def refresh_current_harmony(window, seconds: float) -> None:
         )
         window.refresh_current_theory(source_notes, seconds)
         chord = window.display_chord(analysis.label)
-        range_text = _selection_ranges_text(selection_ranges)
+        range_text = review_ranges_brief_text(selection_ranges)
         label = "Selected chord" if not explicit_ranges and window.timeline.selected_chord is not None else "Selection"
         window.current_chord.setText(
             f"{label}: {chord}  (score {analysis.confidence:.0%})  "
@@ -197,11 +200,3 @@ def handle_chord_note_filter_changed(window, item) -> None:
 def reset_chord_note_filter(window) -> None:
     window.chord_note_overrides = {}
     window.refresh_current_harmony(window.timeline.position, force=True)
-
-
-def _selection_ranges_text(ranges: list[tuple[float, float]]) -> str:
-    if len(ranges) == 1:
-        start, end = ranges[0]
-        return f"{format_time(start)} - {format_time(end)}"
-    total = sum(end - start for start, end in ranges)
-    return f"{len(ranges)} ranges, {total:.2f}s total"

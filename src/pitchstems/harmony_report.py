@@ -4,7 +4,12 @@ from pitchstems.chord_detection import analyze_chord_at, analyze_chord_region, a
 from pitchstems.editor_project import (
     NoteEvent,
 )
-from pitchstems.editor_review_target import review_ranges, single_review_range
+from pitchstems.editor_review_target import (
+    review_range_text,
+    review_ranges,
+    review_ranges_detail_text,
+    single_review_range,
+)
 from pitchstems import gui_harmony_flow
 from pitchstems.midi_energy import active_notes_at, midi_velocity_energy, note_overlap_seconds
 from pitchstems.notation import pitch_class_for_name
@@ -37,7 +42,7 @@ def current_chord_analysis_report(window) -> str:
                 if not explicit_ranges and window.timeline.selected_chord is not None
                 else "Selection"
             )
-            mode = f"{label} {format_time(start)} - {format_time(end)} ({end - start:.3f} sec)"
+            mode = f"{label} {review_range_text(selection)} ({end - start:.3f} sec)"
             evidence_rows, totals = chord_selection_evidence_rows(window, analysis_notes, start, end)
         else:
             analysis = analyze_chord_regions(
@@ -47,9 +52,7 @@ def current_chord_analysis_report(window) -> str:
                 excluded_pitch_classes=excluded,
                 scoring_options=scoring_options,
             )
-            total = sum(end - start for start, end in selection_ranges)
-            shown_ranges = ", ".join(f"{format_time(start)} - {format_time(end)}" for start, end in selection_ranges)
-            mode = f"Selection {len(selection_ranges)} ranges ({total:.3f} sec total): {shown_ranges}"
+            mode = f"Selection {review_ranges_detail_text(selection_ranges)}"
             evidence_rows, totals = chord_selection_ranges_evidence_rows(window, analysis_notes, selection_ranges)
     else:
         seconds = window.timeline.position
