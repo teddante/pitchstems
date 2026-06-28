@@ -180,33 +180,10 @@ def reset_stage_state(window, path: Path | None = None) -> None:
     window.midi_preview_jobs.next()
     if path is None:
         window.drop_zone.reset_prompt()
-    window.current_result = None
-    window.current_stems = []
-    window.current_input_stem = None
-    window.base_editor_project = None
-    window.editor_project = None
-    window.manual_chords = []
-    window.removed_chord_ranges = []
-    window.chord_note_overrides = {}
-    window.chord_note_filter_context = None
-    window.current_chord_base_weights = {}
-    window.current_harmony_context = None
-    window.current_theory_analysis = None
-    window.current_chord_gap_analysis = None
+    _reset_loaded_project_state(window)
     with blocked_signals(window.notation_spelling):
         window.notation_spelling.setCurrentIndex(0)
-    window.rendering_midi_previews.clear()
-    window.clear_transport_players()
-    window.track_audio_checks.clear()
-    window.track_audio_sliders.clear()
-    window.track_midi_checks.clear()
-    window.track_midi_sliders.clear()
-    window.track_analysis_checks.clear()
-    window.track_control_panels.clear()
-    window.track_control_detail_rows.clear()
-    window.track_control_top_spacer = None
-    window.track_control_bottom_spacer = None
-    window.hidden_track_status = None
+    _reset_track_control_state(window)
     window.latest_output_dir = None
     window.run_midi.setEnabled(False)
     window.export_button.setEnabled(False)
@@ -239,6 +216,37 @@ def reset_stage_state(window, path: Path | None = None) -> None:
     window.chord_list.clear()
     window.refresh_chord_keyboard()
     window.timeline.set_project(None)
+
+
+def _reset_loaded_project_state(window) -> None:
+    window.current_result = None
+    window.current_stems = []
+    window.current_input_stem = None
+    window.base_editor_project = None
+    window.editor_project = None
+    window.manual_chords = []
+    window.removed_chord_ranges = []
+    window.chord_note_overrides = {}
+    window.chord_note_filter_context = None
+    window.current_chord_base_weights = {}
+    window.current_harmony_context = None
+    window.current_theory_analysis = None
+    window.current_chord_gap_analysis = None
+
+
+def _reset_track_control_state(window) -> None:
+    window.rendering_midi_previews.clear()
+    window.clear_transport_players()
+    window.track_audio_checks.clear()
+    window.track_audio_sliders.clear()
+    window.track_midi_checks.clear()
+    window.track_midi_sliders.clear()
+    window.track_analysis_checks.clear()
+    window.track_control_panels.clear()
+    window.track_control_detail_rows.clear()
+    window.track_control_top_spacer = None
+    window.track_control_bottom_spacer = None
+    window.hidden_track_status = None
 
 
 def open_latest_output(window) -> None:
