@@ -185,7 +185,7 @@ def process_audio_file(
             source_clip=source_clip,
             original_source_audio=original_source_audio,
         )
-        save_project_manifest(
+        _save_pipeline_manifest(
             result,
             separation_options=separation_options,
             midi_options=midi_options,
@@ -330,7 +330,7 @@ def process_midi_from_stems(
         source_clip=source_clip,
         original_source_audio=original_source_audio,
     )
-    save_project_manifest(
+    _save_pipeline_manifest(
         result,
         midi_options=midi_options,
         midi_stems=midi_stems,
@@ -341,6 +341,27 @@ def process_midi_from_stems(
     if zip_path:
         _zip_project_outputs(project_dir, stems, midi_files, combined_midi, zip_path)
     return result
+
+
+def _save_pipeline_manifest(
+    result: PipelineResult,
+    *,
+    separation_options: SeparationOptions | None = None,
+    midi_options: MidiOptions | None = None,
+    midi_stems: set[str] | None = None,
+    generate_midi: bool,
+    midi_policy: str,
+    create_zip: bool,
+) -> None:
+    save_project_manifest(
+        result,
+        separation_options=separation_options,
+        midi_options=midi_options,
+        midi_stems=midi_stems,
+        generate_midi=generate_midi,
+        midi_policy=midi_policy,
+        create_zip=create_zip,
+    )
 
 
 def _project_dir(output_root: Path, input_path: Path) -> Path:

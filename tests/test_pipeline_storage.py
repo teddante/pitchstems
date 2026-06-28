@@ -14,6 +14,7 @@ from pitchstems.pipeline import (
     _project_dir,
     _remove_export_stem_copies,
     _remove_staging_dir,
+    _save_pipeline_manifest,
     _safe_stem,
     _zip_project_outputs,
     process_audio_file,
@@ -21,6 +22,8 @@ from pitchstems.pipeline import (
 )
 from pitchstems.pipeline_models import MidiResult, PipelineResult, StemResult
 from pitchstems.project_store import save_project_manifest
+from pitchstems.separation import SeparationOptions
+from pitchstems.transcription import MidiOptions
 
 
 @pytest.fixture(autouse=True)
@@ -251,6 +254,49 @@ def test_midi_rerun_result_preserves_existing_source_audio(tmp_path: Path, monke
     )
 
     assert result.source_audio == source_path
+
+
+def test_save_pipeline_manifest_passes_pipeline_options(monkeypatch, tmp_path: Path) -> None:
+    result = PipelineResult(
+        project_dir=tmp_path / "song.pitchstems",
+        normalized_audio=tmp_path / "song.pitchstems" / "work" / "song.wav",
+        stems=[],
+        midi_files=[],
+        combined_midi=None,
+        zip_path=None,
+    )
+    separation_options = SeparationOptions(device="cpu")
+    midi_options = MidiOptions(onset_threshold=0.42)
+    calls = []
+
+    def fake_save_project_manifest(saved_result, **kwargs):
+        calls.append((saved_result, kwargs))
+
+    monkeypatch.setattr(pipeline, "save_project_manifest", fake_save_project_manifest)
+
+    _save_pipeline_manifest(
+        result,
+        separation_options=separation_options,
+        midi_options=midi_options,
+        midi_stems={"bass"},
+        generate_midi=False,
+        midi_policy="none",
+        create_zip=False,
+    )
+
+    assert calls == [
+        (
+            result,
+            {
+                "separation_options": separation_options,
+                "midi_options": midi_options,
+                "midi_stems": {"bass"},
+                "generate_midi": False,
+                "midi_policy": "none",
+                "create_zip": False,
+            },
+        )
+    ]
 
 
 def test_midi_rerun_keeps_existing_outputs_when_transcription_fails(tmp_path: Path, monkeypatch) -> None:
