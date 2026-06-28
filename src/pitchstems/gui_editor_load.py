@@ -18,7 +18,7 @@ def set_current_result(window, result, open_output: bool = True) -> None:
     window.current_result = result
     window.midi_preview_jobs.next()
     window.current_stems = result.stems
-    window.current_input_stem = (result.source_audio or result.normalized_audio).stem
+    window.current_input_stem = result.normalized_audio.stem
     window.latest_output_dir = result.project_dir
     window.base_editor_project = None
     window.editor_project = None

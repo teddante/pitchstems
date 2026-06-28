@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from pitchstems.audio_clip import AudioClipRange
 from pitchstems.gui_jobs import ProcessWorker, create_process_worker
 from pitchstems.pipeline import (
     PipelineCancelledError,
@@ -28,6 +29,7 @@ class FullProcessRunRequest:
     midi_options: MidiOptions
     midi_stems: set[str]
     create_zip: bool
+    source_clip: AudioClipRange | None = None
 
 
 @dataclass(frozen=True)
@@ -68,6 +70,11 @@ def start_full_processing(window) -> None:
             midi_options=window.selected_midi_options(),
             midi_stems=midi_stems,
             create_zip=False,
+            source_clip=(
+                window.import_clip_picker.selected_clip_range()
+                if hasattr(window, "import_clip_picker")
+                else None
+            ),
         ),
     )
 
@@ -179,6 +186,7 @@ def run_full_pipeline_process(token: int, request: FullProcessRunRequest, messag
             log=lambda message: messages.put(("WORKER_LOG", token, message)),
             cancelled=None,
             project_created=lambda project_dir: messages.put(("PROJECT_DIR", token, project_dir)),
+            source_clip=request.source_clip,
         )
         messages.put(("RESULT", token, result))
         messages.put(("WORKER_LOG", token, f"Project ready: {result.project_dir}"))
@@ -197,6 +205,9 @@ def run_midi_stage_process(token: int, request: MidiProcessRunRequest, messages)
             input_stem=request.input_stem,
             normalized_audio=request.result.normalized_audio,
             stems=request.stems,
+            source_audio=request.result.source_audio,
+            source_clip=request.result.source_clip,
+            original_source_audio=request.result.original_source_audio,
             midi_policy="all",
             midi_options=request.midi_options,
             midi_stems=request.midi_stems,

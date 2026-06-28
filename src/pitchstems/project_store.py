@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, cast
 
+from pitchstems.audio_clip import AudioClipRange, clip_range_from_manifest
 from pitchstems.pipeline_models import PipelineResult
 from pitchstems.separation import SeparationOptions, StemResult, safe_stem_key
 from pitchstems.transcription import MidiOptions, MidiResult
@@ -61,6 +62,23 @@ def save_project_manifest(
         created_at = existing.get("created_at") or _now()
         source_audio = result.source_audio or _optional_project_path(project_dir, existing.get("source_audio"))
 
+        settings = existing.get("settings", {})
+        if not isinstance(settings, dict):
+            settings = {}
+        source_clip = _source_clip_manifest(result.source_clip, result.original_source_audio)
+        manifest_settings = {
+            "separation": _dataclass_dict(separation_options)
+            or settings.get("separation", {}),
+            "midi": _dataclass_dict(midi_options) or settings.get("midi", {}),
+            "midi_stems": sorted(midi_stems) if midi_stems is not None else settings.get("midi_stems", []),
+            "generate_midi": generate_midi if generate_midi is not None else settings.get("generate_midi"),
+            "midi_policy": midi_policy or settings.get("midi_policy"),
+            "create_zip": create_zip if create_zip is not None else settings.get("create_zip"),
+        }
+        existing_source_clip = settings.get("source_clip")
+        if source_clip is not None or existing_source_clip is not None:
+            manifest_settings["source_clip"] = source_clip if source_clip is not None else existing_source_clip
+
         manifest = {
             "format": "pitchstems-project",
             "format_version": PROJECT_FORMAT_VERSION,
@@ -87,15 +105,7 @@ def save_project_manifest(
             ],
             "combined_midi": _relative_or_absolute(project_dir, result.combined_midi),
             "zip_path": _relative_or_absolute(project_dir, result.zip_path),
-            "settings": {
-                "separation": _dataclass_dict(separation_options)
-                or existing.get("settings", {}).get("separation", {}),
-                "midi": _dataclass_dict(midi_options) or existing.get("settings", {}).get("midi", {}),
-                "midi_stems": sorted(midi_stems) if midi_stems is not None else existing.get("settings", {}).get("midi_stems", []),
-                "generate_midi": generate_midi if generate_midi is not None else existing.get("settings", {}).get("generate_midi"),
-                "midi_policy": midi_policy or existing.get("settings", {}).get("midi_policy"),
-                "create_zip": create_zip if create_zip is not None else existing.get("settings", {}).get("create_zip"),
-            },
+            "settings": manifest_settings,
             "editor": {
                 "track_visibility": track_visibility
                 if track_visibility is not None
@@ -173,6 +183,9 @@ def load_pipeline_result(path: Path) -> PipelineResult:
         last_error = manifest.get("last_error")
         detail = f": {last_error}" if isinstance(last_error, str) and last_error else ""
         raise ValueError(f"Project processing failed{detail}")
+    settings = manifest.get("settings", {})
+    if not isinstance(settings, dict):
+        settings = {}
 
     return PipelineResult(
         project_dir=project_dir,
@@ -196,6 +209,8 @@ def load_pipeline_result(path: Path) -> PipelineResult:
         combined_midi=_optional_project_path(project_dir, manifest.get("combined_midi")),
         zip_path=_optional_project_path(project_dir, manifest.get("zip_path")),
         source_audio=_optional_project_path(project_dir, manifest.get("source_audio")),
+        source_clip=clip_range_from_manifest(settings.get("source_clip")),
+        original_source_audio=_original_source_audio_from_manifest(manifest),
     )
 
 
@@ -365,6 +380,29 @@ def _dataclass_dict(value: Any) -> dict[str, Any]:
         return {}
     data = asdict(cast(Any, value))
     return {key: _jsonable(item) for key, item in data.items() if key != "choice"}
+
+
+def _source_clip_manifest(
+    source_clip: AudioClipRange | None,
+    original_source_audio: Path | None,
+) -> dict[str, Any] | None:
+    if source_clip is None:
+        return None
+    data: dict[str, Any] = source_clip.to_manifest()
+    if original_source_audio is not None:
+        data["original_source_audio"] = str(original_source_audio)
+    return data
+
+
+def _original_source_audio_from_manifest(manifest: dict[str, Any]) -> Path | None:
+    settings = manifest.get("settings", {})
+    if not isinstance(settings, dict):
+        return None
+    source_clip = settings.get("source_clip")
+    if not isinstance(source_clip, dict):
+        return None
+    original = source_clip.get("original_source_audio")
+    return Path(original) if isinstance(original, str) and original.strip() else None
 
 
 def _jsonable(value: Any) -> Any:

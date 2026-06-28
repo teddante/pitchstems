@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from pitchstems.audio_clip import AudioClipRange
 from pitchstems.pipeline import PipelineResult
 from pitchstems.project_store import (
     PROJECT_FILENAME,
@@ -35,6 +36,8 @@ def test_save_and_load_project_manifest_round_trip(tmp_path: Path) -> None:
         combined_midi=combined,
         zip_path=zip_path,
         source_audio=tmp_path / "source.mp3",
+        source_clip=AudioClipRange(4.0, 12.25),
+        original_source_audio=tmp_path / "original.mp3",
     )
 
     manifest_path = save_project_manifest(
@@ -69,6 +72,10 @@ def test_save_and_load_project_manifest_round_trip(tmp_path: Path) -> None:
     assert loaded.combined_midi == combined
     assert loaded.zip_path == zip_path
     assert loaded.source_audio == tmp_path / "source.mp3"
+    assert loaded.source_clip == AudioClipRange(4.0, 12.25)
+    assert loaded.original_source_audio == tmp_path / "original.mp3"
+    assert manifest["settings"]["source_clip"]["original_source_audio"] == str(tmp_path / "original.mp3")
+    assert manifest["settings"]["source_clip"]["duration_seconds"] == 8.25
     assert manifest["stems"][0]["stem_id"] == "bass"
     assert manifest["midi_files"][0]["stem_id"] == "bass"
     assert manifest["editor"]["chord_overrides"] == [

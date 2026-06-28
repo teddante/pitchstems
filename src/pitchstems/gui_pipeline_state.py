@@ -16,6 +16,17 @@ def set_processing_state(window, busy: bool) -> None:
         generate_midi=window.generate_midi.isChecked(),
     )
     window.drop_zone.setEnabled(model.drop_zone_enabled)
+    if hasattr(window, "import_clip_picker"):
+        if busy:
+            window.stop_import_clip_preview()
+        window.import_clip_picker.setEnabled(model.settings_enabled and window.import_clip_picker.duration_seconds > 0)
+        window.import_clip_play.setEnabled(
+            model.settings_enabled
+            and window.import_clip_picker.path is not None
+            and window.import_clip_picker.duration_seconds > 0
+        )
+        window.import_clip_stop.setEnabled(False)
+        window.import_clip_clear.setEnabled(model.settings_enabled and window.import_clip_picker.selected_clip_range() is not None)
     window.run_full.setEnabled(model.run_full_enabled)
     window.run_midi.setEnabled(model.run_midi_enabled)
     window.export_button.setEnabled(model.export_enabled)

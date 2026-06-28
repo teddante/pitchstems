@@ -97,6 +97,8 @@ def set_audio_path(window, path: Path) -> None:
     error = validate_audio_input(path)
     if error:
         window.drop_zone.reset_prompt()
+        if hasattr(window, "import_clip_picker"):
+            window.import_clip_picker.reset_audio()
         window.append_log(error)
         window.statusBar().showMessage(error, 5000)
         return
@@ -147,6 +149,8 @@ def open_project_manifest(window, manifest_path: Path) -> None:
         return
     window.output_dir.setText(str(result.project_dir.parent))
     window.drop_zone.set_project_file(result.project_dir, result.source_audio)
+    if hasattr(window, "import_clip_picker"):
+        window.import_clip_picker.reset_audio()
     try:
         window.logger.info("Building editor for project: %s", result.project_dir)
         window.set_current_result(result, open_output=False)
@@ -162,6 +166,13 @@ def open_project_manifest(window, manifest_path: Path) -> None:
 
 
 def reset_stage_state(window, path: Path | None = None) -> None:
+    if hasattr(window, "stop_import_clip_preview"):
+        window.stop_import_clip_preview()
+    if hasattr(window, "import_clip_picker"):
+        if path is None:
+            window.import_clip_picker.reset_audio()
+        else:
+            window.import_clip_picker.set_audio_file(path, log=window.append_log)
     window.stop_transport()
     window.invalidate_worker_token()
     window.editor_load_jobs.next()

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pitchstems.gui_processing as gui_processing
 import pitchstems.gui_shutdown as gui_shutdown
+from pitchstems.audio_clip import AudioClipRange
 from pitchstems.gui_jobs import EditorLoadJobState, MidiPreviewJobState, WorkerJobState
 from pitchstems.pipeline import PipelineResult
 from pitchstems.separation import SeparationOptions, StemResult
@@ -75,6 +76,14 @@ class _Text:
 
     def text(self) -> str:
         return self._text
+
+
+class _ClipPicker:
+    def __init__(self, clip_range=None) -> None:
+        self.clip_range = clip_range
+
+    def selected_clip_range(self):
+        return self.clip_range
 
 
 class _CaptureThread:
@@ -155,6 +164,7 @@ class _StartProcessingWindow:
         self.worker_jobs = WorkerJobState()
         self.drop_zone = type("DropZone", (), {"path": input_path})()
         self.output_dir = _Text(str(output_root))
+        self.import_clip_picker = _ClipPicker()
         self.generate_midi = _Checked(True)
         self.current_result = None
         self.current_stems: list[StemResult] = []
@@ -205,7 +215,29 @@ def test_start_full_processing_requests_no_zip_from_gui(monkeypatch, tmp_path: P
     request = process_workers[0].args[1]
     assert process_workers[0].target is gui_processing.run_full_pipeline_process
     assert request.create_zip is False
+    assert request.source_clip is None
     assert window.worker.started is True
+
+
+def test_start_full_processing_passes_import_clip_to_worker(monkeypatch, tmp_path: Path) -> None:
+    input_path = tmp_path / "song.wav"
+    input_path.write_bytes(b"RIFF")
+    window = _StartProcessingWindow(input_path, tmp_path / "out")
+    window.import_clip_picker = _ClipPicker(AudioClipRange(2.0, 8.0))
+    process_workers: list[_CaptureProcessWorker] = []
+
+    def capture_process_worker(target, args):
+        worker = _CaptureProcessWorker(target, args)
+        process_workers.append(worker)
+        return worker
+
+    monkeypatch.setattr(gui_processing, "create_process_worker", capture_process_worker)
+    monkeypatch.setattr(gui_processing.threading, "Thread", _CaptureThread)
+
+    gui_processing.start_full_processing(window)
+
+    request = process_workers[0].args[1]
+    assert request.source_clip == AudioClipRange(2.0, 8.0)
 
 
 def test_start_midi_processing_requests_no_zip_from_gui(monkeypatch, tmp_path: Path) -> None:

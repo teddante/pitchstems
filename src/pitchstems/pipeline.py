@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 from pitchstems.audio import normalize_to_wav
+from pitchstems.audio_clip import AudioClipRange
 from pitchstems.filename_safety import safe_file_stem
 from pitchstems.midi import combine_midi_tracks
 from pitchstems.pipeline_models import PipelineResult
@@ -42,6 +43,7 @@ def process_audio_file(
     log: Callable[[str], None] | None = None,
     cancelled: CancelCheck | None = None,
     project_created: Callable[[Path], None] | None = None,
+    source_clip: AudioClipRange | None = None,
 ) -> PipelineResult:
     """Run the complete local stem-to-MIDI pipeline."""
     input_path = input_path.expanduser().resolve()
@@ -72,17 +74,32 @@ def process_audio_file(
         project_created(project_dir)
 
     project_source_audio: Path | None = None
+    original_source_audio: Path | None = None
     normalized_audio = work_dir / f"{input_stem}.wav"
     project_manifest_written = False
     try:
-        project_source_audio = _copy_source_audio(input_path, audio_dir)
+        if source_clip is None:
+            project_source_audio = _copy_source_audio(input_path, audio_dir)
+            normalize_input = project_source_audio
+        else:
+            project_source_audio = audio_dir / f"{input_stem}_clip.wav"
+            original_source_audio = input_path
+            normalize_input = input_path
         _raise_if_cancelled(cancelled)
         if log:
             log(f"Preparing {input_path.name}...")
             log("Audio prep: FFmpeg -> stereo 44.1 kHz PCM WAV for native BS-RoFormer.")
+            if source_clip is not None:
+                log(
+                    "Import clip: "
+                    f"{source_clip.start_seconds:.2f}s - {source_clip.end_seconds:.2f}s "
+                    f"({source_clip.duration_seconds:.2f}s)."
+                )
             if cancelled is not None:
                 log("Cancellation will take effect between native model stages.")
-        normalized_audio = normalize_to_wav(project_source_audio, normalized_audio)
+        normalized_audio = normalize_to_wav(normalize_input, normalized_audio, clip_range=source_clip)
+        if source_clip is not None:
+            shutil.copy2(normalized_audio, project_source_audio)
         _raise_if_cancelled(cancelled)
 
         stems = separate_stems(
@@ -104,6 +121,8 @@ def process_audio_file(
                 normalized_audio=normalized_audio,
                 stems=stems,
                 source_audio=project_source_audio,
+                source_clip=source_clip,
+                original_source_audio=original_source_audio,
                 midi_policy=midi_policy,
                 midi_options=midi_options,
                 midi_stems=midi_stems,
@@ -127,6 +146,8 @@ def process_audio_file(
             combined_midi=combined_midi,
             zip_path=zip_path,
             source_audio=project_source_audio,
+            source_clip=source_clip,
+            original_source_audio=original_source_audio,
         )
         save_project_manifest(
             result,
@@ -158,6 +179,8 @@ def process_midi_from_stems(
     normalized_audio: Path | None,
     stems: list[StemResult],
     source_audio: Path | None = None,
+    source_clip: AudioClipRange | None = None,
+    original_source_audio: Path | None = None,
     midi_policy: str = "pitched",
     midi_options: MidiOptions | None = None,
     midi_stems: set[str] | None = None,
@@ -167,7 +190,10 @@ def process_midi_from_stems(
 ) -> PipelineResult:
     """Run or rerun Basic Pitch from already separated stems."""
     project_dir = project_dir.expanduser().resolve()
-    source_audio = source_audio or _existing_source_audio(project_dir)
+    existing_source_audio, existing_source_clip, existing_original_source_audio = _existing_source_metadata(project_dir)
+    source_audio = source_audio or existing_source_audio
+    source_clip = source_clip or existing_source_clip
+    original_source_audio = original_source_audio or existing_original_source_audio
     midi_dir = project_dir / "midi"
     export_dir = project_dir / "export"
     staged_midi_dir = project_dir / "midi.tmp"
@@ -260,6 +286,8 @@ def process_midi_from_stems(
         combined_midi=combined_midi,
         zip_path=zip_path,
         source_audio=source_audio,
+        source_clip=source_clip,
+        original_source_audio=original_source_audio,
     )
     save_project_manifest(
         result,
@@ -299,13 +327,27 @@ def _copy_source_audio(input_path: Path, audio_dir: Path) -> Path:
     return target
 
 
-def _existing_source_audio(project_dir: Path) -> Path | None:
+def _existing_source_metadata(project_dir: Path) -> tuple[Path | None, AudioClipRange | None, Path | None]:
     with contextlib.suppress(Exception):
-        value = load_project_manifest(project_dir / PROJECT_FILENAME).get("source_audio")
+        manifest = load_project_manifest(project_dir / PROJECT_FILENAME)
+        value = manifest.get("source_audio")
+        settings = manifest.get("settings", {})
+        source_clip = None
+        original_source_audio = None
+        if isinstance(settings, dict):
+            from pitchstems.audio_clip import clip_range_from_manifest
+
+            clip_data = settings.get("source_clip")
+            source_clip = clip_range_from_manifest(clip_data)
+            if isinstance(clip_data, dict):
+                original = clip_data.get("original_source_audio")
+                if isinstance(original, str) and original.strip():
+                    original_source_audio = Path(original)
         if isinstance(value, str) and value:
             path = Path(value)
-            return path if path.is_absolute() else project_dir / path
-    return None
+            source_audio = path if path.is_absolute() else project_dir / path
+            return source_audio, source_clip, original_source_audio
+    return None, None, None
 
 
 def _safe_stem(stem: str, max_length: int = 80) -> str:

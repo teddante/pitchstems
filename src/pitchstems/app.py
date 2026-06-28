@@ -106,6 +106,7 @@ def main() -> int:
         NoWheelSpinBox,
         PianoChordWidget,
     )
+    from pitchstems.gui_import_clip import ImportClipPicker, clip_status_text, import_preview_range
     from pitchstems.gui_editor_page import build_editor_page
     from pitchstems.gui_pipeline_page import build_pipeline_page
     from pitchstems.gui_timeline import TimelineView
@@ -167,6 +168,28 @@ def main() -> int:
 
             self.drop_zone = DropZone()
             self.drop_zone.on_path_changed = self.reset_stage_state
+            self.import_clip_player = QMediaPlayer(self)
+            self.import_clip_audio = QAudioOutput(self)
+            self.import_clip_player.setAudioOutput(self.import_clip_audio)
+            self.import_clip_audio.setVolume(0.8)
+            self.import_clip_timer = QTimer(self)
+            self.import_clip_timer.setInterval(80)
+            self.import_clip_timer.timeout.connect(self.poll_import_clip_preview)
+            self.import_clip_preview_end_seconds: float | None = None
+            self.import_clip_picker = ImportClipPicker()
+            self.import_clip_status = QLabel("Whole file")
+            self.import_clip_status.setWordWrap(True)
+            self.import_clip_status.setStyleSheet("color: #4b5563;")
+            self.import_clip_play = QPushButton("Play")
+            self.import_clip_play.setEnabled(False)
+            self.import_clip_play.clicked.connect(self.play_import_clip_preview)
+            self.import_clip_stop = QPushButton("Stop")
+            self.import_clip_stop.setEnabled(False)
+            self.import_clip_stop.clicked.connect(self.stop_import_clip_preview)
+            self.import_clip_clear = QPushButton("Clear")
+            self.import_clip_clear.setEnabled(False)
+            self.import_clip_clear.clicked.connect(self.import_clip_picker.clear_selection)
+            self.import_clip_picker.on_range_changed = self.update_import_clip_status
             self.output_dir = QLineEdit(str(Path.home() / "PitchStems Projects"))
             self.output_dir.setReadOnly(True)
 
@@ -1248,6 +1271,75 @@ def main() -> int:
 
         def reset_stage_state(self, _path: Path | None = None) -> None:
             gui_project_flow.reset_stage_state(self, _path)
+
+        def update_import_clip_status(self, clip_range=None, duration_seconds: float | None = None) -> None:
+            self.stop_import_clip_preview()
+            duration = self.import_clip_picker.duration_seconds if duration_seconds is None else duration_seconds
+            self.import_clip_status.setText(clip_status_text(clip_range, duration))
+            self.import_clip_play.setEnabled(
+                self.import_clip_picker.path is not None
+                and import_preview_range(clip_range, duration) is not None
+                and self.worker_jobs.active_token is None
+            )
+            self.import_clip_clear.setEnabled(
+                clip_range is not None and self.worker_jobs.active_token is None
+            )
+
+        def play_import_clip_preview(self) -> None:
+            path = self.import_clip_picker.path
+            bounds = import_preview_range(
+                self.import_clip_picker.selected_clip_range(),
+                self.import_clip_picker.duration_seconds,
+            )
+            if path is None or bounds is None:
+                self.append_log("Choose an audio file and range before preview playback.")
+                return
+            self.pause_transport()
+            start_seconds, end_seconds = bounds
+            self.import_clip_preview_end_seconds = end_seconds
+            source = QUrl.fromLocalFile(str(path))
+            safe_qt_multimedia_call(
+                self.logger,
+                "Import preview playback failed",
+                lambda: self._start_import_clip_player(source, start_seconds),
+            )
+            self.import_clip_play.setEnabled(False)
+            self.import_clip_stop.setEnabled(True)
+            self.import_clip_timer.start()
+
+        def _start_import_clip_player(self, source: QUrl, start_seconds: float) -> None:
+            self.import_clip_player.setSource(source)
+            self.import_clip_player.setPosition(int(start_seconds * 1000))
+            self.import_clip_player.play()
+
+        def stop_import_clip_preview(self) -> None:
+            self.import_clip_timer.stop()
+            safe_qt_multimedia_call(
+                self.logger,
+                "Import preview stop failed",
+                lambda: self.import_clip_player.pause(),
+            )
+            self.import_clip_preview_end_seconds = None
+            if hasattr(self, "import_clip_stop"):
+                self.import_clip_stop.setEnabled(False)
+            if hasattr(self, "import_clip_play"):
+                self.import_clip_play.setEnabled(
+                    self.import_clip_picker.path is not None
+                    and import_preview_range(
+                        self.import_clip_picker.selected_clip_range(),
+                        self.import_clip_picker.duration_seconds,
+                    )
+                    is not None
+                    and self.worker_jobs.active_token is None
+                )
+
+        def poll_import_clip_preview(self) -> None:
+            end_seconds = self.import_clip_preview_end_seconds
+            if end_seconds is None:
+                self.stop_import_clip_preview()
+                return
+            if self.import_clip_player.position() >= int(end_seconds * 1000):
+                self.stop_import_clip_preview()
 
         def set_processing_state(self, busy: bool) -> None:
             gui_pipeline_state.set_processing_state(self, busy)

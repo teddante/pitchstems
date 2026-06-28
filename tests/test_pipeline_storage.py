@@ -8,6 +8,7 @@ import pytest
 from mido import Message, MidiFile, MidiTrack
 
 import pitchstems.pipeline as pipeline
+from pitchstems.audio_clip import AudioClipRange
 from pitchstems.pipeline import (
     PipelineResult,
     _project_dir,
@@ -38,7 +39,7 @@ def _write_file(path: Path, content: bytes = b"placeholder") -> Path:
     return path
 
 
-def _fake_normalize(_input_path, output_path):
+def _fake_normalize(_input_path, output_path, **_kwargs):
     return _write_file(output_path, b"wav")
 
 
@@ -708,6 +709,47 @@ def test_full_pipeline_reports_created_project_dir(
 
     assert created_dirs == [result.project_dir]
     assert result.project_dir.exists()
+
+
+def test_full_pipeline_clip_processes_small_wav_and_records_provenance(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    input_path = tmp_path / "source.mp3"
+    input_path.write_bytes(b"large audio")
+    clip = AudioClipRange(12.0, 24.5)
+    normalize_calls = []
+
+    def fake_normalize(input_arg, output_path, **kwargs):
+        normalize_calls.append((input_arg, output_path, kwargs.get("clip_range")))
+        return _write_file(output_path, b"clipped wav")
+
+    monkeypatch.setattr(pipeline, "normalize_to_wav", fake_normalize)
+    monkeypatch.setattr(pipeline, "separate_stems", _fake_separate)
+    monkeypatch.setattr(
+        pipeline,
+        "_copy_source_audio",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("full source copied")),
+    )
+
+    result = process_audio_file(
+        input_path,
+        tmp_path / "out",
+        generate_midi=False,
+        create_zip=False,
+        source_clip=clip,
+    )
+    manifest = json.loads((result.project_dir / "pitchstems.project.json").read_text(encoding="utf-8"))
+
+    assert normalize_calls == [(input_path.resolve(), result.normalized_audio, clip)]
+    assert result.source_audio == result.project_dir / "audio" / "source_clip.wav"
+    assert result.source_audio.read_bytes() == b"clipped wav"
+    assert result.source_clip == clip
+    assert result.original_source_audio == input_path.resolve()
+    assert manifest["source_audio"] == "audio/source_clip.wav"
+    assert manifest["settings"]["source_clip"]["original_source_audio"] == str(input_path.resolve())
+    assert manifest["settings"]["source_clip"]["start_seconds"] == 12.0
+    assert manifest["settings"]["source_clip"]["end_seconds"] == 24.5
 
 
 def test_full_pipeline_logs_deferred_cancellation_boundary(
