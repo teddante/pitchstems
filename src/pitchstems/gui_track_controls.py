@@ -45,8 +45,7 @@ def track_control_visibility(height: float | int) -> TrackControlVisibility:
     )
 
 
-def rebuild_track_controls(window, editor_state: dict) -> None:
-    clear_layout(window.playback_controls)
+def reset_track_control_widgets(window) -> None:
     window.track_audio_checks.clear()
     window.track_audio_sliders.clear()
     window.track_midi_checks.clear()
@@ -58,6 +57,11 @@ def rebuild_track_controls(window, editor_state: dict) -> None:
     window.track_control_top_spacer = None
     window.track_control_bottom_spacer = None
     window.hidden_track_status = None
+
+
+def rebuild_track_controls(window, editor_state: dict) -> None:
+    clear_layout(window.playback_controls)
+    reset_track_control_widgets(window)
     if window.editor_project is None:
         return
 

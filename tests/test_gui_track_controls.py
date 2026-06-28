@@ -1,5 +1,8 @@
+from types import SimpleNamespace
+
 from pitchstems.gui_track_controls import (
     TRACK_CONTROL_MIN_HEIGHT,
+    reset_track_control_widgets,
     track_control_panel_height,
     track_control_visibility,
 )
@@ -25,3 +28,33 @@ def test_track_control_visibility_hides_volume_rows_only_below_supported_height(
     assert visible.toggles
     assert not visible.audio_volume
     assert not visible.midi_volume
+
+
+def test_reset_track_control_widgets_clears_widget_registries() -> None:
+    window = SimpleNamespace(
+        track_audio_checks={"bass": object()},
+        track_audio_sliders={"bass": object()},
+        track_midi_checks={"bass": object()},
+        track_midi_sliders={"bass": object()},
+        track_visibility_checks={"bass": object()},
+        track_analysis_checks={"bass": object()},
+        track_control_panels={"bass": object()},
+        track_control_detail_rows={"bass": object()},
+        track_control_top_spacer=object(),
+        track_control_bottom_spacer=object(),
+        hidden_track_status=object(),
+    )
+
+    reset_track_control_widgets(window)
+
+    assert window.track_audio_checks == {}
+    assert window.track_audio_sliders == {}
+    assert window.track_midi_checks == {}
+    assert window.track_midi_sliders == {}
+    assert window.track_visibility_checks == {}
+    assert window.track_analysis_checks == {}
+    assert window.track_control_panels == {}
+    assert window.track_control_detail_rows == {}
+    assert window.track_control_top_spacer is None
+    assert window.track_control_bottom_spacer is None
+    assert window.hidden_track_status is None

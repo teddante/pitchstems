@@ -6,6 +6,7 @@ from pitchstems.app_logging import logs_dir
 from pitchstems.file_opening import open_folder
 from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
 from pitchstems.gui_helpers import blocked_signals, clear_layout
+from pitchstems.gui_track_controls import reset_track_control_widgets
 from pitchstems.input_validation import validate_audio_input
 from pitchstems.project_store import PROJECT_FILENAME, load_pipeline_result
 from pitchstems.recent_projects import (
@@ -237,16 +238,7 @@ def _reset_loaded_project_state(window) -> None:
 def _reset_track_control_state(window) -> None:
     window.rendering_midi_previews.clear()
     window.clear_transport_players()
-    window.track_audio_checks.clear()
-    window.track_audio_sliders.clear()
-    window.track_midi_checks.clear()
-    window.track_midi_sliders.clear()
-    window.track_analysis_checks.clear()
-    window.track_control_panels.clear()
-    window.track_control_detail_rows.clear()
-    window.track_control_top_spacer = None
-    window.track_control_bottom_spacer = None
-    window.hidden_track_status = None
+    reset_track_control_widgets(window)
 
 
 def open_latest_output(window) -> None:

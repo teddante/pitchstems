@@ -102,6 +102,7 @@ def test_reset_track_control_state_clears_transport_and_track_caches() -> None:
         track_audio_sliders={"bass": object()},
         track_midi_checks={"bass": object()},
         track_midi_sliders={"bass": object()},
+        track_visibility_checks={"bass": object()},
         track_analysis_checks={"bass": object()},
         track_control_panels={"bass": object()},
         track_control_detail_rows={"bass": object()},
@@ -118,6 +119,7 @@ def test_reset_track_control_state_clears_transport_and_track_caches() -> None:
     assert window.track_audio_sliders == {}
     assert window.track_midi_checks == {}
     assert window.track_midi_sliders == {}
+    assert window.track_visibility_checks == {}
     assert window.track_analysis_checks == {}
     assert window.track_control_panels == {}
     assert window.track_control_detail_rows == {}
