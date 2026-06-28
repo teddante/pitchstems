@@ -42,6 +42,12 @@ class MidiProcessRunRequest:
     create_zip: bool
 
 
+WORKER_COMPLETION_MESSAGES = {
+    "cancelled": "Processing cancelled",
+    "error": "Processing failed",
+}
+
+
 def start_full_processing(window) -> None:
     if window.worker and window.worker.is_alive():
         return
@@ -282,22 +288,7 @@ def flush_messages(window) -> None:
         elif isinstance(message, tuple) and message[0] == "ENABLE_PROCESS":
             _kind, token, *status_parts = message
             status = str(status_parts[0]) if status_parts else "success"
-            if window.is_active_worker_token(int(token)):
-                window.worker_jobs.finish(int(token))
-                window.set_processing_state(False)
-                if status == "cancelled":
-                    window.end_activity("Processing cancelled")
-                elif status == "error":
-                    window.end_activity("Processing failed")
-                else:
-                    window.end_activity("Processing complete")
-                if getattr(window, "close_after_worker", False):
-                    window.close_after_worker = False
-                    window.worker = None
-                    begin_auxiliary_shutdown(window)
-                    window.close()
-            else:
-                window.logger.info("Ignored stale worker completion for token %s", token)
+            finish_worker_completion(window, int(token), status)
         elif isinstance(message, str) and message.startswith("__OUTPUT_DIR__"):
             window.latest_output_dir = Path(message.removeprefix("__OUTPUT_DIR__"))
             if window.open_when_done.isChecked():
@@ -308,3 +299,24 @@ def flush_messages(window) -> None:
                 window.set_activity_message(message[:120])
         else:
             window.logger.warning("Ignored unknown worker message: %r", message)
+
+
+def finish_worker_completion(window, token: int, status: str) -> None:
+    if not window.is_active_worker_token(token):
+        window.logger.info("Ignored stale worker completion for token %s", token)
+        return
+
+    window.worker_jobs.finish(token)
+    window.set_processing_state(False)
+    window.end_activity(WORKER_COMPLETION_MESSAGES.get(status, "Processing complete"))
+    close_after_worker_if_requested(window)
+
+
+def close_after_worker_if_requested(window) -> None:
+    if not getattr(window, "close_after_worker", False):
+        return
+
+    window.close_after_worker = False
+    window.worker = None
+    begin_auxiliary_shutdown(window)
+    window.close()

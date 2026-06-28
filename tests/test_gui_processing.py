@@ -13,8 +13,11 @@ from pitchstems.transcription import MidiOptions
 
 
 class _Logger:
+    def __init__(self) -> None:
+        self.infos: list[tuple[object, ...]] = []
+
     def info(self, *_args, **_kwargs) -> None:
-        pass
+        self.infos.append(_args)
 
     def exception(self, *_args, **_kwargs) -> None:
         raise AssertionError("cancellation should not be logged as an exception")
@@ -399,3 +402,14 @@ def test_flush_messages_allows_deferred_close_after_worker_completion() -> None:
     assert window.closed is True
     assert window.close_after_worker is False
     assert window.worker_jobs.active_token is None
+
+
+def test_finish_worker_completion_ignores_stale_token() -> None:
+    window = _FlushWindow()
+
+    gui_processing.finish_worker_completion(window, 42, "success")
+
+    assert window.worker_jobs.active_token == 7
+    assert window.processing_states == []
+    assert window.activity_messages == []
+    assert window.logger.infos == [("Ignored stale worker completion for token %s", 42)]
