@@ -329,18 +329,7 @@ def _validate_manifest(path: Path, manifest: dict[str, Any]) -> None:
         name_label="MIDI stem name",
     )
     _validate_project_path_value(path, project_dir, manifest["normalized_audio"], "normalized_audio")
-    for field_name in ("source_audio", "combined_midi", "zip_path"):
-        value = manifest.get(field_name)
-        if value is not None and not isinstance(value, str):
-            raise ValueError(f"{path} has an invalid project path field: {field_name}")
-        if value:
-            _validate_project_path_value(
-                path,
-                project_dir,
-                value,
-                field_name,
-                allow_external_absolute=field_name == "source_audio",
-            )
+    _validate_optional_project_paths(path, project_dir, manifest)
 
 
 def _validate_generated_asset_entries(
@@ -367,6 +356,25 @@ def _validate_generated_asset_entries(
             item["path"],
             f"{collection_field}[{index}].path",
         )
+
+
+def _validate_optional_project_paths(
+    manifest_path: Path,
+    project_dir: Path,
+    manifest: dict[str, Any],
+) -> None:
+    for field_name in ("source_audio", "combined_midi", "zip_path"):
+        value = manifest.get(field_name)
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"{manifest_path} has an invalid project path field: {field_name}")
+        if value:
+            _validate_project_path_value(
+                manifest_path,
+                project_dir,
+                value,
+                field_name,
+                allow_external_absolute=field_name == "source_audio",
+            )
 
 
 def _validate_project_path_value(

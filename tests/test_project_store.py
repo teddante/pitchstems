@@ -538,6 +538,32 @@ def test_load_project_manifest_allows_absolute_external_source_audio(tmp_path: P
     assert manifest["source_audio"] == str(external_source)
 
 
+def test_load_project_manifest_rejects_external_optional_generated_path(tmp_path: Path) -> None:
+    manifest_path = tmp_path / PROJECT_FILENAME
+    external_midi = tmp_path.parent / "combined.mid"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "format": "pitchstems-project",
+                "format_version": 2,
+                "source_audio": str(tmp_path.parent / "source.mp3"),
+                "normalized_audio": "work/source.wav",
+                "combined_midi": str(external_midi),
+                "stems": [],
+                "midi_files": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        load_project_manifest(manifest_path)
+    except ValueError as exc:
+        assert "outside the project folder: combined_midi" in str(exc)
+    else:
+        raise AssertionError("Expected external generated optional path to be rejected")
+
+
 def test_load_project_manifest_rejects_absolute_generated_assets_outside_project(tmp_path: Path) -> None:
     manifest_path = tmp_path / PROJECT_FILENAME
     external_stem = tmp_path.parent / "external_bass.wav"
