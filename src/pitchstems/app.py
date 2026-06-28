@@ -99,6 +99,7 @@ def main() -> int:
     )
     from pitchstems.gui_import_clip import (
         ImportClipPicker,
+        can_clear_import_clip_selection,
         can_play_import_clip_preview,
         clip_status_text,
         import_preview_range,
@@ -1220,7 +1221,7 @@ def main() -> int:
                 )
             )
             self.import_clip_clear.setEnabled(
-                clip_range is not None and self.worker_jobs.active_token is None
+                can_clear_import_clip_selection(clip_range, self.worker_jobs.active_token)
             )
 
         def play_import_clip_preview(self) -> None:

@@ -45,6 +45,22 @@ def test_set_processing_state_uses_preview_range_for_import_play_button(monkeypa
     assert window.import_clip_play.enabled is True
 
 
+def test_set_processing_state_uses_worker_state_for_import_clear_button(monkeypatch) -> None:
+    monkeypatch.setattr("pitchstems.gui_pipeline_state.refresh_midi_stem_checks", lambda *_args: None)
+    window = _PipelineWindow()
+    window.import_clip_picker._clip_range = object()
+
+    set_processing_state(window, busy=False)
+
+    assert window.import_clip_clear.enabled is True
+
+    window.worker_jobs.active_token = 7
+
+    set_processing_state(window, busy=False)
+
+    assert window.import_clip_clear.enabled is False
+
+
 class _Control:
     def __init__(self, checked: bool = False) -> None:
         self.enabled = False

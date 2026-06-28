@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pitchstems.acceleration import onnxruntime_status, torch_status
 from pitchstems.gui_helpers import blocked_signals, clear_layout
-from pitchstems.gui_import_clip import can_play_import_clip_preview
+from pitchstems.gui_import_clip import can_clear_import_clip_selection, can_play_import_clip_preview
 from pitchstems.gui_options import default_midi_checked, device_label, optional_frequency
 from pitchstems.gui_pipeline_model import PipelinePageModel
 from pitchstems.model_catalog import DEFAULT_MODEL_KEY, model_choice
@@ -31,7 +31,13 @@ def set_processing_state(window, busy: bool) -> None:
             )
         )
         window.import_clip_stop.setEnabled(False)
-        window.import_clip_clear.setEnabled(model.settings_enabled and window.import_clip_picker.selected_clip_range() is not None)
+        window.import_clip_clear.setEnabled(
+            model.settings_enabled
+            and can_clear_import_clip_selection(
+                window.import_clip_picker.selected_clip_range(),
+                window.worker_jobs.active_token,
+            )
+        )
     window.run_full.setEnabled(model.run_full_enabled)
     window.run_midi.setEnabled(model.run_midi_enabled)
     window.export_button.setEnabled(model.export_enabled)

@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QApplication
 from pitchstems.audio_clip import AudioClipRange
 from pitchstems.gui_import_clip import (
     ImportClipPicker,
+    can_clear_import_clip_selection,
     can_play_import_clip_preview,
     clip_status_text,
     import_preview_range,
@@ -87,3 +88,11 @@ def test_can_play_import_clip_preview_requires_path_preview_range_and_idle_worke
     assert not can_play_import_clip_preview(None, None, 10.0, None)
     assert not can_play_import_clip_preview(audio_path, None, 0.01, None)
     assert not can_play_import_clip_preview(audio_path, None, 10.0, 7)
+
+
+def test_can_clear_import_clip_selection_requires_selection_and_idle_worker() -> None:
+    clip_range = AudioClipRange(1.0, 4.0)
+
+    assert can_clear_import_clip_selection(clip_range, None)
+    assert not can_clear_import_clip_selection(None, None)
+    assert not can_clear_import_clip_selection(clip_range, 7)

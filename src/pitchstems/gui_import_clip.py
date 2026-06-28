@@ -181,3 +181,10 @@ def can_play_import_clip_preview(
         and import_preview_range(clip_range, duration_seconds) is not None
         and active_worker_token is None
     )
+
+
+def can_clear_import_clip_selection(
+    clip_range: AudioClipRange | None,
+    active_worker_token: int | None,
+) -> bool:
+    return clip_range is not None and active_worker_token is None
