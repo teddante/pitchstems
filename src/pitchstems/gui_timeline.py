@@ -67,6 +67,7 @@ class TimelineView(QGraphicsView):
         self.on_chord_edited = None
         self.on_chord_deleted = None
         self.on_chord_selected = None
+        self.on_note_clicked = None
         self.on_redraw_started = None
         self.on_redraw_finished = None
         self.pending_pixels_per_second: float | None = None
@@ -591,6 +592,7 @@ class TimelineView(QGraphicsView):
                 f"  duration {note.duration:.2f}s\n"
                 f"Velocity: {velocity}/127 ({velocity_ratio:.0%})"
             )
+        rect.setData(1, note)
         if draw_note_labels and width >= 36:
             label = self.scene.addText(self.note_name_formatter(note.pitch))
             label.setDefaultTextColor(QColor("#0f172a"))
@@ -904,6 +906,9 @@ class TimelineView(QGraphicsView):
         if event.button() == Qt.LeftButton and self._start_chord_edit_from_event(event):
             event.accept()
             return
+        if event.button() == Qt.LeftButton and self._preview_note_from_event(event):
+            event.accept()
+            return
         if event.button() == Qt.LeftButton and self._start_selection_from_event(event):
             event.accept()
             return
@@ -1027,6 +1032,16 @@ class TimelineView(QGraphicsView):
         if self.on_chord_selected:
             self.on_chord_selected(chord)
         self.redraw()
+        return True
+
+    def _preview_note_from_event(self, event) -> bool:
+        if self.project is None or self.on_note_clicked is None:
+            return False
+        item = self.itemAt(event.pos())
+        note = item.data(1) if item is not None else None
+        if note is None:
+            return False
+        self.on_note_clicked(note)
         return True
 
     def _update_chord_edit_from_event(self, event) -> bool:

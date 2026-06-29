@@ -7,6 +7,7 @@ import pytest
 pytest.importorskip("PySide6")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import QPointF, Qt
 from PySide6.QtWidgets import QApplication
 
 from pitchstems.gui_widgets import DropZone, PianoChordWidget
@@ -25,6 +26,37 @@ def test_piano_chord_widget_accepts_flat_chord_tones() -> None:
     assert widget.chord_label == "Gb"
     assert widget.pitch_classes == {1, 6, 10}
     assert "Gb - Bb - Db" in widget.toolTip()
+
+
+class _MouseEvent:
+    def __init__(self, position: QPointF) -> None:
+        self._position = position
+        self.accepted = False
+
+    def button(self):
+        return Qt.LeftButton
+
+    def position(self) -> QPointF:
+        return self._position
+
+    def accept(self) -> None:
+        self.accepted = True
+
+
+def test_piano_chord_widget_clicks_highlighted_key() -> None:
+    app = _app()
+    widget = PianoChordWidget()
+    clicked = []
+    widget.on_note_clicked = lambda pitch, name: clicked.append((pitch, name))
+    widget.set_chord("C", ["C", "E", "G"], "Inspector")
+    widget.resize(280, 100)
+    widget.show()
+    app.processEvents()
+
+    c_key = next(rect for rect, pitch_class, _name in widget._key_hitboxes if pitch_class == 0)
+    widget.mousePressEvent(_MouseEvent(c_key.center()))
+
+    assert clicked == [(60, "C")]
 
 
 def test_drop_zone_project_label_uses_bounded_project_text(tmp_path: Path) -> None:

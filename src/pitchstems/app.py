@@ -24,6 +24,7 @@ from pitchstems.editor_loader import EditorLoadResult
 from pitchstems.evidence_display import percent_with_bar, visible_scale_candidates
 from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
 from pitchstems.midi_preview import render_note_preview
+from pitchstems.note_preview import single_note_preview_notes
 from pitchstems.notation import pitch_class_for_name, pitch_class_name
 from pitchstems.pipeline_models import PipelineResult, StemResult
 from pitchstems.scale_preview import SCALE_PREVIEW_PATTERNS, scale_preview_notes
@@ -374,6 +375,7 @@ def main() -> int:
             self.timeline.on_chord_edited = self.edit_timeline_chord
             self.timeline.on_chord_deleted = self.delete_timeline_chord
             self.timeline.on_chord_selected = self.show_timeline_chord_status
+            self.timeline.on_note_clicked = self.preview_timeline_note
             self.timeline.on_redraw_started = self.begin_timeline_redraw
             self.timeline.on_redraw_finished = self.finish_timeline_redraw
             self.playback_controls = QVBoxLayout()
@@ -433,6 +435,7 @@ def main() -> int:
             self.inspect_gap_suggestion_button = QPushButton("Inspect")
             self.inspect_gap_suggestion_button.setEnabled(False)
             self.piano_chord_view = PianoChordWidget()
+            self.piano_chord_view.on_note_clicked = self.preview_piano_note
             self.preview_bass_note = NoWheelComboBox()
             self.preview_bass_note.addItem("Bass: Auto", None)
             self.preview_bass_note.setEnabled(False)
@@ -1108,6 +1111,37 @@ def main() -> int:
                     f"Playing {candidate.label} scale preview ({self.preview_scale_pattern.currentText()}).",
                     3000,
                 )
+
+        def preview_timeline_note(self, note: NoteEvent) -> None:
+            self.preview_note_pitch(
+                note.pitch,
+                f"{note.stem} {self.display_note_name(note.pitch)}",
+                f"{note.stem}: {self.display_note_name(note.pitch)}",
+            )
+
+        def preview_piano_note(self, pitch: int, note_name: str) -> None:
+            self.preview_note_pitch(pitch, f"piano {note_name}", note_name)
+
+        def preview_note_pitch(self, pitch: int, preview_name: str, display_name: str) -> None:
+            if self.current_result is None:
+                return
+            notes = single_note_preview_notes(pitch)
+            preview_dir = self.current_result.project_dir / "editor" / "note-preview"
+            if not safe_qt_multimedia_call(
+                self.logger,
+                "Note preview reset failed",
+                lambda: reset_player_source(self.chord_preview_player),
+            ):
+                return
+            preview = render_note_preview(preview_name, notes, preview_dir, duration=0.65)
+            if not preview:
+                return
+            if safe_qt_multimedia_call(
+                self.logger,
+                "Note preview playback failed",
+                lambda: start_player_source(self.chord_preview_player, QUrl.fromLocalFile(str(preview))),
+            ):
+                self.statusBar().showMessage(f"Playing note {display_name}.", 1800)
 
         def refresh_current_gap_suggestions(self, source_notes: list[NoteEvent]) -> None:
             gui_harmony_flow.refresh_current_gap_suggestions(self, source_notes)

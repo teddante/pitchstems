@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QBrush, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import (
     QComboBox,
@@ -133,6 +133,8 @@ class PianoChordWidget(QWidget):
         self.chord_label = ""
         self.source_label = "Selected chord"
         self.pitch_classes: set[int] = set()
+        self.on_note_clicked = None
+        self._key_hitboxes: list[tuple[QRectF, int, str]] = []
         self.setMinimumHeight(90)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.setToolTip("Select a chord candidate to see its tones on one octave of piano keys.")
@@ -186,11 +188,13 @@ class PianoChordWidget(QWidget):
         keyboard_top = bounds.top() + title_height + 2
         keyboard_height = max(34, bounds.height() - title_height - 4)
         white_width = max(1, bounds.width() / len(self.white_keys))
+        self._key_hitboxes = []
 
         for index, (name, pitch_class) in enumerate(self.white_keys):
             x = round(bounds.left() + index * white_width)
             next_x = round(bounds.left() + (index + 1) * white_width)
             width = max(1, next_x - x)
+            self._key_hitboxes.append((QRectF(x, keyboard_top, width, keyboard_height), pitch_class, name))
             highlighted = pitch_class in self.pitch_classes
             painter.setBrush(QBrush(QColor("#fde68a" if highlighted else "#ffffff")))
             painter.setPen(QPen(QColor("#94a3b8"), 1))
@@ -210,6 +214,7 @@ class PianoChordWidget(QWidget):
         for name, pitch_class, center_position in self.black_keys:
             center_x = bounds.left() + center_position * white_width
             x = round(center_x - black_width / 2)
+            self._key_hitboxes.append((QRectF(x, keyboard_top, black_width, black_height), pitch_class, name))
             highlighted = pitch_class in self.pitch_classes
             painter.setBrush(QBrush(QColor("#fbbf24" if highlighted else "#111827")))
             painter.setPen(QPen(QColor("#475569" if highlighted else "#020617"), 1))
@@ -227,3 +232,14 @@ class PianoChordWidget(QWidget):
                 Qt.AlignCenter,
                 "No chord selected",
             )
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() != Qt.LeftButton or self.on_note_clicked is None:
+            super().mousePressEvent(event)
+            return
+        for rect, pitch_class, name in reversed(self._key_hitboxes):
+            if rect.contains(event.position()) and pitch_class in self.pitch_classes:
+                self.on_note_clicked(60 + pitch_class, name)
+                event.accept()
+                return
+        super().mousePressEvent(event)

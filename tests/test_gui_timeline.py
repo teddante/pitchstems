@@ -172,6 +172,53 @@ def test_timeline_fit_time_range_rejects_tiny_targets(tmp_path: Path) -> None:
     assert not view.fit_time_range_to_view(1.0, 1.01)
 
 
+def test_timeline_note_rects_store_note_events(tmp_path: Path) -> None:
+    _app()
+    view = TimelineView()
+    view.resize(900, 420)
+    view.set_project(_project(tmp_path))
+
+    note_items = [
+        item.data(1)
+        for item in view.scene.items()
+        if isinstance(item.data(1), NoteEvent)
+    ]
+
+    assert {note.pitch for note in note_items} >= {43, 47, 60}
+
+
+class _TimelineMouseEvent:
+    def __init__(self) -> None:
+        self.accepted = False
+
+    def pos(self):
+        return None
+
+    def accept(self) -> None:
+        self.accepted = True
+
+
+class _TimelineItem:
+    def __init__(self, note: NoteEvent) -> None:
+        self.note = note
+
+    def data(self, role: int):
+        return self.note if role == 1 else None
+
+
+def test_timeline_note_preview_callback_uses_clicked_note(tmp_path: Path) -> None:
+    _app()
+    view = TimelineView()
+    project = _project(tmp_path)
+    view.set_project(project)
+    clicked = []
+    view.on_note_clicked = clicked.append
+    view.itemAt = lambda _pos: _TimelineItem(project.notes[0])
+
+    assert view._preview_note_from_event(_TimelineMouseEvent())
+    assert clicked == [project.notes[0]]
+
+
 def test_tiny_chord_labels_fall_back_to_root_name() -> None:
     _app()
     view = TimelineView()
