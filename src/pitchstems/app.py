@@ -21,6 +21,7 @@ from pitchstems.editor_project import (
 )
 from pitchstems.editor_playback import review_playback_loop_range
 from pitchstems.editor_loader import EditorLoadResult
+from pitchstems.evidence_display import percent_with_bar, visible_scale_candidates
 from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
 from pitchstems.midi_preview import render_note_preview
 from pitchstems.notation import pitch_class_for_name, pitch_class_name
@@ -406,6 +407,10 @@ def main() -> int:
             self.theory_list = QListWidget()
             self.theory_list.setMinimumHeight(120)
             self.theory_list.setAlternatingRowColors(True)
+            self.show_chromatic_scales = QCheckBox("Chromatic")
+            self.show_chromatic_scales.setToolTip(
+                "Show complete chromatic scale candidates in the Theory Inspector list."
+            )
             self.inspect_theory_button = QPushButton("Inspect Theory")
             self.inspect_theory_button.setEnabled(False)
             self.inspect_theory_button.setToolTip(
@@ -510,6 +515,9 @@ def main() -> int:
             self.notation_spelling.currentIndexChanged.connect(self.handle_notation_spelling_changed)
             self.note_filter_list.itemChanged.connect(self.handle_chord_note_filter_changed)
             self.min_note_evidence_slider.valueChanged.connect(self.handle_min_note_evidence_changed)
+            self.show_chromatic_scales.toggled.connect(
+                lambda _checked=False: self.set_theory_analysis(self.current_theory_analysis)
+            )
             self.chord_list.itemDoubleClicked.connect(self.preview_chord_item)
             self.chord_list.currentItemChanged.connect(self.handle_chord_selection_changed)
             self.timeline.verticalScrollBar().valueChanged.connect(self.sync_track_control_scroll)
@@ -984,29 +992,41 @@ def main() -> int:
             self.theory_list.clear()
             has_candidates = bool(analysis and analysis.candidates)
             self.inspect_theory_button.setEnabled(has_candidates)
+            visible_candidates = (
+                visible_scale_candidates(
+                    analysis.candidates,
+                    show_chromatic=self.show_chromatic_scales.isChecked(),
+                )
+                if analysis is not None
+                else []
+            )
             if not has_candidates or analysis is None:
                 self.theory_context.setText("Theory: -")
                 self.theory_context.setToolTip("No scale, key, or mode evidence yet.")
                 return
+            shown_best = visible_candidates[0] if visible_candidates else analysis.candidates[0]
             note_text = ", ".join(
                 f"{self.display_weighted_note_name(name)} ({weight:.0%})"
                 for name, weight in analysis.note_weights[:8]
             )
             self.theory_context.setText(
-                f"Likely: {analysis.label} (score {analysis.confidence:.0%})\n"
+                f"Likely: {shown_best.label} (score {percent_with_bar(shown_best.score)})\n"
                 f"Weighted notes: {note_text or '-'}"
             )
             self.theory_context.setToolTip(self.theory_context.text())
-            for candidate in analysis.candidates[:8]:
+            for candidate in visible_candidates[:8]:
                 notes = " - ".join(candidate.notes)
                 item = QListWidgetItem(
-                    f"{candidate.label}  {candidate.score:.0%}\n"
+                    f"{candidate.label}  {percent_with_bar(candidate.score)}\n"
                     f"{notes}\n"
-                    f"fit {candidate.pitch_fit:.0%}, centre {candidate.center_strength:.0%}, "
-                    f"chords {candidate.chord_support:.0%}"
+                    f"fit {percent_with_bar(candidate.pitch_fit, 6)}, "
+                    f"centre {percent_with_bar(candidate.center_strength, 6)}, "
+                    f"chords {percent_with_bar(candidate.chord_support, 6)}"
                 )
                 item.setToolTip("\n".join(candidate.explanation))
                 self.theory_list.addItem(item)
+            if not visible_candidates:
+                self.theory_list.addItem("Chromatic candidates hidden. Tick Chromatic to show them.")
             if analysis.progression is not None:
                 self.theory_list.addItem(
                     "Progression\n"

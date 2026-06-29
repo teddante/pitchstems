@@ -220,6 +220,8 @@ def _reset_project_view_state(window) -> None:
     clear_layout(window.playback_controls)
     window.chord_list.clear()
     window.refresh_chord_keyboard()
+    if hasattr(window.timeline, "set_manual_chords"):
+        window.timeline.set_manual_chords([])
     window.timeline.set_project(None)
 
 

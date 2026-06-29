@@ -1,0 +1,27 @@
+from dataclasses import dataclass
+
+from pitchstems.evidence_display import percent_bar, percent_with_bar, visible_scale_candidates
+
+
+@dataclass(frozen=True)
+class _Scale:
+    name: str
+
+
+@dataclass(frozen=True)
+class _Candidate:
+    scale: _Scale
+
+
+def test_percent_bar_clamps_and_preserves_percentage_text() -> None:
+    assert percent_with_bar(0.64, width=5) == "64% [###--]"
+    assert percent_bar(2.0, width=4) == "[####]"
+    assert percent_bar(-1.0, width=4) == "[----]"
+
+
+def test_visible_scale_candidates_can_hide_chromatic_candidates() -> None:
+    chromatic = _Candidate(_Scale("Chromatic"))
+    major = _Candidate(_Scale("Ionian"))
+
+    assert visible_scale_candidates([chromatic, major], show_chromatic=False) == [major]
+    assert visible_scale_candidates([chromatic, major], show_chromatic=True) == [chromatic, major]

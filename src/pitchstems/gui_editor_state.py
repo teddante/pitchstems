@@ -41,7 +41,7 @@ def refresh_editor_project_from_chord_edits(
     window.timeline.selection_start = selection_start
     window.timeline.selection_end = selection_end
     window.timeline.selected_chord = selected_chord
-    window.timeline.redraw()
+    window.timeline.set_manual_chords(window.manual_chords)
     window.refresh_detected_chord_list()
     window.refresh_current_harmony(window.timeline.position, force=True)
     window.save_editor_state()

@@ -6,7 +6,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import Qt
 
 from pitchstems.editor_project import ChordRegion
-from pitchstems.harmony_panel import refresh_chord_actions
+from pitchstems.harmony_panel import refresh_chord_actions, refresh_chord_keyboard
 
 
 class _Button:
@@ -26,9 +26,15 @@ class _Button:
 
 
 class _Item:
+    def __init__(self, label: str = "C", note_names: list[str] | None = None) -> None:
+        self.label = label
+        self.note_names = note_names or []
+
     def data(self, role: int):
         if role == Qt.UserRole:
-            return "C"
+            return self.label
+        if role == Qt.UserRole + 2:
+            return self.note_names
         return None
 
 
@@ -48,6 +54,7 @@ class _Timeline:
     ) -> None:
         self._ranges = ranges
         self.selected_chord = selected_chord
+        self.position = 0.0
 
     def selection_ranges(self) -> list[tuple[float, float]]:
         return self._ranges
@@ -65,6 +72,22 @@ class _Window:
         self.preview_chord_button = _Button()
         self.use_chord_button = _Button()
         self.delete_chord_button = _Button()
+        self.editor_project = None
+        self.piano_chord_view = _PianoChordView()
+
+    def display_chord(self, label: str | None) -> str:
+        return {"Bb/D": "A#/D"}.get(label, label or "No clear chord")
+
+    def display_chord_tones(self, label: str) -> list[str]:
+        return ["A#", "D", "F"] if label == "Bb/D" else ["C", "E", "G"]
+
+
+class _PianoChordView:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def set_chord(self, label, note_names, source_label="Selected chord") -> None:
+        self.calls.append((label, note_names, source_label))
 
 
 def test_refresh_chord_actions_targets_selected_chord_without_selection() -> None:
@@ -102,3 +125,12 @@ def test_refresh_chord_actions_disables_use_without_target() -> None:
     assert window.preview_chord_button.enabled
     assert not window.use_chord_button.enabled
     assert not window.delete_chord_button.enabled
+
+
+def test_refresh_chord_keyboard_uses_display_spelling_for_inspector_title() -> None:
+    item = _Item("Bb/D", ["A#", "D", "F"])
+    window = _Window(item)
+
+    refresh_chord_keyboard(window)
+
+    assert window.piano_chord_view.calls == [("A#/D", ["A#", "D", "F"], "Inspector")]

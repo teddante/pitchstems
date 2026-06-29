@@ -56,6 +56,7 @@ def build_editor_page(window) -> QWidget:
     theory_header = QHBoxLayout()
     theory_header.setSpacing(6)
     theory_header.addWidget(section_label("Theory Inspector"))
+    theory_header.addWidget(window.show_chromatic_scales)
     theory_header.addWidget(window.inspect_theory_button)
     editor_side.addLayout(theory_header)
     editor_side.addWidget(window.theory_context)

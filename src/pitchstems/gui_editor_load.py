@@ -5,6 +5,7 @@ from pathlib import Path
 
 from pitchstems.editor_loader import build_editor_load_result
 from pitchstems.editor_state import editor_float
+from pitchstems.evidence_display import percent_with_bar
 from pitchstems.gui_editor_model import EditorSummaryModel
 from pitchstems.gui_helpers import blocked_signals
 from pitchstems.gui_project_flow import remember_recent_project
@@ -120,6 +121,7 @@ def finish_editor_project_load(window, token: int, loaded) -> None:
     window.logger.info("Drawing editor timeline")
     window.set_activity_message("Drawing editor timeline...")
     window.timeline.set_project(project)
+    window.timeline.set_manual_chords(window.manual_chords)
     window.timeline.set_visible_tracks(
         {track.name for track in project.tracks if track_visibility.get(track.name, True)}
     )
@@ -176,9 +178,14 @@ def refresh_detected_chord_list(window) -> None:
         return
     for chord in window.editor_project.chords[:200]:
         window.chord_list.addItem(
-            f"{format_time(chord.start)}  {window.display_chord(chord.label)}  ({chord.confidence:.0%})"
+            f"{format_time(chord.start)}  {window.display_chord(chord.label)}  "
+            f"{chord_source_label(window, chord)}  ({percent_with_bar(chord.confidence)})"
         )
     if len(window.editor_project.chords) > 200:
         window.chord_list.addItem(f"... {len(window.editor_project.chords) - 200} more")
     window.refresh_chord_actions()
     window.refresh_chord_keyboard()
+
+
+def chord_source_label(window, chord) -> str:
+    return "Edited" if chord in window.manual_chords else "Auto"

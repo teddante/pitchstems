@@ -9,6 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QLabel,
     QListWidget,
@@ -50,6 +51,7 @@ class _EditorWindow:
         self.chord_list = QListWidget()
         self.theory_context = _wrapped_label("Theory: -", 54)
         self.theory_list = QListWidget()
+        self.show_chromatic_scales = QCheckBox("Chromatic")
         self.inspect_theory_button = QPushButton("Inspect Theory")
         self.gap_suggestion_list = QListWidget()
         self.use_gap_suggestion_button = QPushButton("Use")

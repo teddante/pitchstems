@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QListWidgetItem
 
 from pitchstems.editor_chord_assignment import chord_assignment_ranges
 from pitchstems.editor_project import ChordRegion
+from pitchstems.evidence_display import percent_with_bar
 from pitchstems.time_format import format_time
 
 
@@ -87,7 +88,7 @@ def set_chord_candidates(window, analysis) -> None:
                 if len(aliases) > 4:
                     shown_aliases += f", +{len(aliases) - 4} more"
                 alias_text = f"\naka: {shown_aliases}"
-            item = QListWidgetItem(f"{display_label}  {confidence:.0%}\n{notes}{alias_text}")
+            item = QListWidgetItem(f"{display_label}  {percent_with_bar(confidence)}\n{notes}{alias_text}")
             item.setData(Qt.UserRole, label)
             item.setData(Qt.UserRole + 1, confidence)
             item.setData(Qt.UserRole + 2, note_names)
@@ -110,7 +111,7 @@ def set_chord_candidates(window, analysis) -> None:
             alias_text = ""
             if aliases:
                 alias_text = f"\naka: {', '.join(window.display_chord(alias) for alias in aliases[:4])}"
-            item = QListWidgetItem(f"{display_label}  {confidence:.0%}\n{notes}{alias_text}")
+            item = QListWidgetItem(f"{display_label}  {percent_with_bar(confidence)}\n{notes}{alias_text}")
             item.setData(Qt.UserRole, label)
             item.setData(Qt.UserRole + 1, confidence)
             item.setData(Qt.UserRole + 2, note_names)
@@ -154,7 +155,7 @@ def refresh_chord_keyboard(window) -> None:
         return
     label = item.data(Qt.UserRole)
     note_names = item.data(Qt.UserRole + 2) or []
-    window.piano_chord_view.set_chord(label, note_names, "Inspector")
+    window.piano_chord_view.set_chord(window.display_chord(label), note_names, "Inspector")
 
 
 def active_chord_track_region(window) -> ChordRegion | None:

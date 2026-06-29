@@ -58,6 +58,7 @@ class TimelineView(QGraphicsView):
         self.playhead = None
         self.selection_rects = []
         self.selection_segments: list[tuple[float, float]] = []
+        self.manual_chords: list[ChordRegion] = []
         self.selection_start: float | None = None
         self.selection_end: float | None = None
         self.selected_chord: ChordRegion | None = None
@@ -113,6 +114,10 @@ class TimelineView(QGraphicsView):
         self._selection_additive = False
         self._chord_drag = None
         self.selected_chord = None
+        self.redraw()
+
+    def set_manual_chords(self, chords: list[ChordRegion]) -> None:
+        self.manual_chords = list(chords)
         self.redraw()
 
     def _index_project(self) -> None:
@@ -448,6 +453,7 @@ class TimelineView(QGraphicsView):
             x = self._x(chord.start)
             width = max(18, chord.duration * self.pixels_per_second)
             is_selected = chord == self.selected_chord
+            source_label = "Edited" if chord in self.manual_chords else "Auto"
             rect = self.scene.addRect(
                 x,
                 self.ruler_height + 6,
@@ -459,12 +465,13 @@ class TimelineView(QGraphicsView):
             self._make_sticky_y(rect, 28)
             rect.setData(0, chord)
             rect.setToolTip(
-                f"{chord.label}  {format_time(chord.start)} - {format_time(chord.end)}\n"
+                f"{chord.label}  {source_label}  {format_time(chord.start)} - {format_time(chord.end)}\n"
                 f"Ranking score: {chord.confidence:.0%}\n"
                 "Drag the middle to move, drag an edge to resize, Delete removes the selected chord."
             )
             label_width = max(8, int(width) - 8)
-            shown_label = self._chord_label_for_width(chord.label, label_width)
+            timeline_label = f"{chord.label}*" if source_label == "Edited" else chord.label
+            shown_label = self._chord_label_for_width(timeline_label, label_width)
             text = self.scene.addText(shown_label)
             text.setDefaultTextColor(QColor("#4c1d95"))
             text.setPos(x + 5, self.ruler_height + 5)
