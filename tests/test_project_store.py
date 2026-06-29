@@ -11,6 +11,7 @@ from pitchstems.project_store import (
     load_project_manifest,
     save_failed_project_manifest,
     save_project_manifest,
+    _manifest_source_audio,
     _midi_results_from_manifest,
     _midi_results_manifest,
     _stem_results_from_manifest,
@@ -179,6 +180,41 @@ def test_save_project_manifest_writes_explicit_falsey_editor_values(tmp_path: Pa
     assert updated["editor"]["playhead_seconds"] == 0.0
     assert updated["editor"]["chord_overrides"] == []
     assert updated["editor"]["note_edits"] == [{"stem": "bass", "pitch": 48, "start": 1.25}]
+
+
+def test_manifest_source_audio_prefers_pipeline_result_source(tmp_path: Path) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    explicit_source = tmp_path / "fresh-source.wav"
+    result = PipelineResult(
+        project_dir=project_dir,
+        normalized_audio=project_dir / "work" / "song.wav",
+        stems=[],
+        midi_files=[],
+        combined_midi=None,
+        zip_path=None,
+        source_audio=explicit_source,
+    )
+
+    assert _manifest_source_audio(project_dir, result, {"source_audio": "audio/old.wav"}) == explicit_source
+
+
+def test_manifest_source_audio_preserves_existing_source_when_result_is_missing(
+    tmp_path: Path,
+) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    result = PipelineResult(
+        project_dir=project_dir,
+        normalized_audio=project_dir / "work" / "song.wav",
+        stems=[],
+        midi_files=[],
+        combined_midi=None,
+        zip_path=None,
+        source_audio=None,
+    )
+
+    assert _manifest_source_audio(project_dir, result, {"source_audio": "audio/original.wav"}) == (
+        project_dir / "audio" / "original.wav"
+    )
 
 
 def test_manifest_saves_and_loads_stem_ids(tmp_path: Path) -> None:

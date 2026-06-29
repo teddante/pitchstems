@@ -61,7 +61,7 @@ def save_project_manifest(
     with _MANIFEST_LOCK:
         existing = _read_existing_manifest(manifest_path)
         created_at = existing.get("created_at") or _now()
-        source_audio = result.source_audio or _optional_project_path(project_dir, existing.get("source_audio"))
+        source_audio = _manifest_source_audio(project_dir, result, existing)
 
         settings = _existing_manifest_section(existing, "settings")
         editor = _existing_manifest_section(existing, "editor")
@@ -511,6 +511,16 @@ def _source_clip_manifest(
     if original_source_audio is not None:
         data["original_source_audio"] = str(original_source_audio)
     return data
+
+
+def _manifest_source_audio(
+    project_dir: Path,
+    result: PipelineResult,
+    existing: dict[str, Any],
+) -> Path | None:
+    if result.source_audio is not None:
+        return result.source_audio
+    return _optional_project_path(project_dir, existing.get("source_audio"))
 
 
 def _original_source_audio_from_manifest(manifest: dict[str, Any]) -> Path | None:
