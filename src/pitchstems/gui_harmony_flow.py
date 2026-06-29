@@ -62,10 +62,11 @@ def refresh_current_harmony(window, seconds: float) -> None:
     selection_ranges = review_ranges(explicit_ranges, window.timeline.selected_chord)
     if selection_ranges:
         required, excluded = chord_note_constraints(window)
-        overlapping_notes = set()
-        for start, end in selection_ranges:
-            overlapping_notes.update(window.editor_project.note_index.overlapping(start, end))
-        region_analysis_notes = [note for note in analysis_notes if note in overlapping_notes]
+        region_analysis_notes = analysis_notes_overlapping_ranges(
+            window.editor_project,
+            analysis_notes,
+            selection_ranges,
+        )
         analysis = analyze_chord_regions(
             region_analysis_notes,
             selection_ranges,
@@ -101,8 +102,7 @@ def refresh_current_harmony(window, seconds: float) -> None:
         return
 
     required, excluded = chord_note_constraints(window)
-    active_index_notes = set(window.editor_project.note_index.active_at(seconds))
-    point_analysis_notes = [note for note in analysis_notes if note in active_index_notes]
+    point_analysis_notes = analysis_notes_active_at(window.editor_project, analysis_notes, seconds)
     analysis = analyze_chord_at(
         point_analysis_notes,
         seconds,
@@ -127,6 +127,18 @@ def refresh_current_harmony(window, seconds: float) -> None:
         window.set_chord_context_text(f"{sample_text}\nNotes: {note_text}")
     else:
         window.set_chord_context_text(f"{sample_text}\nNotes: -")
+
+
+def analysis_notes_overlapping_ranges(editor_project, notes, ranges: list[tuple[float, float]]):
+    overlapping_notes = set()
+    for start, end in ranges:
+        overlapping_notes.update(editor_project.note_index.overlapping(start, end))
+    return [note for note in notes if note in overlapping_notes]
+
+
+def analysis_notes_active_at(editor_project, notes, seconds: float):
+    active_notes = set(editor_project.note_index.active_at(seconds))
+    return [note for note in notes if note in active_notes]
 
 
 def chord_context_key(window, seconds: float):

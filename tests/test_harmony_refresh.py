@@ -4,6 +4,8 @@ import pitchstems.gui_harmony_flow as gui_harmony_flow
 from pitchstems.editor_project import ChordRegion
 from pitchstems.gui_harmony_flow import (
     HarmonyRefreshGate,
+    analysis_notes_active_at,
+    analysis_notes_overlapping_ranges,
     chord_context_key,
     current_chord_gap_range,
     refresh_current_gap_suggestions,
@@ -34,6 +36,29 @@ def test_chord_context_key_prefers_explicit_selection_over_selected_chord() -> N
     window = _Window([(3.0, 4.0)], ChordRegion(1.0, 2.0, "G", 0.8))
 
     assert chord_context_key(window, 9.0) == ("selection", 3.0, 4.0)
+
+
+def test_analysis_notes_overlapping_ranges_filters_by_note_index() -> None:
+    bass, piano, drums = object(), object(), object()
+    project = _IndexedProject(
+        overlapping={
+            (1.0, 2.0): [piano],
+            (3.0, 4.0): [drums, object()],
+        },
+        active={},
+    )
+
+    assert analysis_notes_overlapping_ranges(project, [bass, piano, drums], [(1.0, 2.0), (3.0, 4.0)]) == [
+        piano,
+        drums,
+    ]
+
+
+def test_analysis_notes_active_at_filters_by_note_index() -> None:
+    bass, piano, drums = object(), object(), object()
+    project = _IndexedProject(overlapping={}, active={9.0: [drums, bass]})
+
+    assert analysis_notes_active_at(project, [bass, piano, drums], 9.0) == [bass, drums]
 
 
 def test_current_chord_gap_range_uses_selection_when_present() -> None:
@@ -158,6 +183,23 @@ class _Window:
         selected_chord: ChordRegion | None,
     ) -> None:
         self.timeline = _Timeline(ranges, selected_chord)
+
+
+class _NoteIndex:
+    def __init__(self, overlapping, active) -> None:
+        self._overlapping = overlapping
+        self._active = active
+
+    def overlapping(self, start: float, end: float):
+        return self._overlapping.get((start, end), [])
+
+    def active_at(self, seconds: float):
+        return self._active.get(seconds, [])
+
+
+class _IndexedProject:
+    def __init__(self, overlapping, active) -> None:
+        self.note_index = _NoteIndex(overlapping, active)
 
 
 class _GapIndex:
