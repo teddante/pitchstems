@@ -89,7 +89,7 @@ class _Window:
         return "Preview bass D"
 
     def preview_voicing_note_roles(self, label: str) -> dict[int, set[str]]:
-        return {2: {"bass"}} if label == "Bb/D" else {}
+        return {10: {"root"}, 2: {"bass"}} if label == "Bb/D" else {}
 
 
 class _PianoChordView:
@@ -143,7 +143,9 @@ def test_refresh_chord_keyboard_uses_display_spelling_for_inspector_title() -> N
 
     refresh_chord_keyboard(window)
 
-    assert window.piano_chord_view.calls == [("A#/D", ["A#", "D", "F"], "Preview bass D", {2: {"bass"}})]
+    assert window.piano_chord_view.calls == [
+        ("A#/D", ["A#", "D", "F"], "Preview bass D", {10: {"root"}, 2: {"bass"}})
+    ]
 
 
 def test_refresh_chord_keyboard_clears_for_non_candidate_rows() -> None:

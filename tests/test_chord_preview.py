@@ -29,6 +29,10 @@ def test_chord_preview_pitches_support_flat_names() -> None:
     assert chord_preview_pitches("Gb", ["Gb", "Bb", "Db"]) == [54, 58, 61]
 
 
+def test_chord_preview_pitches_fill_selected_preview_range() -> None:
+    assert chord_preview_pitches("C", ["C", "E", "G"], low_pitch=48, high_pitch=67) == [48, 52, 55, 60, 64, 67]
+
+
 def test_chord_preview_notes_use_official_preview_envelope() -> None:
     notes = chord_preview_notes("C/E", ["C", "E", "G"])
 

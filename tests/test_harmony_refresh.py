@@ -134,15 +134,23 @@ def test_refresh_current_theory_uses_selected_region(monkeypatch) -> None:
     source_notes = [object()]
     calls = []
 
-    def fake_analyze_theory_region(notes, chords, start, end):
-        calls.append((notes, chords, start, end))
+    def fake_analyze_theory_region(notes, chords, start, end, **kwargs):
+        calls.append((notes, chords, start, end, kwargs))
         return "region analysis"
 
     monkeypatch.setattr(gui_harmony_flow, "analyze_theory_region", fake_analyze_theory_region)
 
     refresh_current_theory(window, source_notes, 9.0)
 
-    assert calls == [(source_notes, window.editor_project.chords, 1.0, 2.0)]
+    assert calls == [
+        (
+            source_notes,
+            window.editor_project.chords,
+            1.0,
+            2.0,
+            {"required_pitch_classes": set(), "excluded_pitch_classes": set()},
+        )
+    ]
     assert window.theory_analyses == ["region analysis"]
 
 
@@ -151,15 +159,40 @@ def test_refresh_current_theory_uses_playhead_without_selection(monkeypatch) -> 
     source_notes = [object()]
     calls = []
 
-    def fake_analyze_theory_at(notes, chords, seconds):
-        calls.append((notes, chords, seconds))
+    def fake_analyze_theory_at(notes, chords, seconds, **kwargs):
+        calls.append((notes, chords, seconds, kwargs))
         return "point analysis"
 
     monkeypatch.setattr(gui_harmony_flow, "analyze_theory_at", fake_analyze_theory_at)
 
     refresh_current_theory(window, source_notes, 9.0)
 
-    assert calls == [(source_notes, window.editor_project.chords, 9.0)]
+    assert calls == [
+        (
+            source_notes,
+            window.editor_project.chords,
+            9.0,
+            {"required_pitch_classes": set(), "excluded_pitch_classes": set()},
+        )
+    ]
+    assert window.theory_analyses == ["point analysis"]
+
+
+def test_refresh_current_theory_passes_piano_roll_constraints(monkeypatch) -> None:
+    window = _TheoryWindow(ranges=[])
+    window.theory_note_overrides = {1: "force", 6: "exclude"}
+    source_notes = [object()]
+    calls = []
+
+    def fake_analyze_theory_at(notes, chords, seconds, **kwargs):
+        calls.append(kwargs)
+        return "point analysis"
+
+    monkeypatch.setattr(gui_harmony_flow, "analyze_theory_at", fake_analyze_theory_at)
+
+    refresh_current_theory(window, source_notes, 9.0)
+
+    assert calls == [{"required_pitch_classes": {1}, "excluded_pitch_classes": {6}}]
     assert window.theory_analyses == ["point analysis"]
 
 

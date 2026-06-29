@@ -51,10 +51,10 @@ def test_piano_chord_widget_key_labels_follow_pitch_class_formatter() -> None:
     widget.show()
     app.processEvents()
 
-    labels_by_pitch = {pitch_class: name for _rect, pitch_class, name in widget._key_hitboxes}
-    assert labels_by_pitch[3] == "D#"
-    assert labels_by_pitch[8] == "G#"
-    assert labels_by_pitch[10] == "A#"
+    labels_by_pitch_class = {pitch % 12: name for _rect, pitch, name in widget._key_hitboxes}
+    assert labels_by_pitch_class[3] == "D#"
+    assert labels_by_pitch_class[8] == "G#"
+    assert labels_by_pitch_class[10] == "A#"
 
 
 def test_piano_chord_widget_set_notes_supports_scale_display() -> None:
@@ -79,8 +79,9 @@ def test_piano_chord_widget_maps_double_sharp_to_sounding_key() -> None:
 
 
 class _MouseEvent:
-    def __init__(self, position: QPointF) -> None:
+    def __init__(self, position: QPointF, modifiers=Qt.NoModifier) -> None:
         self._position = position
+        self._modifiers = modifiers
         self.accepted = False
 
     def button(self):
@@ -88,6 +89,9 @@ class _MouseEvent:
 
     def position(self) -> QPointF:
         return self._position
+
+    def modifiers(self):
+        return self._modifiers
 
     def accept(self) -> None:
         self.accepted = True
@@ -103,10 +107,10 @@ def test_piano_chord_widget_clicks_highlighted_key() -> None:
     widget.show()
     app.processEvents()
 
-    c_key = next(rect for rect, pitch_class, _name in widget._key_hitboxes if pitch_class == 0)
+    c_key = next(rect for rect, pitch, _name in widget._key_hitboxes if pitch == 48)
     widget.mousePressEvent(_MouseEvent(QPointF(c_key.center().x(), c_key.bottom() - 2)))
 
-    assert clicked == [(60, "C")]
+    assert clicked == [(48, "C")]
 
 
 def test_piano_chord_widget_clicks_unhighlighted_key() -> None:
@@ -119,10 +123,45 @@ def test_piano_chord_widget_clicks_unhighlighted_key() -> None:
     widget.show()
     app.processEvents()
 
-    d_key = next(rect for rect, pitch_class, _name in widget._key_hitboxes if pitch_class == 2)
+    d_key = next(rect for rect, pitch, _name in widget._key_hitboxes if pitch == 50)
     widget.mousePressEvent(_MouseEvent(QPointF(d_key.center().x(), d_key.bottom() - 2)))
 
-    assert clicked == [(62, "D")]
+    assert clicked == [(50, "D")]
+
+
+def test_piano_chord_widget_preview_range_controls_visible_keys() -> None:
+    app = _app()
+    widget = PianoChordWidget()
+    widget.set_chord("C", ["C", "E", "G"], "Inspector")
+    widget.set_preview_range(60, 64)
+    widget.resize(280, 100)
+    widget.show()
+    app.processEvents()
+
+    keys = [(pitch, name) for _rect, pitch, name in widget._key_hitboxes]
+
+    assert keys == [(60, "C4"), (62, "D4"), (64, "E4"), (61, "C#4"), (63, "Eb4")]
+
+
+def test_piano_chord_widget_ctrl_click_cycles_note_constraint() -> None:
+    app = _app()
+    widget = PianoChordWidget()
+    changed = []
+    widget.on_note_constraint_changed = lambda pitch_class, state: changed.append((pitch_class, state))
+    widget.set_chord("C", ["C", "E", "G"], "Inspector")
+    widget.resize(280, 100)
+    widget.show()
+    app.processEvents()
+
+    d_key = next(rect for rect, pitch, _name in widget._key_hitboxes if pitch == 50)
+    point = QPointF(d_key.center().x(), d_key.bottom() - 2)
+
+    widget.mousePressEvent(_MouseEvent(point, Qt.ControlModifier))
+    widget.mousePressEvent(_MouseEvent(point, Qt.ControlModifier))
+    widget.mousePressEvent(_MouseEvent(point, Qt.ControlModifier))
+
+    assert changed == [(2, "force"), (2, "exclude"), (2, "auto")]
+    assert widget.note_constraints == {}
 
 
 def test_drop_zone_project_label_uses_bounded_project_text(tmp_path: Path) -> None:

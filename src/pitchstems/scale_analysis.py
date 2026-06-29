@@ -234,16 +234,21 @@ def analyze_theory_at(
     notes: list[NoteEvent],
     chords: list[ChordRegion],
     seconds: float,
+    *,
+    required_pitch_classes: set[int] | None = None,
+    excluded_pitch_classes: set[int] | None = None,
 ) -> TheoryAnalysis:
     active_notes = active_notes_at(notes, seconds)
     active_chords = [chord for chord in chords if chord.start <= seconds < chord.end]
     totals, _exact_pitch_weights = point_pitch_energy(notes, seconds)
+    totals = _constrained_totals(totals, required_pitch_classes, excluded_pitch_classes)
     bass_totals = {}
     for note in active_notes:
         weight = midi_velocity_energy(note.velocity)
         if note.pitch < 60:
             _add_pitch_weight(bass_totals, note.pitch % 12, weight)
-    return _analyze_evidence(totals, bass_totals, active_chords)
+    bass_totals = _constrained_totals(bass_totals, None, excluded_pitch_classes)
+    return _analyze_evidence(totals, bass_totals, active_chords, required_pitch_classes, excluded_pitch_classes)
 
 
 def analyze_theory_region(
@@ -251,10 +256,14 @@ def analyze_theory_region(
     chords: list[ChordRegion],
     start: float,
     end: float,
+    *,
+    required_pitch_classes: set[int] | None = None,
+    excluded_pitch_classes: set[int] | None = None,
 ) -> TheoryAnalysis:
     if end <= start:
-        return _analyze_evidence({}, {}, [])
+        return _analyze_evidence({}, {}, [], required_pitch_classes, excluded_pitch_classes)
     totals, _exact_pitch_weights = region_pitch_energy(notes, start, end)
+    totals = _constrained_totals(totals, required_pitch_classes, excluded_pitch_classes)
     bass_totals = {}
     for note in notes:
         overlap = note_overlap_seconds(note, start, end)
@@ -263,12 +272,13 @@ def analyze_theory_region(
         weight = overlap * midi_velocity_energy(note.velocity)
         if note.pitch < 60:
             _add_pitch_weight(bass_totals, note.pitch % 12, weight)
+    bass_totals = _constrained_totals(bass_totals, None, excluded_pitch_classes)
     active_chords = [
         chord
         for chord in chords
         if max(0.0, min(chord.end, end) - max(chord.start, start)) > 0
     ]
-    return _analyze_evidence(totals, bass_totals, active_chords)
+    return _analyze_evidence(totals, bass_totals, active_chords, required_pitch_classes, excluded_pitch_classes)
 
 
 def theory_analysis_report(analysis: TheoryAnalysis) -> str:
@@ -335,13 +345,22 @@ def _analyze_evidence(
     totals: dict[int, float],
     bass_totals: dict[int, float],
     chords: list[ChordRegion],
+    required_pitch_classes: set[int] | None = None,
+    excluded_pitch_classes: set[int] | None = None,
 ) -> TheoryAnalysis:
     total_energy = sum(totals.values())
     if total_energy <= 0:
         return TheoryAnalysis(None, 0.0, [], [])
     note_weights = _normalized_note_weights(totals)
     chord_root_totals = _chord_root_totals(chords)
-    candidates = _scale_candidates(totals, bass_totals, chord_root_totals, chords)
+    candidates = _scale_candidates(
+        totals,
+        bass_totals,
+        chord_root_totals,
+        chords,
+        required_pitch_classes,
+        excluded_pitch_classes,
+    )
     best = candidates[0] if candidates else None
     progression = _progression_for_candidate(best, chords) if best else None
     core_notes, scale_notes, outside_notes = _suggested_note_groups(best, chords)
@@ -362,6 +381,8 @@ def _scale_candidates(
     bass_totals: dict[int, float],
     chord_root_totals: dict[int, float],
     chords: list[ChordRegion],
+    required_pitch_classes: set[int] | None = None,
+    excluded_pitch_classes: set[int] | None = None,
 ) -> list[ScaleCandidate]:
     total_energy = sum(totals.values())
     observed_pitch_classes = set(totals)
@@ -369,6 +390,10 @@ def _scale_candidates(
     for root in range(12):
         for scale in SCALE_REGISTRY:
             pitch_classes = {(root + interval) % 12 for interval in scale.intervals}
+            if required_pitch_classes and not required_pitch_classes <= pitch_classes:
+                continue
+            if excluded_pitch_classes and pitch_classes & excluded_pitch_classes:
+                continue
             in_energy = sum(weight for pitch_class, weight in totals.items() if pitch_class in pitch_classes)
             pitch_fit = in_energy / total_energy if total_energy else 0.0
             outside_energy = 1.0 - pitch_fit
@@ -405,6 +430,24 @@ def _scale_candidates(
         reverse=True,
     )
     return candidates[:96]
+
+
+def _constrained_totals(
+    totals: dict[int, float],
+    required_pitch_classes: set[int] | None,
+    excluded_pitch_classes: set[int] | None,
+) -> dict[int, float]:
+    constrained = {
+        pitch_class: weight
+        for pitch_class, weight in totals.items()
+        if not excluded_pitch_classes or pitch_class not in excluded_pitch_classes
+    }
+    if required_pitch_classes and constrained:
+        floor = max(constrained.values()) * 0.001
+        for pitch_class in required_pitch_classes:
+            if not excluded_pitch_classes or pitch_class not in excluded_pitch_classes:
+                constrained.setdefault(pitch_class, floor)
+    return constrained
 
 
 def _scale_candidate_sort_key(

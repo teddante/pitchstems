@@ -37,9 +37,6 @@ def build_editor_page(window) -> QWidget:
     evidence_floor_row.addWidget(window.min_note_evidence_label)
     evidence_floor_row.addWidget(window.min_note_evidence_slider, 1)
     editor_side.addLayout(evidence_floor_row)
-    editor_side.addWidget(section_label("Manual Note Overrides"))
-    editor_side.addWidget(window.note_filter_help)
-    editor_side.addWidget(window.note_filter_list)
 
     chord_action_grid = QGridLayout()
     chord_action_grid.setHorizontalSpacing(6)
@@ -51,11 +48,6 @@ def build_editor_page(window) -> QWidget:
     chord_action_grid.addWidget(window.delete_chord_button, 2, 0, 1, 2)
     editor_side.addLayout(chord_action_grid)
     editor_side.addWidget(window.piano_chord_view)
-    preview_voicing_row = QHBoxLayout()
-    preview_voicing_row.setSpacing(6)
-    preview_voicing_row.addWidget(window.preview_bass_note)
-    preview_voicing_row.addWidget(window.preview_top_note)
-    editor_side.addLayout(preview_voicing_row)
     editor_side.addWidget(window.chord_list, 1)
 
     theory_header = QHBoxLayout()

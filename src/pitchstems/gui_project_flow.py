@@ -234,6 +234,8 @@ def _reset_loaded_project_state(window) -> None:
     window.manual_chords = []
     window.removed_chord_ranges = []
     window.chord_note_overrides = {}
+    if hasattr(window, "theory_note_overrides"):
+        window.theory_note_overrides = {}
     window.chord_note_filter_context = None
     window.current_chord_base_weights = {}
     window.current_harmony_context = None

@@ -17,8 +17,11 @@ def scale_preview_notes(
     label: str,
     note_names: list[str],
     pattern: str = "up_down",
+    *,
+    low_pitch: int | None = None,
+    high_pitch: int | None = None,
 ) -> list[NoteEvent]:
-    pitches = scale_preview_pitches(label, note_names, pattern)
+    pitches = scale_preview_pitches(label, note_names, pattern, low_pitch=low_pitch, high_pitch=high_pitch)
     note_duration = 0.16 if pattern != "random" else 0.11
     gap = 0.015
     return [
@@ -37,8 +40,15 @@ def scale_preview_pitches(
     label: str,
     note_names: list[str],
     pattern: str = "up_down",
+    *,
+    low_pitch: int | None = None,
+    high_pitch: int | None = None,
 ) -> list[int]:
-    ascending = _ascending_scale_pitches(note_names)
+    ascending = (
+        _ranged_scale_pitches(note_names, low_pitch, high_pitch)
+        if low_pitch is not None and high_pitch is not None
+        else _ascending_scale_pitches(note_names)
+    )
     if not ascending:
         return []
     if pattern == "up":
@@ -74,3 +84,19 @@ def _random_scale_pitches(label: str, ascending: list[int]) -> list[int]:
 
 def _pitch_class(note_name: str) -> int:
     return pitch_class_for_name(note_name) or 0
+
+
+def _ranged_scale_pitches(note_names: list[str], low_pitch: int, high_pitch: int) -> list[int]:
+    low, high = _normalized_range(low_pitch, high_pitch)
+    pitch_classes = {_pitch_class(note_name) for note_name in note_names}
+    return [
+        pitch
+        for pitch in range(low, high + 1)
+        if pitch % 12 in pitch_classes
+    ]
+
+
+def _normalized_range(low_pitch: int, high_pitch: int) -> tuple[int, int]:
+    low = int(low_pitch)
+    high = int(high_pitch)
+    return (low, high) if low <= high else (high, low)

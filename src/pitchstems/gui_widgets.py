@@ -5,6 +5,7 @@ from pathlib import Path
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QBrush, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import (
+    QMenu,
     QComboBox,
     QDoubleSpinBox,
     QLabel,
@@ -110,23 +111,8 @@ class NoWheelSpinBox(_NoWheelMixin, QSpinBox):
 
 
 class PianoChordWidget(QWidget):
-    white_keys = [
-        ("C", 0),
-        ("D", 2),
-        ("E", 4),
-        ("F", 5),
-        ("G", 7),
-        ("A", 9),
-        ("B", 11),
-        ("C", 0),
-    ]
-    black_keys = [
-        ("C#", 1, 0.72),
-        ("Eb", 3, 1.72),
-        ("F#", 6, 3.72),
-        ("Ab", 8, 4.72),
-        ("Bb", 10, 5.72),
-    ]
+    black_pitch_classes = {1, 3, 6, 8, 10}
+    black_key_offsets = {1: 0.72, 3: 0.72, 6: 0.72, 8: 0.72, 10: 0.72}
 
     def __init__(self) -> None:
         super().__init__()
@@ -135,11 +121,21 @@ class PianoChordWidget(QWidget):
         self.empty_message = "No chord selected"
         self.pitch_classes: set[int] = set()
         self.note_roles: dict[int, set[str]] = {}
+        self.note_constraints: dict[int, str] = {}
+        self.preview_low_pitch = 48
+        self.preview_high_pitch = 72
         self.pitch_class_formatter = pitch_class_name
         self.on_note_clicked = None
+        self.on_note_constraint_changed = None
+        self.on_note_constraints_reset = None
+        self.on_preview_range_changed = None
         self._key_hitboxes: list[tuple[QRectF, int, str]] = []
+        self._range_hitboxes: dict[str, QRectF] = {}
+        self._range_rect = QRectF()
+        self._dragging_range_bound: str | None = None
         self.setMinimumHeight(90)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.setMouseTracking(True)
         self.setToolTip("Select a chord candidate to see its tones on one octave of piano keys.")
 
     def set_pitch_class_formatter(self, formatter) -> None:
@@ -186,6 +182,20 @@ class PianoChordWidget(QWidget):
             self.setToolTip(self.empty_message)
         self.update()
 
+    def set_note_constraints(self, constraints: dict[int, str] | None) -> None:
+        self.note_constraints = {
+            pitch_class % 12: state
+            for pitch_class, state in (constraints or {}).items()
+            if state in {"force", "exclude"}
+        }
+        self.update()
+
+    def set_preview_range(self, low_pitch: int, high_pitch: int) -> None:
+        low, high = _normalized_preview_range(low_pitch, high_pitch)
+        self.preview_low_pitch = low
+        self.preview_high_pitch = high
+        self.update()
+
     def paintEvent(self, _event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
@@ -195,6 +205,7 @@ class PianoChordWidget(QWidget):
         painter.drawRect(bounds)
 
         title_height = 18
+        range_height = 16
         title = f"{self.source_label}: {self.chord_label}" if self.chord_label else self.source_label
         title = QFontMetrics(painter.font()).elidedText(
             title,
@@ -211,21 +222,28 @@ class PianoChordWidget(QWidget):
             title,
         )
 
-        keyboard_top = bounds.top() + title_height + 2
-        keyboard_height = max(34, bounds.height() - title_height - 4)
-        white_width = max(1, bounds.width() / len(self.white_keys))
+        range_top = bounds.top() + title_height + 1
+        range_rect = QRectF(bounds.left() + 6, range_top + 3, max(1, bounds.width() - 12), 6)
+        self._draw_preview_range(painter, range_rect)
+
+        keyboard_top = bounds.top() + title_height + range_height + 2
+        keyboard_height = max(34, bounds.height() - title_height - range_height - 4)
+        white_pitches = self._visible_white_pitches()
+        white_width = max(1, bounds.width() / max(1, len(white_pitches)))
         self._key_hitboxes = []
 
-        for index, (_name, pitch_class) in enumerate(self.white_keys):
-            name = self.pitch_class_formatter(pitch_class)
+        for index, pitch in enumerate(white_pitches):
+            pitch_class = pitch % 12
+            name = self._display_pitch_name(pitch, white_width)
             x = round(bounds.left() + index * white_width)
             next_x = round(bounds.left() + (index + 1) * white_width)
             width = max(1, next_x - x)
-            self._key_hitboxes.append((QRectF(x, keyboard_top, width, keyboard_height), pitch_class, name))
+            self._key_hitboxes.append((QRectF(x, keyboard_top, width, keyboard_height), pitch, name))
             highlighted = pitch_class in self.pitch_classes
             painter.setBrush(QBrush(QColor("#fde68a" if highlighted else "#ffffff")))
             painter.setPen(QPen(QColor("#94a3b8"), 1))
             painter.drawRect(x, keyboard_top, width, keyboard_height)
+            self._draw_constraint_marker(painter, QRectF(x, keyboard_top, width, keyboard_height), pitch_class)
             if highlighted:
                 self._draw_role_badge(painter, QRectF(x, keyboard_top, width, keyboard_height), pitch_class)
             painter.setPen(QColor("#1f2937" if highlighted else "#64748b"))
@@ -240,15 +258,22 @@ class PianoChordWidget(QWidget):
 
         black_width = max(8, round(white_width * 0.56))
         black_height = round(keyboard_height * 0.62)
-        for _name, pitch_class, center_position in self.black_keys:
-            name = self.pitch_class_formatter(pitch_class)
+        white_index = {pitch: index for index, pitch in enumerate(white_pitches)}
+        for pitch in self._visible_black_pitches():
+            pitch_class = pitch % 12
+            name = self._display_pitch_name(pitch, white_width)
+            previous_white = self._previous_white_pitch(pitch)
+            if previous_white not in white_index:
+                continue
+            center_position = white_index[previous_white] + self.black_key_offsets[pitch_class]
             center_x = bounds.left() + center_position * white_width
             x = round(center_x - black_width / 2)
-            self._key_hitboxes.append((QRectF(x, keyboard_top, black_width, black_height), pitch_class, name))
+            self._key_hitboxes.append((QRectF(x, keyboard_top, black_width, black_height), pitch, name))
             highlighted = pitch_class in self.pitch_classes
             painter.setBrush(QBrush(QColor("#fbbf24" if highlighted else "#111827")))
             painter.setPen(QPen(QColor("#475569" if highlighted else "#020617"), 1))
             painter.drawRect(x, keyboard_top, black_width, black_height)
+            self._draw_constraint_marker(painter, QRectF(x, keyboard_top, black_width, black_height), pitch_class)
             if highlighted:
                 self._draw_role_badge(painter, QRectF(x, keyboard_top, black_width, black_height), pitch_class)
             painter.setPen(QColor("#111827" if highlighted else "#f8fafc"))
@@ -273,6 +298,40 @@ class PianoChordWidget(QWidget):
             labels.append(f"{role_text} {note_name}")
         return ", ".join(labels)
 
+    def _visible_white_pitches(self) -> list[int]:
+        low = self._previous_white_pitch(self.preview_low_pitch)
+        high = self._next_white_pitch(self.preview_high_pitch)
+        return [
+            pitch
+            for pitch in range(low, high + 1)
+            if pitch % 12 not in self.black_pitch_classes
+        ]
+
+    def _visible_black_pitches(self) -> list[int]:
+        low = self._previous_white_pitch(self.preview_low_pitch)
+        high = self._next_white_pitch(self.preview_high_pitch)
+        return [
+            pitch
+            for pitch in range(low, high + 1)
+            if pitch % 12 in self.black_pitch_classes
+        ]
+
+    def _previous_white_pitch(self, pitch: int) -> int:
+        while pitch % 12 in self.black_pitch_classes:
+            pitch -= 1
+        return pitch
+
+    def _next_white_pitch(self, pitch: int) -> int:
+        while pitch % 12 in self.black_pitch_classes:
+            pitch += 1
+        return pitch
+
+    def _display_pitch_name(self, pitch: int, key_width: float) -> str:
+        name = self.pitch_class_formatter(pitch % 12)
+        if key_width >= 22:
+            return f"{name}{pitch // 12 - 1}"
+        return name
+
     def _draw_role_badge(self, painter: QPainter, rect: QRectF, pitch_class: int) -> None:
         roles = self.note_roles.get(pitch_class)
         if not roles:
@@ -286,13 +345,158 @@ class PianoChordWidget(QWidget):
         painter.setPen(QColor("#f8fafc"))
         painter.drawText(badge, Qt.AlignCenter, text)
 
+    def _draw_constraint_marker(self, painter: QPainter, rect: QRectF, pitch_class: int) -> None:
+        state = self.note_constraints.get(pitch_class)
+        if state not in {"force", "exclude"}:
+            return
+        color = QColor("#16a34a" if state == "force" else "#dc2626")
+        painter.setPen(QPen(color, 2))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRect(rect.adjusted(2, 2, -2, -2))
+        badge = QRectF(rect.right() - 16, rect.top() + 2, 14, 14)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(color))
+        painter.drawRoundedRect(badge, 3, 3)
+        painter.setPen(QColor("#ffffff"))
+        painter.drawText(badge, Qt.AlignCenter, "+" if state == "force" else "-")
+
+    def _draw_preview_range(self, painter: QPainter, rect: QRectF) -> None:
+        self._range_rect = QRectF(rect)
+        painter.setPen(QPen(QColor("#cbd5e1"), 1))
+        painter.setBrush(QBrush(QColor("#e2e8f0")))
+        painter.drawRoundedRect(rect, 3, 3)
+        low_x = self._range_x(self.preview_low_pitch, rect)
+        high_x = self._range_x(self.preview_high_pitch, rect)
+        selected = QRectF(min(low_x, high_x), rect.top(), max(2, abs(high_x - low_x)), rect.height())
+        painter.setBrush(QBrush(QColor("#93c5fd")))
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(selected, 3, 3)
+        self._range_hitboxes = {}
+        for bound, x in (("low", low_x), ("high", high_x)):
+            handle = QRectF(x - 4, rect.top() - 4, 8, rect.height() + 8)
+            self._range_hitboxes[bound] = handle
+            painter.setBrush(QBrush(QColor("#2563eb")))
+            painter.setPen(QPen(QColor("#1e3a8a"), 1))
+            painter.drawRoundedRect(handle, 3, 3)
+        label = f"{pitch_class_name(self.preview_low_pitch % 12)}{self.preview_low_pitch // 12 - 1}"
+        label += f" - {pitch_class_name(self.preview_high_pitch % 12)}{self.preview_high_pitch // 12 - 1}"
+        painter.setPen(QColor("#334155"))
+        painter.drawText(rect.adjusted(6, -6, -6, 8), Qt.AlignCenter, label)
+
     def mousePressEvent(self, event) -> None:
-        if event.button() != Qt.LeftButton or self.on_note_clicked is None:
+        if event.button() == Qt.RightButton:
+            for rect, pitch, name in reversed(self._key_hitboxes):
+                if rect.contains(event.position()):
+                    self._show_note_constraint_menu(event.globalPosition().toPoint(), pitch % 12, name)
+                    event.accept()
+                    return
+        if event.button() == Qt.LeftButton:
+            for bound, rect in self._range_hitboxes.items():
+                if rect.contains(event.position()):
+                    self._dragging_range_bound = bound
+                    self._set_preview_range_from_position(bound, event.position().x())
+                    event.accept()
+                    return
+        if event.button() != Qt.LeftButton:
             super().mousePressEvent(event)
             return
-        for rect, pitch_class, name in reversed(self._key_hitboxes):
+        for rect, pitch, name in reversed(self._key_hitboxes):
             if rect.contains(event.position()):
-                self.on_note_clicked(60 + pitch_class, name)
+                modifiers = event.modifiers() if hasattr(event, "modifiers") else Qt.NoModifier
+                if modifiers & Qt.ControlModifier:
+                    self._cycle_note_constraint(pitch % 12)
+                elif self.on_note_clicked is not None:
+                    self.on_note_clicked(pitch, name)
+                else:
+                    super().mousePressEvent(event)
+                    return
                 event.accept()
                 return
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._dragging_range_bound is None:
+            super().mouseMoveEvent(event)
+            return
+        self._set_preview_range_from_position(self._dragging_range_bound, event.position().x())
+        event.accept()
+
+    def mouseReleaseEvent(self, event) -> None:
+        if self._dragging_range_bound is not None:
+            self._dragging_range_bound = None
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def _show_note_constraint_menu(self, position, pitch_class: int, name: str) -> None:
+        menu = QMenu(self)
+        actions = {
+            "auto": menu.addAction(f"Auto {name}"),
+            "force": menu.addAction(f"Force include {name}"),
+            "exclude": menu.addAction(f"Force exclude {name}"),
+        }
+        menu.addSeparator()
+        clear_action = menu.addAction("Clear forced notes")
+        selected = menu.exec(position)
+        if selected == clear_action:
+            if self.on_note_constraints_reset is not None:
+                self.on_note_constraints_reset()
+            return
+        for state, action in actions.items():
+            if selected == action:
+                self._set_note_constraint(pitch_class, state)
+                return
+
+    def _cycle_note_constraint(self, pitch_class: int) -> None:
+        state = self.note_constraints.get(pitch_class, "auto")
+        next_state = {"auto": "force", "force": "exclude", "exclude": "auto"}[state]
+        self._set_note_constraint(pitch_class, next_state)
+
+    def _set_note_constraint(self, pitch_class: int, state: str) -> None:
+        pitch_class %= 12
+        if state == "auto":
+            self.note_constraints.pop(pitch_class, None)
+        elif state in {"force", "exclude"}:
+            self.note_constraints[pitch_class] = state
+        if self.on_note_constraint_changed is not None:
+            self.on_note_constraint_changed(pitch_class, state)
+        self.update()
+
+    def _set_preview_range_from_position(self, bound: str, x: float) -> None:
+        pitch = self._pitch_for_range_x(x)
+        if bound == "low":
+            low, high = _normalized_preview_range(pitch, self.preview_high_pitch)
+        else:
+            low, high = _normalized_preview_range(self.preview_low_pitch, pitch)
+        if (low, high) == (self.preview_low_pitch, self.preview_high_pitch):
+            return
+        self.preview_low_pitch = low
+        self.preview_high_pitch = high
+        if self.on_preview_range_changed is not None:
+            self.on_preview_range_changed(low, high)
+        self.update()
+
+    def _range_x(self, pitch: int, rect: QRectF) -> float:
+        minimum, maximum = 36, 84
+        clamped = min(maximum, max(minimum, pitch))
+        return rect.left() + ((clamped - minimum) / (maximum - minimum)) * rect.width()
+
+    def _pitch_for_range_x(self, x: float) -> int:
+        if self._range_rect.isNull():
+            return self.preview_low_pitch
+        left = self._range_rect.left()
+        right = self._range_rect.right()
+        width = max(1.0, right - left)
+        ratio = min(1.0, max(0.0, (x - left) / width))
+        return int(round(36 + ratio * (84 - 36)))
+
+
+def _normalized_preview_range(low_pitch: int, high_pitch: int) -> tuple[int, int]:
+    low = min(84, max(36, int(low_pitch)))
+    high = min(84, max(36, int(high_pitch)))
+    if high < low:
+        low, high = high, low
+    if high - low < 1:
+        high = min(84, low + 1)
+        low = max(36, high - 1)
+    return low, high

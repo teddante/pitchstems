@@ -123,6 +123,44 @@ def test_theory_analysis_can_identify_chromatic_collection() -> None:
     assert analysis.candidates[0].pitch_fit == 1.0
 
 
+def test_theory_analysis_requires_forced_pitch_classes() -> None:
+    notes = [
+        _note(0.0, 1.0, 60, 100),
+        _note(0.0, 1.0, 62, 90),
+        _note(0.0, 1.0, 64, 90),
+        _note(0.0, 1.0, 67, 90),
+        _note(0.0, 1.0, 69, 90),
+    ]
+
+    analysis = analyze_theory_region(notes, [], 0.0, 1.0, required_pitch_classes={6})
+
+    assert analysis.candidates
+    assert all(
+        6 in {(candidate.root + interval) % 12 for interval in candidate.scale.intervals}
+        for candidate in analysis.candidates
+    )
+
+
+def test_theory_analysis_rejects_excluded_pitch_classes() -> None:
+    notes = [
+        _note(0.0, 1.0, 60, 100),
+        _note(0.0, 1.0, 62, 90),
+        _note(0.0, 1.0, 64, 90),
+        _note(0.0, 1.0, 65, 90),
+        _note(0.0, 1.0, 67, 90),
+        _note(0.0, 1.0, 69, 90),
+        _note(0.0, 1.0, 71, 90),
+    ]
+
+    analysis = analyze_theory_region(notes, [], 0.0, 1.0, excluded_pitch_classes={5})
+
+    assert analysis.candidates
+    assert all(
+        5 not in {(candidate.root + interval) % 12 for interval in candidate.scale.intervals}
+        for candidate in analysis.candidates
+    )
+
+
 def test_theory_report_explains_evidence_and_formula_terms() -> None:
     notes = [
         _note(0.0, 1.0, 60, 100),

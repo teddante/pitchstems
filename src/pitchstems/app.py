@@ -25,7 +25,7 @@ from pitchstems.evidence_display import percent_with_bar, visible_scale_candidat
 from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
 from pitchstems.midi_preview import render_note_preview
 from pitchstems.note_preview import single_note_preview_notes
-from pitchstems.notation import pitch_class_for_name, pitch_class_name
+from pitchstems.notation import pitch_class_for_name, pitch_class_name, split_chord_label
 from pitchstems.pipeline_models import PipelineResult, StemResult
 from pitchstems.scale_preview import SCALE_PREVIEW_PATTERNS, scale_preview_notes
 from pitchstems.theory_display import (
@@ -163,6 +163,9 @@ def main() -> int:
             self.manual_chords: list[ChordRegion] = []
             self.removed_chord_ranges: list[tuple[float, float]] = []
             self.chord_note_overrides: dict[int, str] = {}
+            self.theory_note_overrides: dict[int, str] = {}
+            self.chord_preview_range: tuple[int, int] = (48, 72)
+            self.scale_preview_range: tuple[int, int] = (60, 72)
             self.chord_note_filter_context = None
             self.current_chord_base_weights: dict[int, float] = {}
             self.current_harmony_context: HarmonyContext | None = None
@@ -351,8 +354,8 @@ def main() -> int:
             )
             self.note_filter_help.setWordWrap(True)
             self.note_filter_help.setStyleSheet("color: #64748b;")
-            self.reset_note_filter_button = QPushButton("Reset Evidence")
-            self.reset_note_filter_button.setToolTip("Clear manual include/exclude note choices for the current chord analysis.")
+            self.reset_note_filter_button = QPushButton("Reset Notes")
+            self.reset_note_filter_button.setToolTip("Clear forced include/exclude note choices for the current chord analysis.")
             self.chord_detector_help = QLabel(
                 "Harmony comes from the selected Chord tracks: MIDI note energy feeds chord detection, then the chord track feeds key, scale, mode, and gap suggestions."
             )
@@ -442,9 +445,17 @@ def main() -> int:
             self.piano_chord_view = PianoChordWidget()
             self.piano_chord_view.set_pitch_class_formatter(self.display_pitch_class_name)
             self.piano_chord_view.on_note_clicked = self.preview_piano_note
+            self.piano_chord_view.on_note_constraint_changed = self.handle_chord_piano_constraint_changed
+            self.piano_chord_view.on_note_constraints_reset = self.reset_chord_note_filter
+            self.piano_chord_view.on_preview_range_changed = self.handle_chord_preview_range_changed
+            self.piano_chord_view.set_preview_range(*self.chord_preview_range)
             self.theory_scale_view = PianoChordWidget()
             self.theory_scale_view.set_pitch_class_formatter(self.display_pitch_class_name)
             self.theory_scale_view.on_note_clicked = self.preview_piano_note
+            self.theory_scale_view.on_note_constraint_changed = self.handle_theory_piano_constraint_changed
+            self.theory_scale_view.on_note_constraints_reset = self.reset_theory_note_filter
+            self.theory_scale_view.on_preview_range_changed = self.handle_scale_preview_range_changed
+            self.theory_scale_view.set_preview_range(*self.scale_preview_range)
             self.theory_scale_view.set_notes(None, [], "Theory scale", empty_message="No scale selected")
             self.preview_bass_note = NoWheelComboBox()
             self.preview_bass_note.addItem("Bass: Auto", None)
@@ -1091,12 +1102,17 @@ def main() -> int:
             self.preview_scale_pattern.setEnabled(has_candidate)
             if candidate is None:
                 self.theory_scale_view.set_notes(None, [], "Theory scale", empty_message="No scale selected")
+                self.theory_scale_view.set_note_constraints(self.theory_note_overrides)
+                self.theory_scale_view.set_preview_range(*self.scale_preview_range)
                 return
             self.theory_scale_view.set_notes(
                 self.display_scale_candidate_label(candidate),
                 self.display_scale_candidate_notes(candidate),
                 "Theory scale",
+                {candidate.root: {"root"}},
             )
+            self.theory_scale_view.set_note_constraints(self.theory_note_overrides)
+            self.theory_scale_view.set_preview_range(*self.scale_preview_range)
 
         def selected_theory_scale_candidate(self):
             item = self.theory_list.currentItem()
@@ -1109,7 +1125,13 @@ def main() -> int:
             if candidate is None:
                 return
             pattern = self.preview_scale_pattern.currentData() or "up_down"
-            notes = scale_preview_notes(candidate.label, candidate.notes, pattern)
+            notes = scale_preview_notes(
+                candidate.label,
+                candidate.notes,
+                pattern,
+                low_pitch=self.scale_preview_range[0],
+                high_pitch=self.scale_preview_range[1],
+            )
             preview_dir = self.current_result.project_dir / "editor" / "scale-preview"
             if not safe_qt_multimedia_call(
                 self.logger,
@@ -1258,6 +1280,40 @@ def main() -> int:
         def reset_chord_note_filter(self) -> None:
             gui_harmony_flow.reset_chord_note_filter(self)
 
+        def handle_chord_piano_constraint_changed(self, pitch_class: int, state: str) -> None:
+            self._set_note_override(self.chord_note_overrides, pitch_class, state)
+            self.note_filter_list.blockSignals(True)
+            try:
+                gui_harmony_flow.populate_note_filter_list(self, self.current_chord_base_weights)
+            finally:
+                self.note_filter_list.blockSignals(False)
+            self.refresh_current_harmony(self.timeline.position, force=True)
+
+        def handle_theory_piano_constraint_changed(self, pitch_class: int, state: str) -> None:
+            self._set_note_override(self.theory_note_overrides, pitch_class, state)
+            self.theory_scale_view.set_note_constraints(self.theory_note_overrides)
+            self.refresh_current_harmony(self.timeline.position, force=True)
+
+        def reset_theory_note_filter(self) -> None:
+            self.theory_note_overrides = {}
+            self.theory_scale_view.set_note_constraints(self.theory_note_overrides)
+            self.refresh_current_harmony(self.timeline.position, force=True)
+
+        def _set_note_override(self, overrides: dict[int, str], pitch_class: int, state: str) -> None:
+            pitch_class %= 12
+            if state == "auto":
+                overrides.pop(pitch_class, None)
+            elif state in {"force", "exclude"}:
+                overrides[pitch_class] = state
+
+        def handle_chord_preview_range_changed(self, low_pitch: int, high_pitch: int) -> None:
+            self.chord_preview_range = (low_pitch, high_pitch)
+            self.refresh_chord_keyboard()
+
+        def handle_scale_preview_range_changed(self, low_pitch: int, high_pitch: int) -> None:
+            self.scale_preview_range = (low_pitch, high_pitch)
+            self.refresh_theory_preview_actions()
+
         def inspect_current_chord_analysis(self) -> None:
             gui_harmony_dialogs.inspect_current_chord_analysis(self)
 
@@ -1342,23 +1398,18 @@ def main() -> int:
             return self.preview_bass_note.currentData(), self.preview_top_note.currentData()
 
         def preview_voicing_source_label(self) -> str:
-            bass_name, top_name = self.preview_voicing()
-            details = []
-            if bass_name:
-                details.append(f"bass {bass_name}")
-            if top_name:
-                details.append(f"top {top_name}")
-            if not details:
-                return "Inspector"
-            return f"Preview {', '.join(details)}"
+            low, high = self.chord_preview_range
+            return f"Preview {self.display_note_name(low)}-{self.display_note_name(high)}"
 
         def preview_voicing_note_roles(self, label: str) -> dict[int, set[str]]:
             if not label:
                 return {}
-            bass_name, top_name = self.preview_voicing()
-            bass_name = bass_name or self.display_chord_bass(label)
+            parts = split_chord_label(label)
+            bass_name = self.display_chord_bass(label)
             roles: dict[int, set[str]] = {}
-            for note_name, role in ((bass_name, "bass"), (top_name, "top")):
+            if parts is not None:
+                roles.setdefault(parts.root_pitch_class, set()).add("root")
+            for note_name, role in ((bass_name, "bass"),):
                 if not note_name:
                     continue
                 pitch_class = pitch_class_for_name(note_name)
@@ -1382,12 +1433,11 @@ def main() -> int:
             note_names = item.data(Qt.UserRole + 2) or []
             if not label or not note_names:
                 return
-            bass_name, top_name = self.preview_voicing()
             notes = chord_preview_notes(
                 label,
                 note_names,
-                bass_name=bass_name,
-                top_name=top_name,
+                low_pitch=self.chord_preview_range[0],
+                high_pitch=self.chord_preview_range[1],
             )
             preview_dir = self.current_result.project_dir / "editor" / "chord-preview"
             if not safe_qt_multimedia_call(
@@ -1405,10 +1455,7 @@ def main() -> int:
                 lambda: start_player_source(self.chord_preview_player, QUrl.fromLocalFile(str(preview))),
             ):
                 details = []
-                if bass_name:
-                    details.append(f"bass {bass_name}")
-                if top_name:
-                    details.append(f"top {top_name}")
+                details.append(f"{self.display_note_name(self.chord_preview_range[0])}-{self.display_note_name(self.chord_preview_range[1])}")
                 suffix = f" ({', '.join(details)})" if details else ""
                 self.statusBar().showMessage(
                     f"Playing preview {self.display_chord(label)} chord{suffix}.",

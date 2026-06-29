@@ -23,6 +23,12 @@ def test_scale_preview_random_pattern_is_deterministic_and_short() -> None:
     assert set(first) <= {60, 62, 64, 65, 67}
 
 
+def test_scale_preview_pitches_use_selected_preview_range() -> None:
+    notes = ["C", "D", "E"]
+
+    assert scale_preview_pitches("C major", notes, "up", low_pitch=48, high_pitch=64) == [48, 50, 52, 60, 62, 64]
+
+
 def test_scale_preview_notes_use_short_sequential_events() -> None:
     notes = scale_preview_notes("C major", ["C", "D"], "up")
 
