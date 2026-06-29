@@ -3,7 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from pitchstems.gui_project_flow import _reset_loaded_project_state, _reset_track_control_state, set_audio_path
+from pitchstems.gui_project_flow import (
+    _reset_loaded_project_state,
+    _reset_project_view_state,
+    _reset_track_control_state,
+    set_audio_path,
+)
 
 
 class _StatusBar:
@@ -25,6 +30,35 @@ class _DropZone:
     def reset_prompt(self) -> None:
         self.path = None
         self.reset_count += 1
+
+
+class _Control:
+    def __init__(self) -> None:
+        self.enabled = True
+        self.text = ""
+        self.cleared = False
+
+    def setEnabled(self, enabled: bool) -> None:
+        self.enabled = enabled
+
+    def setText(self, text: str) -> None:
+        self.text = text
+
+    def clear(self) -> None:
+        self.cleared = True
+
+
+class _Timeline:
+    def __init__(self) -> None:
+        self.project = object()
+
+    def set_project(self, project) -> None:
+        self.project = project
+
+
+class _Layout:
+    def count(self) -> int:
+        return 0
 
 
 class _Window:
@@ -126,3 +160,79 @@ def test_reset_track_control_state_clears_transport_and_track_caches() -> None:
     assert window.track_control_top_spacer is None
     assert window.track_control_bottom_spacer is None
     assert window.hidden_track_status is None
+
+
+def test_reset_project_view_state_clears_visible_project_controls() -> None:
+    activity_messages = []
+    theory = []
+    gaps = []
+    chord_context = []
+    keyboard_refreshes = []
+    window = SimpleNamespace(
+        latest_output_dir=object(),
+        run_midi=_Control(),
+        export_button=_Control(),
+        export_action=_Control(),
+        separation_status=_Control(),
+        midi_status=_Control(),
+        editor_summary=_Control(),
+        fit_song_button=_Control(),
+        fit_review_button=_Control(),
+        play_review_button=_Control(),
+        previous_chord_button=_Control(),
+        next_chord_button=_Control(),
+        delete_chord_button=_Control(),
+        inspect_chord_button=_Control(),
+        inspect_theory_button=_Control(),
+        use_gap_suggestion_button=_Control(),
+        inspect_gap_suggestion_button=_Control(),
+        editor_position=_Control(),
+        current_chord=_Control(),
+        set_chord_context_text=lambda text: chord_context.append(text),
+        set_theory_analysis=lambda analysis: theory.append(analysis),
+        set_gap_analysis=lambda analysis: gaps.append(analysis),
+        reset_activity=lambda message: activity_messages.append(message),
+        note_filter_list=_Control(),
+        track_visibility_checks={"bass": object()},
+        track_note_counts={"bass": 4},
+        editor_track_visibility={"bass": True},
+        playback_controls=_Layout(),
+        chord_list=_Control(),
+        refresh_chord_keyboard=lambda: keyboard_refreshes.append("refreshed"),
+        timeline=_Timeline(),
+    )
+
+    _reset_project_view_state(window)
+
+    assert window.latest_output_dir is None
+    for control in [
+        window.run_midi,
+        window.export_button,
+        window.export_action,
+        window.fit_song_button,
+        window.fit_review_button,
+        window.play_review_button,
+        window.previous_chord_button,
+        window.next_chord_button,
+        window.delete_chord_button,
+        window.inspect_chord_button,
+        window.inspect_theory_button,
+        window.use_gap_suggestion_button,
+        window.inspect_gap_suggestion_button,
+    ]:
+        assert control.enabled is False
+    assert window.separation_status.text == "Not run yet."
+    assert window.midi_status.text == "Run the full pipeline first, then MIDI can be rerun without separating again."
+    assert window.editor_position.text == "00:00.000"
+    assert window.current_chord.text == "Harmony: -"
+    assert chord_context == ["Sample: -"]
+    assert theory == [None]
+    assert gaps == [None]
+    assert activity_messages == ["Ready for new audio"]
+    assert window.note_filter_list.cleared
+    assert window.track_visibility_checks == {}
+    assert window.track_note_counts == {}
+    assert window.editor_track_visibility == {}
+    assert window.chord_list.cleared
+    assert keyboard_refreshes == ["refreshed"]
+    assert window.timeline.project is None

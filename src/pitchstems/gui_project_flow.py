@@ -185,6 +185,10 @@ def reset_stage_state(window, path: Path | None = None) -> None:
     with blocked_signals(window.notation_spelling):
         window.notation_spelling.setCurrentIndex(0)
     _reset_track_control_state(window)
+    _reset_project_view_state(window)
+
+
+def _reset_project_view_state(window) -> None:
     window.latest_output_dir = None
     window.run_midi.setEnabled(False)
     window.export_button.setEnabled(False)
