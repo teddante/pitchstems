@@ -54,6 +54,8 @@ class _EditorWindow:
         self.theory_context = _wrapped_label("Theory: -", 54)
         self.theory_list = QListWidget()
         self.show_chromatic_scales = QCheckBox("Chromatic")
+        self.preview_scale_button = QPushButton("Play Scale")
+        self.preview_scale_pattern = QComboBox()
         self.inspect_theory_button = QPushButton("Inspect Theory")
         self.gap_suggestion_list = QListWidget()
         self.use_gap_suggestion_button = QPushButton("Use")

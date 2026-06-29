@@ -26,6 +26,7 @@ from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
 from pitchstems.midi_preview import render_note_preview
 from pitchstems.notation import pitch_class_for_name, pitch_class_name
 from pitchstems.pipeline_models import PipelineResult, StemResult
+from pitchstems.scale_preview import SCALE_PREVIEW_PATTERNS, scale_preview_notes
 from pitchstems.harmony_inspector import (
     chord_analysis_track_names as inspector_chord_analysis_track_names,
     resolve_notation_preference,
@@ -411,6 +412,14 @@ def main() -> int:
             self.show_chromatic_scales.setToolTip(
                 "Show complete chromatic scale candidates in the Theory Inspector list."
             )
+            self.preview_scale_pattern = NoWheelComboBox()
+            for key, label in SCALE_PREVIEW_PATTERNS.items():
+                self.preview_scale_pattern.addItem(label, key)
+            self.preview_scale_pattern.setEnabled(False)
+            self.preview_scale_pattern.setToolTip("Pattern for playing the selected scale candidate.")
+            self.preview_scale_button = QPushButton("Play Scale")
+            self.preview_scale_button.setEnabled(False)
+            self.preview_scale_button.setToolTip("Play a short preview of the selected Theory Inspector scale.")
             self.inspect_theory_button = QPushButton("Inspect Theory")
             self.inspect_theory_button.setEnabled(False)
             self.inspect_theory_button.setToolTip(
@@ -519,6 +528,7 @@ def main() -> int:
             self.reset_note_filter_button.clicked.connect(self.reset_chord_note_filter)
             self.inspect_chord_button.clicked.connect(self.inspect_current_chord_analysis)
             self.inspect_theory_button.clicked.connect(self.inspect_current_theory_analysis)
+            self.preview_scale_button.clicked.connect(self.preview_selected_scale)
             self.use_gap_suggestion_button.clicked.connect(self.use_selected_gap_suggestion)
             self.inspect_gap_suggestion_button.clicked.connect(self.inspect_current_gap_suggestions)
             self.gap_suggestion_list.currentItemChanged.connect(
@@ -530,6 +540,7 @@ def main() -> int:
             self.show_chromatic_scales.toggled.connect(
                 lambda _checked=False: self.set_theory_analysis(self.current_theory_analysis)
             )
+            self.theory_list.currentItemChanged.connect(lambda *_args: self.refresh_theory_preview_actions())
             self.preview_bass_note.currentIndexChanged.connect(self.handle_preview_voicing_changed)
             self.preview_top_note.currentIndexChanged.connect(self.handle_preview_voicing_changed)
             self.chord_list.itemDoubleClicked.connect(self.preview_chord_item)
@@ -1017,6 +1028,7 @@ def main() -> int:
             if not has_candidates or analysis is None:
                 self.theory_context.setText("Theory: -")
                 self.theory_context.setToolTip("No scale, key, or mode evidence yet.")
+                self.refresh_theory_preview_actions()
                 return
             shown_best = visible_candidates[0] if visible_candidates else analysis.candidates[0]
             note_text = ", ".join(
@@ -1037,6 +1049,7 @@ def main() -> int:
                     f"centre {percent_with_bar(candidate.center_strength, 6)}, "
                     f"chords {percent_with_bar(candidate.chord_support, 6)}"
                 )
+                item.setData(Qt.UserRole, candidate)
                 item.setToolTip("\n".join(candidate.explanation))
                 self.theory_list.addItem(item)
             if not visible_candidates:
@@ -1052,6 +1065,48 @@ def main() -> int:
                     "Playable notes\n"
                     f"Core: {' - '.join(analysis.core_notes) or '-'}\n"
                     f"Scale: {' - '.join(analysis.scale_notes) or '-'}"
+                )
+            self.theory_list.setCurrentRow(0 if visible_candidates else -1)
+            self.refresh_theory_preview_actions()
+
+        def refresh_theory_preview_actions(self) -> None:
+            item = self.theory_list.currentItem()
+            has_candidate = bool(item and item.data(Qt.UserRole) is not None)
+            self.preview_scale_button.setEnabled(has_candidate)
+            self.preview_scale_pattern.setEnabled(has_candidate)
+
+        def preview_selected_scale(self) -> None:
+            if self.current_result is None:
+                return
+            item = self.theory_list.currentItem()
+            candidate = item.data(Qt.UserRole) if item is not None else None
+            if candidate is None:
+                return
+            pattern = self.preview_scale_pattern.currentData() or "up_down"
+            notes = scale_preview_notes(candidate.label, candidate.notes, pattern)
+            preview_dir = self.current_result.project_dir / "editor" / "scale-preview"
+            if not safe_qt_multimedia_call(
+                self.logger,
+                "Scale preview reset failed",
+                lambda: reset_player_source(self.chord_preview_player),
+            ):
+                return
+            preview = render_note_preview(
+                f"{candidate.label} {pattern}",
+                notes,
+                preview_dir,
+                duration=max((note.end for note in notes), default=0.0),
+            )
+            if not preview:
+                return
+            if safe_qt_multimedia_call(
+                self.logger,
+                "Scale preview playback failed",
+                lambda: start_player_source(self.chord_preview_player, QUrl.fromLocalFile(str(preview))),
+            ):
+                self.statusBar().showMessage(
+                    f"Playing {candidate.label} scale preview ({self.preview_scale_pattern.currentText()}).",
+                    3000,
                 )
 
         def refresh_current_gap_suggestions(self, source_notes: list[NoteEvent]) -> None:

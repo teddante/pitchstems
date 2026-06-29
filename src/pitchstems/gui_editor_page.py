@@ -65,6 +65,11 @@ def build_editor_page(window) -> QWidget:
     theory_header.addWidget(window.inspect_theory_button)
     editor_side.addLayout(theory_header)
     editor_side.addWidget(window.theory_context)
+    theory_preview_row = QHBoxLayout()
+    theory_preview_row.setSpacing(6)
+    theory_preview_row.addWidget(window.preview_scale_button)
+    theory_preview_row.addWidget(window.preview_scale_pattern, 1)
+    editor_side.addLayout(theory_preview_row)
     editor_side.addWidget(window.theory_list, 1)
 
     gap_header = QHBoxLayout()
