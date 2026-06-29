@@ -81,6 +81,9 @@ class _Window:
     def display_chord_tones(self, label: str) -> list[str]:
         return ["A#", "D", "F"] if label == "Bb/D" else ["C", "E", "G"]
 
+    def preview_voicing_source_label(self) -> str:
+        return "Preview bass D"
+
 
 class _PianoChordView:
     def __init__(self) -> None:
@@ -133,4 +136,4 @@ def test_refresh_chord_keyboard_uses_display_spelling_for_inspector_title() -> N
 
     refresh_chord_keyboard(window)
 
-    assert window.piano_chord_view.calls == [("A#/D", ["A#", "D", "F"], "Inspector")]
+    assert window.piano_chord_view.calls == [("A#/D", ["A#", "D", "F"], "Preview bass D")]

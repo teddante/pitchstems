@@ -424,6 +424,18 @@ def main() -> int:
             self.inspect_gap_suggestion_button = QPushButton("Inspect")
             self.inspect_gap_suggestion_button.setEnabled(False)
             self.piano_chord_view = PianoChordWidget()
+            self.preview_bass_note = NoWheelComboBox()
+            self.preview_bass_note.addItem("Bass: Auto", None)
+            self.preview_bass_note.setEnabled(False)
+            self.preview_bass_note.setToolTip(
+                "Preview-only bass note. The Use button still writes the selected chord label."
+            )
+            self.preview_top_note = NoWheelComboBox()
+            self.preview_top_note.addItem("Top: Auto", None)
+            self.preview_top_note.setEnabled(False)
+            self.preview_top_note.setToolTip(
+                "Preview-only top note for auditioning close-position inversions."
+            )
             self.preview_chord_button = QPushButton("Play Chord")
             self.use_chord_button = QPushButton("Use for Selection")
             self.delete_chord_button = QPushButton("Delete Chord")
@@ -518,6 +530,8 @@ def main() -> int:
             self.show_chromatic_scales.toggled.connect(
                 lambda _checked=False: self.set_theory_analysis(self.current_theory_analysis)
             )
+            self.preview_bass_note.currentIndexChanged.connect(self.handle_preview_voicing_changed)
+            self.preview_top_note.currentIndexChanged.connect(self.handle_preview_voicing_changed)
             self.chord_list.itemDoubleClicked.connect(self.preview_chord_item)
             self.chord_list.currentItemChanged.connect(self.handle_chord_selection_changed)
             self.timeline.verticalScrollBar().valueChanged.connect(self.sync_track_control_scroll)
@@ -1160,6 +1174,60 @@ def main() -> int:
 
         def refresh_chord_keyboard(self) -> None:
             harmony_panel.refresh_chord_keyboard(self)
+            self.refresh_preview_voicing_controls()
+
+        def refresh_preview_voicing_controls(self) -> None:
+            item = self.chord_list.currentItem()
+            note_names = item.data(Qt.UserRole + 2) if item is not None else []
+            note_names = list(dict.fromkeys(note_names or []))
+            self._set_preview_note_options(self.preview_bass_note, "Bass", note_names)
+            self._set_preview_note_options(self.preview_top_note, "Top", note_names)
+
+        def _set_preview_note_options(self, combo, label: str, note_names: list[str]) -> None:
+            previous = combo.currentData()
+            was_blocked = combo.blockSignals(True)
+            try:
+                combo.clear()
+                combo.addItem(f"{label}: Auto", None)
+                for note_name in note_names:
+                    combo.addItem(f"{label}: {note_name}", note_name)
+                index = combo.findData(previous)
+                combo.setCurrentIndex(index if index >= 0 else 0)
+                combo.setEnabled(bool(note_names))
+            finally:
+                combo.blockSignals(was_blocked)
+
+        def handle_preview_voicing_changed(self, *_args) -> None:
+            item = self.chord_list.currentItem()
+            label = item.data(Qt.UserRole) if item is not None else None
+            if not label:
+                return
+            self.refresh_chord_keyboard()
+            bass_name, top_name = self.preview_voicing()
+            details = []
+            if bass_name:
+                details.append(f"bass {bass_name}")
+            if top_name:
+                details.append(f"top {top_name}")
+            suffix = f" ({', '.join(details)})" if details else ""
+            self.statusBar().showMessage(
+                f"Preview voicing for {self.display_chord(label)}{suffix}.",
+                2500,
+            )
+
+        def preview_voicing(self) -> tuple[str | None, str | None]:
+            return self.preview_bass_note.currentData(), self.preview_top_note.currentData()
+
+        def preview_voicing_source_label(self) -> str:
+            bass_name, top_name = self.preview_voicing()
+            details = []
+            if bass_name:
+                details.append(f"bass {bass_name}")
+            if top_name:
+                details.append(f"top {top_name}")
+            if not details:
+                return "Inspector"
+            return f"Preview {', '.join(details)}"
 
         def active_chord_track_region(self) -> ChordRegion | None:
             return harmony_panel.active_chord_track_region(self)
@@ -1177,7 +1245,13 @@ def main() -> int:
             note_names = item.data(Qt.UserRole + 2) or []
             if not label or not note_names:
                 return
-            notes = chord_preview_notes(label, note_names)
+            bass_name, top_name = self.preview_voicing()
+            notes = chord_preview_notes(
+                label,
+                note_names,
+                bass_name=bass_name,
+                top_name=top_name,
+            )
             preview_dir = self.current_result.project_dir / "editor" / "chord-preview"
             if not safe_qt_multimedia_call(
                 self.logger,
@@ -1193,7 +1267,16 @@ def main() -> int:
                 "Chord preview playback failed",
                 lambda: start_player_source(self.chord_preview_player, QUrl.fromLocalFile(str(preview))),
             ):
-                self.statusBar().showMessage(f"Playing official {self.display_chord(label)} chord.", 3000)
+                details = []
+                if bass_name:
+                    details.append(f"bass {bass_name}")
+                if top_name:
+                    details.append(f"top {top_name}")
+                suffix = f" ({', '.join(details)})" if details else ""
+                self.statusBar().showMessage(
+                    f"Playing preview {self.display_chord(label)} chord{suffix}.",
+                    3000,
+                )
 
         def assign_selected_chord_to_selection(self) -> None:
             gui_editor_state.assign_selected_chord_to_selection(self)

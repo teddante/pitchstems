@@ -13,6 +13,18 @@ def test_chord_preview_pitches_insert_slash_chord_bass() -> None:
     assert chord_preview_pitches("C/E", ["C", "E", "G"]) == [40, 48, 52, 55]
 
 
+def test_chord_preview_pitches_accept_preview_bass_override() -> None:
+    assert chord_preview_pitches("C", ["C", "E", "G"], bass_name="E") == [40, 48, 52, 55]
+
+
+def test_chord_preview_pitches_voice_selected_top_note() -> None:
+    assert chord_preview_pitches("C", ["C", "E", "G"], top_name="E") == [55, 60, 64]
+
+
+def test_chord_preview_pitches_ignore_top_note_outside_chord() -> None:
+    assert chord_preview_pitches("C", ["C", "E", "G"], top_name="D") == [48, 52, 55]
+
+
 def test_chord_preview_pitches_support_flat_names() -> None:
     assert chord_preview_pitches("Gb", ["Gb", "Bb", "Db"]) == [54, 58, 61]
 

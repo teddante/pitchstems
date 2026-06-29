@@ -48,6 +48,8 @@ class _EditorWindow:
         self.reset_note_filter_button = QPushButton("Reset Evidence")
         self.inspect_chord_button = QPushButton("Inspect")
         self.piano_chord_view = PianoChordWidget()
+        self.preview_bass_note = QComboBox()
+        self.preview_top_note = QComboBox()
         self.chord_list = QListWidget()
         self.theory_context = _wrapped_label("Theory: -", 54)
         self.theory_list = QListWidget()
