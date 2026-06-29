@@ -27,7 +27,7 @@ class _Button:
 
 
 class _Item:
-    def __init__(self, label: str = "C", note_names: list[str] | None = None) -> None:
+    def __init__(self, label: str | None = "C", note_names: list[str] | None = None) -> None:
         self.label = label
         self.note_names = note_names or []
 
@@ -144,6 +144,15 @@ def test_refresh_chord_keyboard_uses_display_spelling_for_inspector_title() -> N
     refresh_chord_keyboard(window)
 
     assert window.piano_chord_view.calls == [("A#/D", ["A#", "D", "F"], "Preview bass D", {2: {"bass"}})]
+
+
+def test_refresh_chord_keyboard_clears_for_non_candidate_rows() -> None:
+    item = _Item(None, [])
+    window = _Window(item)
+
+    refresh_chord_keyboard(window)
+
+    assert window.piano_chord_view.calls == [(None, [], "Selected chord", {})]
 
 
 class _Analysis:

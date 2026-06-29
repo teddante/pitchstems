@@ -1353,6 +1353,8 @@ def main() -> int:
             return f"Preview {', '.join(details)}"
 
         def preview_voicing_note_roles(self, label: str) -> dict[int, set[str]]:
+            if not label:
+                return {}
             bass_name, top_name = self.preview_voicing()
             bass_name = bass_name or self.display_chord_bass(label)
             roles: dict[int, set[str]] = {}

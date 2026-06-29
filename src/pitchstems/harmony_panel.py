@@ -155,6 +155,9 @@ def refresh_chord_keyboard(window) -> None:
         window.piano_chord_view.set_chord(None, [])
         return
     label = item.data(Qt.UserRole)
+    if not label:
+        window.piano_chord_view.set_chord(None, [])
+        return
     note_names = item.data(Qt.UserRole + 2) or []
     source_label = window.preview_voicing_source_label() if hasattr(window, "preview_voicing_source_label") else "Inspector"
     note_roles = window.preview_voicing_note_roles(label) if hasattr(window, "preview_voicing_note_roles") else {}
