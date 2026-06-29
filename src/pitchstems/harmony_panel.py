@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QListWidgetItem
 from pitchstems.editor_chord_assignment import chord_assignment_ranges
 from pitchstems.editor_project import ChordRegion
 from pitchstems.evidence_display import percent_with_bar
+from pitchstems.chord_explanation import partial_harmony_note_order
 from pitchstems.time_format import format_time
 
 
@@ -123,7 +124,7 @@ def set_chord_candidates(window, analysis) -> None:
             )
             window.chord_list.addItem(item)
         for hint in analysis.partial_hints:
-            item = QListWidgetItem(hint)
+            item = QListWidgetItem(partial_hint_text(window, analysis, hint))
             item.setToolTip("Partial harmony hint. This is not a confirmed chord candidate.")
             window.chord_list.addItem(item)
     select_first_chord_candidate(window)
@@ -178,6 +179,16 @@ def candidate_notes_text(window, analysis, label: str) -> str:
 
 def partial_candidate_notes_text(window, analysis, label: str) -> str:
     return _candidate_notes_text(window, label, analysis.partial_candidate_notes)
+
+
+def partial_hint_text(window, analysis, hint: str) -> str:
+    if not hint.startswith("Detected note set:"):
+        return hint
+    ordered = partial_harmony_note_order(set(analysis.pitch_classes), analysis.bass)
+    if not ordered:
+        return hint
+    notes = " - ".join(window.display_pitch_class_name(pitch_class) for pitch_class in ordered)
+    return f"Detected note set: {notes}."
 
 
 def _candidate_notes_text(window, label: str, fallback_notes: dict[str, list[str]]) -> str:

@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from pitchstems.input_validation import validate_audio_input
-from pitchstems.notation import pitch_class_for_name
+from pitchstems.notation import pitch_class_for_name, pitch_class_name
 
 
 class DropZone(QLabel):
@@ -132,13 +132,19 @@ class PianoChordWidget(QWidget):
         super().__init__()
         self.chord_label = ""
         self.source_label = "Selected chord"
+        self.empty_message = "No chord selected"
         self.pitch_classes: set[int] = set()
         self.note_roles: dict[int, set[str]] = {}
+        self.pitch_class_formatter = pitch_class_name
         self.on_note_clicked = None
         self._key_hitboxes: list[tuple[QRectF, int, str]] = []
         self.setMinimumHeight(90)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.setToolTip("Select a chord candidate to see its tones on one octave of piano keys.")
+
+    def set_pitch_class_formatter(self, formatter) -> None:
+        self.pitch_class_formatter = formatter
+        self.update()
 
     def set_chord(
         self,
@@ -147,8 +153,19 @@ class PianoChordWidget(QWidget):
         source_label: str = "Selected chord",
         note_roles: dict[int, set[str]] | None = None,
     ) -> None:
+        self.set_notes(label, note_names, source_label, note_roles, empty_message="No chord selected")
+
+    def set_notes(
+        self,
+        label: str | None,
+        note_names: list[str],
+        source_label: str = "Selected notes",
+        note_roles: dict[int, set[str]] | None = None,
+        empty_message: str = "No notes selected",
+    ) -> None:
         self.chord_label = label or ""
         self.source_label = source_label
+        self.empty_message = empty_message
         self.pitch_classes = {
             pitch_class
             for note_name in note_names
@@ -166,7 +183,7 @@ class PianoChordWidget(QWidget):
             suffix = f"\nVoicing: {voicing}" if voicing else ""
             self.setToolTip(f"{self.source_label}: {self.chord_label}\n{tones}{suffix}")
         else:
-            self.setToolTip("Select a chord candidate to see its tones on one octave of piano keys.")
+            self.setToolTip(self.empty_message)
         self.update()
 
     def paintEvent(self, _event) -> None:
@@ -178,7 +195,7 @@ class PianoChordWidget(QWidget):
         painter.drawRect(bounds)
 
         title_height = 18
-        title = f"{self.source_label}: {self.chord_label}" if self.chord_label else "Selected chord"
+        title = f"{self.source_label}: {self.chord_label}" if self.chord_label else self.source_label
         title = QFontMetrics(painter.font()).elidedText(
             title,
             Qt.ElideRight,
@@ -199,7 +216,8 @@ class PianoChordWidget(QWidget):
         white_width = max(1, bounds.width() / len(self.white_keys))
         self._key_hitboxes = []
 
-        for index, (name, pitch_class) in enumerate(self.white_keys):
+        for index, (_name, pitch_class) in enumerate(self.white_keys):
+            name = self.pitch_class_formatter(pitch_class)
             x = round(bounds.left() + index * white_width)
             next_x = round(bounds.left() + (index + 1) * white_width)
             width = max(1, next_x - x)
@@ -222,7 +240,8 @@ class PianoChordWidget(QWidget):
 
         black_width = max(8, round(white_width * 0.56))
         black_height = round(keyboard_height * 0.62)
-        for name, pitch_class, center_position in self.black_keys:
+        for _name, pitch_class, center_position in self.black_keys:
+            name = self.pitch_class_formatter(pitch_class)
             center_x = bounds.left() + center_position * white_width
             x = round(center_x - black_width / 2)
             self._key_hitboxes.append((QRectF(x, keyboard_top, black_width, black_height), pitch_class, name))
@@ -243,20 +262,14 @@ class PianoChordWidget(QWidget):
                 bounds.width(),
                 keyboard_height,
                 Qt.AlignCenter,
-                "No chord selected",
+                self.empty_message,
             )
 
     def _role_tooltip_text(self) -> str:
         labels = []
         for pitch_class, roles in sorted(self.note_roles.items()):
             role_text = "/".join(sorted(roles))
-            note_name = next(
-                (name for name, key_pitch_class in self.white_keys if key_pitch_class == pitch_class),
-                None,
-            ) or next(
-                (name for name, key_pitch_class, _center in self.black_keys if key_pitch_class == pitch_class),
-                str(pitch_class),
-            )
+            note_name = self.pitch_class_formatter(pitch_class)
             labels.append(f"{role_text} {note_name}")
         return ", ".join(labels)
 

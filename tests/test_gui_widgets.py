@@ -40,6 +40,35 @@ def test_piano_chord_widget_tracks_preview_note_roles() -> None:
     assert "top" in widget.toolTip()
 
 
+def test_piano_chord_widget_key_labels_follow_pitch_class_formatter() -> None:
+    app = _app()
+    widget = PianoChordWidget()
+    widget.set_pitch_class_formatter(
+        lambda pitch_class: {3: "D#", 8: "G#", 10: "A#"}.get(pitch_class, str(pitch_class))
+    )
+    widget.set_chord("A#", ["A#", "D#", "F"], "Inspector")
+    widget.resize(280, 100)
+    widget.show()
+    app.processEvents()
+
+    labels_by_pitch = {pitch_class: name for _rect, pitch_class, name in widget._key_hitboxes}
+    assert labels_by_pitch[3] == "D#"
+    assert labels_by_pitch[8] == "G#"
+    assert labels_by_pitch[10] == "A#"
+
+
+def test_piano_chord_widget_set_notes_supports_scale_display() -> None:
+    _app()
+    widget = PianoChordWidget()
+
+    widget.set_notes("D Pelog", ["D", "D#", "F", "A", "A#"], "Theory scale")
+
+    assert widget.chord_label == "D Pelog"
+    assert widget.source_label == "Theory scale"
+    assert widget.pitch_classes == {2, 3, 5, 9, 10}
+    assert "D - D# - F - A - A#" in widget.toolTip()
+
+
 class _MouseEvent:
     def __init__(self, position: QPointF) -> None:
         self._position = position

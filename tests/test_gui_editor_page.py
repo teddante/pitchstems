@@ -52,6 +52,7 @@ class _EditorWindow:
         self.preview_top_note = QComboBox()
         self.chord_list = QListWidget()
         self.theory_context = _wrapped_label("Theory: -", 54)
+        self.theory_scale_view = PianoChordWidget()
         self.theory_list = QListWidget()
         self.show_chromatic_scales = QCheckBox("Chromatic")
         self.preview_scale_button = QPushButton("Play Scale")

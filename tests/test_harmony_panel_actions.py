@@ -6,7 +6,8 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import Qt
 
 from pitchstems.editor_project import ChordRegion
-from pitchstems.harmony_panel import refresh_chord_actions, refresh_chord_keyboard
+from pitchstems.harmony_panel import partial_hint_text, refresh_chord_actions, refresh_chord_keyboard
+from pitchstems.notation import pitch_class_name
 
 
 class _Button:
@@ -81,6 +82,9 @@ class _Window:
     def display_chord_tones(self, label: str) -> list[str]:
         return ["A#", "D", "F"] if label == "Bb/D" else ["C", "E", "G"]
 
+    def display_pitch_class_name(self, pitch_class: int) -> str:
+        return pitch_class_name(pitch_class, "sharp")
+
     def preview_voicing_source_label(self) -> str:
         return "Preview bass D"
 
@@ -140,3 +144,14 @@ def test_refresh_chord_keyboard_uses_display_spelling_for_inspector_title() -> N
     refresh_chord_keyboard(window)
 
     assert window.piano_chord_view.calls == [("A#/D", ["A#", "D", "F"], "Preview bass D", {2: {"bass"}})]
+
+
+class _Analysis:
+    pitch_classes = [2, 3, 10]
+    bass = 3
+
+
+def test_partial_hint_text_formats_detected_note_set_with_window_spelling() -> None:
+    assert partial_hint_text(_Window(), _Analysis(), "Detected note set: Eb - Bb - D.") == (
+        "Detected note set: D# - A# - D."
+    )

@@ -12,11 +12,26 @@ from pitchstems.chord_scoring import (
 )
 
 __all__ = [
+    "partial_harmony_note_order",
     "partial_harmony_hints",
     "_interval_names",
     "_interval_quality_name",
     "_ordered_pitch_classes",
 ]
+
+
+def partial_harmony_note_order(
+    pitch_classes: set[int],
+    bass: int | None = None,
+    required_pitch_classes: set[int] | None = None,
+    excluded_pitch_classes: set[int] | None = None,
+) -> list[int]:
+    observed = set(pitch_classes)
+    if required_pitch_classes:
+        observed |= required_pitch_classes
+    if excluded_pitch_classes:
+        observed -= excluded_pitch_classes
+    return _ordered_pitch_classes(observed, bass)
 
 
 def partial_harmony_hints(
@@ -33,7 +48,7 @@ def partial_harmony_hints(
     if not observed:
         return []
 
-    ordered = _ordered_pitch_classes(observed, bass)
+    ordered = partial_harmony_note_order(observed, bass)
     hints = [f"Detected note set: {' - '.join(PITCH_NAMES[pitch_class] for pitch_class in ordered)}."]
     if len(observed) == 1:
         hints.append("Single note only: not enough harmonic evidence to name a chord.")

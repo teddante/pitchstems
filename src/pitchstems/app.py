@@ -440,7 +440,12 @@ def main() -> int:
             self.inspect_gap_suggestion_button = QPushButton("Inspect")
             self.inspect_gap_suggestion_button.setEnabled(False)
             self.piano_chord_view = PianoChordWidget()
+            self.piano_chord_view.set_pitch_class_formatter(self.display_pitch_class_name)
             self.piano_chord_view.on_note_clicked = self.preview_piano_note
+            self.theory_scale_view = PianoChordWidget()
+            self.theory_scale_view.set_pitch_class_formatter(self.display_pitch_class_name)
+            self.theory_scale_view.on_note_clicked = self.preview_piano_note
+            self.theory_scale_view.set_notes(None, [], "Theory scale", empty_message="No scale selected")
             self.preview_bass_note = NoWheelComboBox()
             self.preview_bass_note.addItem("Bass: Auto", None)
             self.preview_bass_note.setEnabled(False)
@@ -1080,16 +1085,27 @@ def main() -> int:
             self.refresh_theory_preview_actions()
 
         def refresh_theory_preview_actions(self) -> None:
-            item = self.theory_list.currentItem()
-            has_candidate = bool(item and item.data(Qt.UserRole) is not None)
+            candidate = self.selected_theory_scale_candidate()
+            has_candidate = candidate is not None
             self.preview_scale_button.setEnabled(has_candidate)
             self.preview_scale_pattern.setEnabled(has_candidate)
+            if candidate is None:
+                self.theory_scale_view.set_notes(None, [], "Theory scale", empty_message="No scale selected")
+                return
+            self.theory_scale_view.set_notes(
+                self.display_scale_candidate_label(candidate),
+                self.display_scale_candidate_notes(candidate),
+                "Theory scale",
+            )
+
+        def selected_theory_scale_candidate(self):
+            item = self.theory_list.currentItem()
+            return item.data(Qt.UserRole) if item is not None else None
 
         def preview_selected_scale(self) -> None:
             if self.current_result is None:
                 return
-            item = self.theory_list.currentItem()
-            candidate = item.data(Qt.UserRole) if item is not None else None
+            candidate = self.selected_theory_scale_candidate()
             if candidate is None:
                 return
             pattern = self.preview_scale_pattern.currentData() or "up_down"
@@ -1216,6 +1232,8 @@ def main() -> int:
 
         def handle_notation_spelling_changed(self, *_args) -> None:
             self.timeline.set_note_name_formatter(self.display_note_name)
+            self.piano_chord_view.set_pitch_class_formatter(self.display_pitch_class_name)
+            self.theory_scale_view.set_pitch_class_formatter(self.display_pitch_class_name)
             self.refresh_current_harmony(self.timeline.position, force=True)
 
         def refresh_current_harmony(self, seconds: float, force: bool = False) -> None:
