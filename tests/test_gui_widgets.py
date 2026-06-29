@@ -66,9 +66,25 @@ def test_piano_chord_widget_clicks_highlighted_key() -> None:
     app.processEvents()
 
     c_key = next(rect for rect, pitch_class, _name in widget._key_hitboxes if pitch_class == 0)
-    widget.mousePressEvent(_MouseEvent(c_key.center()))
+    widget.mousePressEvent(_MouseEvent(QPointF(c_key.center().x(), c_key.bottom() - 2)))
 
     assert clicked == [(60, "C")]
+
+
+def test_piano_chord_widget_clicks_unhighlighted_key() -> None:
+    app = _app()
+    widget = PianoChordWidget()
+    clicked = []
+    widget.on_note_clicked = lambda pitch, name: clicked.append((pitch, name))
+    widget.set_chord("C", ["C", "E", "G"], "Inspector")
+    widget.resize(280, 100)
+    widget.show()
+    app.processEvents()
+
+    d_key = next(rect for rect, pitch_class, _name in widget._key_hitboxes if pitch_class == 2)
+    widget.mousePressEvent(_MouseEvent(QPointF(d_key.center().x(), d_key.bottom() - 2)))
+
+    assert clicked == [(62, "D")]
 
 
 def test_drop_zone_project_label_uses_bounded_project_text(tmp_path: Path) -> None:

@@ -278,7 +278,7 @@ class PianoChordWidget(QWidget):
             super().mousePressEvent(event)
             return
         for rect, pitch_class, name in reversed(self._key_hitboxes):
-            if rect.contains(event.position()) and pitch_class in self.pitch_classes:
+            if rect.contains(event.position()):
                 self.on_note_clicked(60 + pitch_class, name)
                 event.accept()
                 return

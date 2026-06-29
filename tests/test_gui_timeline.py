@@ -7,7 +7,7 @@ import pytest
 pytest.importorskip("PySide6")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPointF, Qt
 from PySide6.QtWidgets import QApplication
 
 from pitchstems.editor_project import ChordRegion, EditorProject, EditorTrack, NoteEvent
@@ -189,18 +189,19 @@ def test_timeline_note_rects_store_note_events(tmp_path: Path) -> None:
 
 
 class _TimelineMouseEvent:
-    def __init__(self) -> None:
+    def __init__(self, pos=None) -> None:
+        self._pos = pos
         self.accepted = False
 
     def pos(self):
-        return None
+        return self._pos
 
     def accept(self) -> None:
         self.accepted = True
 
 
 class _TimelineItem:
-    def __init__(self, note: NoteEvent) -> None:
+    def __init__(self, note: NoteEvent | None) -> None:
         self.note = note
 
     def data(self, role: int):
@@ -214,10 +215,39 @@ def test_timeline_note_preview_callback_uses_clicked_note(tmp_path: Path) -> Non
     view.set_project(project)
     clicked = []
     view.on_note_clicked = clicked.append
-    view.itemAt = lambda _pos: _TimelineItem(project.notes[0])
+    view.items = lambda _pos: [_TimelineItem(project.notes[0])]
 
     assert view._preview_note_from_event(_TimelineMouseEvent())
     assert clicked == [project.notes[0]]
+
+
+def test_timeline_note_preview_checks_items_beneath_top_overlay(tmp_path: Path) -> None:
+    _app()
+    view = TimelineView()
+    project = _project(tmp_path)
+    view.set_project(project)
+    clicked = []
+    view.on_note_clicked = clicked.append
+    view.items = lambda _pos: [_TimelineItem(None), _TimelineItem(project.notes[1])]
+
+    assert view._preview_note_from_event(_TimelineMouseEvent())
+    assert clicked == [project.notes[1]]
+
+
+def test_timeline_note_preview_falls_back_to_note_geometry(tmp_path: Path) -> None:
+    _app()
+    view = TimelineView()
+    project = _project(tmp_path)
+    view.set_project(project)
+    note = project.notes[0]
+    y, height, low_pitch, high_pitch = view.track_geometries[note.stem.lower()]
+    note_height = view._note_height(height, low_pitch, high_pitch)
+    point = QPointF(
+        view._x((note.start + note.end) / 2),
+        view._pitch_y(note.pitch, y, height, low_pitch, high_pitch, note_height) + note_height / 2,
+    )
+
+    assert view._note_from_scene_point(point) == note
 
 
 def test_timeline_note_preview_does_not_swallow_scrub_click(tmp_path: Path) -> None:

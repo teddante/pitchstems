@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QPointF, QTimer, Qt
 from PySide6.QtGui import QColor, QBrush, QFontMetrics, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QGraphicsScene, QGraphicsView
 
 from pitchstems.editor_chord_navigation import review_navigation_chord
-from pitchstems.editor_project import ChordRegion, EditorProject, midi_note_name
+from pitchstems.editor_project import ChordRegion, EditorProject, NoteEvent, midi_note_name
 from pitchstems.gui_theme import TRACK_COLORS
 from pitchstems.gui_track_controls import TRACK_CONTROL_MIN_HEIGHT
 from pitchstems.timeline_chord_geometry import (
@@ -597,6 +597,7 @@ class TimelineView(QGraphicsView):
             label = self.scene.addText(self.note_name_formatter(note.pitch))
             label.setDefaultTextColor(QColor("#0f172a"))
             label.setPos(x + 3, pitch_y - 3)
+            label.setData(1, note)
 
     def _draw_dense_notes(
         self,
@@ -1038,12 +1039,46 @@ class TimelineView(QGraphicsView):
     def _preview_note_from_event(self, event) -> bool:
         if self.project is None or self.on_note_clicked is None:
             return False
-        item = self.itemAt(event.pos())
-        note = item.data(1) if item is not None else None
+        note = self._note_from_event(event)
         if note is None:
             return False
         self.on_note_clicked(note)
         return True
+
+    def _note_from_event(self, event) -> NoteEvent | None:
+        for item in self.items(event.pos()):
+            note = item.data(1)
+            if isinstance(note, NoteEvent):
+                return note
+        point = self.mapToScene(event.pos())
+        return self._note_from_scene_point(point)
+
+    def _note_from_scene_point(self, point: QPointF) -> NoteEvent | None:
+        if self.project is None or point.x() < self.label_width:
+            return None
+        seconds = self._seconds_from_scene_x(point.x())
+        for track in self._visible_project_tracks():
+            geometry = self.track_geometries.get(track.name.lower())
+            if geometry is None:
+                continue
+            y, height, low_pitch, high_pitch = geometry
+            if not (y <= point.y() <= y + height):
+                continue
+            note_height = self._note_height(height, low_pitch, high_pitch)
+            slop = max(3.0, note_height * 0.5)
+            candidates = []
+            for note in self._visible_notes_for_track(track.name.lower(), seconds, seconds):
+                if not (note.start <= seconds <= note.end):
+                    continue
+                pitch_y = self._pitch_y(note.pitch, y, height, low_pitch, high_pitch, note_height)
+                center_y = pitch_y + note_height / 2
+                distance = abs(point.y() - center_y)
+                if distance <= note_height / 2 + slop:
+                    candidates.append((distance, -note.velocity, note))
+            if candidates:
+                candidates.sort()
+                return candidates[0][2]
+        return None
 
     def _update_chord_edit_from_event(self, event) -> bool:
         if self.project is None or not self._chord_drag:
