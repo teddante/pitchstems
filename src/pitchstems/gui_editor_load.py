@@ -16,16 +16,7 @@ def set_current_result(window, result, open_output: bool = True) -> None:
     window.stop_transport()
     window.set_activity_message("Loading result...")
     token = window.editor_load_jobs.next()
-    window.current_result = result
-    window.midi_preview_jobs.next()
-    window.current_stems = result.stems
-    window.current_input_stem = result.normalized_audio.stem
-    window.latest_output_dir = result.project_dir
-    window.base_editor_project = None
-    window.editor_project = None
-    window.manual_chords = []
-    window.removed_chord_ranges = []
-    window.rendering_midi_previews.clear()
+    _apply_current_result_state(window, result)
     window.run_midi.setEnabled(True)
     window.export_button.setEnabled(True)
     if getattr(window, "export_action", None) is not None:
@@ -45,6 +36,19 @@ def set_current_result(window, result, open_output: bool = True) -> None:
     if open_output and window.open_when_done.isChecked():
         window.open_latest_output()
     window.start_editor_project_load(result, token)
+
+
+def _apply_current_result_state(window, result) -> None:
+    window.current_result = result
+    window.midi_preview_jobs.next()
+    window.current_stems = result.stems
+    window.current_input_stem = result.normalized_audio.stem
+    window.latest_output_dir = result.project_dir
+    window.base_editor_project = None
+    window.editor_project = None
+    window.manual_chords = []
+    window.removed_chord_ranges = []
+    window.rendering_midi_previews.clear()
 
 
 def start_editor_project_load(window, result, token: int) -> None:
