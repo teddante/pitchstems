@@ -7,6 +7,7 @@ import pytest
 pytest.importorskip("PySide6")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from pitchstems.editor_project import ChordRegion, EditorProject, EditorTrack, NoteEvent
@@ -217,6 +218,24 @@ def test_timeline_note_preview_callback_uses_clicked_note(tmp_path: Path) -> Non
 
     assert view._preview_note_from_event(_TimelineMouseEvent())
     assert clicked == [project.notes[0]]
+
+
+def test_timeline_note_preview_does_not_swallow_scrub_click(tmp_path: Path) -> None:
+    _app()
+    view = TimelineView()
+    view.set_project(_project(tmp_path))
+    calls = []
+    view._start_chord_edit_from_event = lambda _event: False
+    view._preview_note_from_event = lambda _event: calls.append("preview") or True
+    view._start_selection_from_event = lambda _event: False
+    view._scrub_from_event = lambda _event: calls.append("scrub") or True
+    event = _TimelineMouseEvent()
+    event.button = lambda: Qt.LeftButton
+
+    view.mousePressEvent(event)
+
+    assert calls == ["preview", "scrub"]
+    assert event.accepted
 
 
 def test_tiny_chord_labels_fall_back_to_root_name() -> None:

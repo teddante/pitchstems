@@ -84,13 +84,16 @@ class _Window:
     def preview_voicing_source_label(self) -> str:
         return "Preview bass D"
 
+    def preview_voicing_note_roles(self, label: str) -> dict[int, set[str]]:
+        return {2: {"bass"}} if label == "Bb/D" else {}
+
 
 class _PianoChordView:
     def __init__(self) -> None:
         self.calls = []
 
-    def set_chord(self, label, note_names, source_label="Selected chord") -> None:
-        self.calls.append((label, note_names, source_label))
+    def set_chord(self, label, note_names, source_label="Selected chord", note_roles=None) -> None:
+        self.calls.append((label, note_names, source_label, note_roles or {}))
 
 
 def test_refresh_chord_actions_targets_selected_chord_without_selection() -> None:
@@ -136,4 +139,4 @@ def test_refresh_chord_keyboard_uses_display_spelling_for_inspector_title() -> N
 
     refresh_chord_keyboard(window)
 
-    assert window.piano_chord_view.calls == [("A#/D", ["A#", "D", "F"], "Preview bass D")]
+    assert window.piano_chord_view.calls == [("A#/D", ["A#", "D", "F"], "Preview bass D", {2: {"bass"}})]

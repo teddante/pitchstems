@@ -28,6 +28,11 @@ from pitchstems.note_preview import single_note_preview_notes
 from pitchstems.notation import pitch_class_for_name, pitch_class_name
 from pitchstems.pipeline_models import PipelineResult, StemResult
 from pitchstems.scale_preview import SCALE_PREVIEW_PATTERNS, scale_preview_notes
+from pitchstems.theory_display import (
+    display_scale_candidate_label,
+    display_scale_candidate_notes,
+    display_theory_note_names,
+)
 from pitchstems.harmony_inspector import (
     chord_analysis_track_names as inspector_chord_analysis_track_names,
     resolve_notation_preference,
@@ -1034,19 +1039,21 @@ def main() -> int:
                 self.refresh_theory_preview_actions()
                 return
             shown_best = visible_candidates[0] if visible_candidates else analysis.candidates[0]
+            shown_best_label = self.display_scale_candidate_label(shown_best)
             note_text = ", ".join(
                 f"{self.display_weighted_note_name(name)} ({weight:.0%})"
                 for name, weight in analysis.note_weights[:8]
             )
             self.theory_context.setText(
-                f"Likely: {shown_best.label} (score {percent_with_bar(shown_best.score)})\n"
+                f"Likely: {shown_best_label} (score {percent_with_bar(shown_best.score)})\n"
                 f"Weighted notes: {note_text or '-'}"
             )
             self.theory_context.setToolTip(self.theory_context.text())
             for candidate in visible_candidates[:8]:
-                notes = " - ".join(candidate.notes)
+                display_label = self.display_scale_candidate_label(candidate)
+                notes = " - ".join(self.display_scale_candidate_notes(candidate))
                 item = QListWidgetItem(
-                    f"{candidate.label}  {percent_with_bar(candidate.score)}\n"
+                    f"{display_label}  {percent_with_bar(candidate.score)}\n"
                     f"{notes}\n"
                     f"fit {percent_with_bar(candidate.pitch_fit, 6)}, "
                     f"centre {percent_with_bar(candidate.center_strength, 6)}, "
@@ -1066,8 +1073,8 @@ def main() -> int:
             if analysis.core_notes or analysis.scale_notes:
                 self.theory_list.addItem(
                     "Playable notes\n"
-                    f"Core: {' - '.join(analysis.core_notes) or '-'}\n"
-                    f"Scale: {' - '.join(analysis.scale_notes) or '-'}"
+                    f"Core: {' - '.join(self.display_theory_note_names(analysis.core_notes)) or '-'}\n"
+                    f"Scale: {' - '.join(self.display_theory_note_names(analysis.scale_notes)) or '-'}"
                 )
             self.theory_list.setCurrentRow(0 if visible_candidates else -1)
             self.refresh_theory_preview_actions()
@@ -1194,6 +1201,15 @@ def main() -> int:
                 return note_name
             return self.display_pitch_class_name(pitch_class)
 
+        def display_theory_note_names(self, note_names: list[str]) -> list[str]:
+            return display_theory_note_names(note_names, self.display_pitch_class_name)
+
+        def display_scale_candidate_label(self, candidate) -> str:
+            return display_scale_candidate_label(candidate, self.selected_notation_preference())
+
+        def display_scale_candidate_notes(self, candidate) -> list[str]:
+            return display_scale_candidate_notes(candidate, self.selected_notation_preference())
+
         def handle_min_note_evidence_changed(self, value: int) -> None:
             self.min_note_evidence_label.setText(f"Min note evidence: {value}%")
             self.refresh_current_harmony(self.timeline.position, force=True)
@@ -1317,6 +1333,18 @@ def main() -> int:
             if not details:
                 return "Inspector"
             return f"Preview {', '.join(details)}"
+
+        def preview_voicing_note_roles(self, label: str) -> dict[int, set[str]]:
+            bass_name, top_name = self.preview_voicing()
+            bass_name = bass_name or self.display_chord_bass(label)
+            roles: dict[int, set[str]] = {}
+            for note_name, role in ((bass_name, "bass"), (top_name, "top")):
+                if not note_name:
+                    continue
+                pitch_class = pitch_class_for_name(note_name)
+                if pitch_class is not None:
+                    roles.setdefault(pitch_class, set()).add(role)
+            return roles
 
         def active_chord_track_region(self) -> ChordRegion | None:
             return harmony_panel.active_chord_track_region(self)

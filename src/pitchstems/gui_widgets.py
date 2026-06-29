@@ -133,6 +133,7 @@ class PianoChordWidget(QWidget):
         self.chord_label = ""
         self.source_label = "Selected chord"
         self.pitch_classes: set[int] = set()
+        self.note_roles: dict[int, set[str]] = {}
         self.on_note_clicked = None
         self._key_hitboxes: list[tuple[QRectF, int, str]] = []
         self.setMinimumHeight(90)
@@ -144,6 +145,7 @@ class PianoChordWidget(QWidget):
         label: str | None,
         note_names: list[str],
         source_label: str = "Selected chord",
+        note_roles: dict[int, set[str]] | None = None,
     ) -> None:
         self.chord_label = label or ""
         self.source_label = source_label
@@ -153,9 +155,16 @@ class PianoChordWidget(QWidget):
             for pitch_class in [pitch_class_for_name(note_name)]
             if pitch_class is not None
         }
+        self.note_roles = {
+            pitch_class % 12: set(roles)
+            for pitch_class, roles in (note_roles or {}).items()
+            if roles
+        }
         if self.chord_label and self.pitch_classes:
             tones = " - ".join(note_names)
-            self.setToolTip(f"{self.source_label}: {self.chord_label}\n{tones}")
+            voicing = self._role_tooltip_text()
+            suffix = f"\nVoicing: {voicing}" if voicing else ""
+            self.setToolTip(f"{self.source_label}: {self.chord_label}\n{tones}{suffix}")
         else:
             self.setToolTip("Select a chord candidate to see its tones on one octave of piano keys.")
         self.update()
@@ -199,6 +208,8 @@ class PianoChordWidget(QWidget):
             painter.setBrush(QBrush(QColor("#fde68a" if highlighted else "#ffffff")))
             painter.setPen(QPen(QColor("#94a3b8"), 1))
             painter.drawRect(x, keyboard_top, width, keyboard_height)
+            if highlighted:
+                self._draw_role_badge(painter, QRectF(x, keyboard_top, width, keyboard_height), pitch_class)
             painter.setPen(QColor("#1f2937" if highlighted else "#64748b"))
             painter.drawText(
                 x,
@@ -219,6 +230,8 @@ class PianoChordWidget(QWidget):
             painter.setBrush(QBrush(QColor("#fbbf24" if highlighted else "#111827")))
             painter.setPen(QPen(QColor("#475569" if highlighted else "#020617"), 1))
             painter.drawRect(x, keyboard_top, black_width, black_height)
+            if highlighted:
+                self._draw_role_badge(painter, QRectF(x, keyboard_top, black_width, black_height), pitch_class)
             painter.setPen(QColor("#111827" if highlighted else "#f8fafc"))
             painter.drawText(x, keyboard_top + black_height - 16, black_width, 14, Qt.AlignCenter, name)
 
@@ -232,6 +245,33 @@ class PianoChordWidget(QWidget):
                 Qt.AlignCenter,
                 "No chord selected",
             )
+
+    def _role_tooltip_text(self) -> str:
+        labels = []
+        for pitch_class, roles in sorted(self.note_roles.items()):
+            role_text = "/".join(sorted(roles))
+            note_name = next(
+                (name for name, key_pitch_class in self.white_keys if key_pitch_class == pitch_class),
+                None,
+            ) or next(
+                (name for name, key_pitch_class, _center in self.black_keys if key_pitch_class == pitch_class),
+                str(pitch_class),
+            )
+            labels.append(f"{role_text} {note_name}")
+        return ", ".join(labels)
+
+    def _draw_role_badge(self, painter: QPainter, rect: QRectF, pitch_class: int) -> None:
+        roles = self.note_roles.get(pitch_class)
+        if not roles:
+            return
+        text = "/".join(role[:1].upper() for role in sorted(roles))
+        badge_width = min(max(14, len(text) * 8 + 6), max(14, int(rect.width()) - 4))
+        badge = QRectF(rect.left() + 2, rect.top() + 2, badge_width, 14)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(QColor("#0f766e")))
+        painter.drawRoundedRect(badge, 3, 3)
+        painter.setPen(QColor("#f8fafc"))
+        painter.drawText(badge, Qt.AlignCenter, text)
 
     def mousePressEvent(self, event) -> None:
         if event.button() != Qt.LeftButton or self.on_note_clicked is None:

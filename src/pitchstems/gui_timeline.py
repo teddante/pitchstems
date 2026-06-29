@@ -906,13 +906,14 @@ class TimelineView(QGraphicsView):
         if event.button() == Qt.LeftButton and self._start_chord_edit_from_event(event):
             event.accept()
             return
-        if event.button() == Qt.LeftButton and self._preview_note_from_event(event):
-            event.accept()
-            return
+        note_previewed = event.button() == Qt.LeftButton and self._preview_note_from_event(event)
         if event.button() == Qt.LeftButton and self._start_selection_from_event(event):
             event.accept()
             return
         if event.button() == Qt.LeftButton and self._scrub_from_event(event):
+            event.accept()
+            return
+        if note_previewed:
             event.accept()
             return
         super().mousePressEvent(event)

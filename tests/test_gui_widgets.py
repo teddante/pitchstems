@@ -28,6 +28,18 @@ def test_piano_chord_widget_accepts_flat_chord_tones() -> None:
     assert "Gb - Bb - Db" in widget.toolTip()
 
 
+def test_piano_chord_widget_tracks_preview_note_roles() -> None:
+    _app()
+    widget = PianoChordWidget()
+
+    widget.set_chord("C", ["C", "E", "G"], "Preview bass E, top G", {4: {"bass"}, 7: {"top"}})
+
+    assert widget.note_roles == {4: {"bass"}, 7: {"top"}}
+    assert "Voicing:" in widget.toolTip()
+    assert "bass" in widget.toolTip()
+    assert "top" in widget.toolTip()
+
+
 class _MouseEvent:
     def __init__(self, position: QPointF) -> None:
         self._position = position
