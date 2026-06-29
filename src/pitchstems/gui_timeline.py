@@ -103,7 +103,7 @@ class TimelineView(QGraphicsView):
         self.view_redraw_timer.setSingleShot(True)
         self.view_redraw_timer.timeout.connect(self.redraw)
 
-    def set_project(self, project: EditorProject | None) -> None:
+    def set_project(self, project: EditorProject | None, *, redraw: bool = True) -> None:
         self.project = project
         self.visible_tracks = {track.name.lower() for track in project.tracks} if project else set()
         self._index_project()
@@ -115,11 +115,13 @@ class TimelineView(QGraphicsView):
         self._selection_additive = False
         self._chord_drag = None
         self.selected_chord = None
-        self.redraw()
+        if redraw:
+            self.redraw()
 
-    def set_manual_chords(self, chords: list[ChordRegion]) -> None:
+    def set_manual_chords(self, chords: list[ChordRegion], *, redraw: bool = True) -> None:
         self.manual_chords = list(chords)
-        self.redraw()
+        if redraw:
+            self.redraw()
 
     def _index_project(self) -> None:
         self.notes_by_track = {}
@@ -145,9 +147,10 @@ class TimelineView(QGraphicsView):
                     min(127, max(pitches) + 2),
                 )
 
-    def set_visible_tracks(self, tracks: set[str]) -> None:
+    def set_visible_tracks(self, tracks: set[str], *, redraw: bool = True) -> None:
         self.visible_tracks = {track.lower() for track in tracks}
-        self.redraw()
+        if redraw:
+            self.redraw()
 
     def set_note_name_formatter(self, formatter) -> None:
         self.note_name_formatter = formatter

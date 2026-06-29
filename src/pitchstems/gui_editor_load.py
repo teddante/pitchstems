@@ -120,11 +120,13 @@ def finish_editor_project_load(window, token: int, loaded) -> None:
     window.clear_transport_players()
     window.logger.info("Drawing editor timeline")
     window.set_activity_message("Drawing editor timeline...")
-    window.timeline.set_project(project)
-    window.timeline.set_manual_chords(window.manual_chords)
+    window.timeline.set_project(project, redraw=False)
+    window.timeline.set_manual_chords(window.manual_chords, redraw=False)
     window.timeline.set_visible_tracks(
-        {track.name for track in project.tracks if track_visibility.get(track.name, True)}
+        {track.name for track in project.tracks if track_visibility.get(track.name, True)},
+        redraw=False,
     )
+    window.timeline.redraw()
     window.set_editor_position_seconds(playhead_seconds)
     window.main_tabs.setCurrentIndex(1)
     window.logger.info("Editor project loaded")

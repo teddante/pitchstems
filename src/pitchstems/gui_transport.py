@@ -41,8 +41,14 @@ class TransportController:
         self.midi_players: dict[str, QMediaPlayer] = {}
         self.midi_audio_outputs: dict[str, QAudioOutput] = {}
         self.midi_preview_paths: dict[str, Path] = {}
+        self._prepared_result_key: tuple[Path, tuple[tuple[str, Path], ...]] | None = None
 
     def prepare_players(self, result: PipelineResult) -> None:
+        result_key = transport_result_key(result)
+        if self._prepared_result_key == result_key and self._track_players_match(result):
+            self.midi_preview_paths = find_existing_midi_previews(result)
+            self.refresh_mix()
+            return
         self.pause()
         self.clear_players()
         self.midi_preview_paths = find_existing_midi_previews(result)
@@ -54,6 +60,7 @@ class TransportController:
             self.track_players[stem.name] = player
             self.track_audio_outputs[stem.name] = output
         self.refresh_mix()
+        self._prepared_result_key = result_key
 
     def clear_players(self) -> None:
         for player in self.players():
@@ -73,6 +80,7 @@ class TransportController:
         self.midi_players.clear()
         self.midi_audio_outputs.clear()
         self.midi_preview_paths.clear()
+        self._prepared_result_key = None
         self.is_playing = False
 
     def players(self) -> list[QMediaPlayer]:
@@ -223,6 +231,10 @@ class TransportController:
     def master_player(self) -> QMediaPlayer | None:
         return next(iter(self.track_players.values()), None)
 
+    def _track_players_match(self, result: PipelineResult) -> bool:
+        stem_names = {stem.name for stem in result.stems}
+        return stem_names == set(self.track_players) and stem_names == set(self.track_audio_outputs)
+
     def resync(self, master: QMediaPlayer | None = None, drift_ms: int = 120) -> None:
         if not self.is_playing:
             return
@@ -254,6 +266,13 @@ def find_existing_midi_previews(result: PipelineResult) -> dict[str, Path]:
         if valid_preview_wav(preview):
             previews[stem.name] = preview
     return previews
+
+
+def transport_result_key(result: PipelineResult) -> tuple[Path, tuple[tuple[str, Path], ...]]:
+    return (
+        result.project_dir,
+        tuple((stem.name, stem.path) for stem in result.stems),
+    )
 
 
 def clear_player_source(player: QMediaPlayer) -> None:

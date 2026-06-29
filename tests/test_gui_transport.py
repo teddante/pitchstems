@@ -127,6 +127,55 @@ def test_find_existing_midi_previews_ignores_unreadable_wavs(tmp_path: Path) -> 
     assert find_existing_midi_previews(result) == {}
 
 
+def test_prepare_players_reuses_players_for_same_result(monkeypatch, tmp_path: Path) -> None:
+    players = []
+    outputs = []
+
+    def make_player(*_args):
+        player = _FakePlayer()
+        players.append(player)
+        return player
+
+    def make_output(*_args):
+        output = _FakeAudioOutput()
+        outputs.append(output)
+        return output
+
+    monkeypatch.setattr("pitchstems.gui_transport.QMediaPlayer", make_player)
+    monkeypatch.setattr("pitchstems.gui_transport.QAudioOutput", make_output)
+    result = _pipeline_result(
+        tmp_path,
+        [
+            StemResult("bass", tmp_path / "bass.wav"),
+            StemResult("piano", tmp_path / "piano.wav"),
+        ],
+    )
+    controller = TransportController(
+        None,
+        _Logger(),
+        {"bass": _FakeCheck(True, True), "piano": _FakeCheck(True, True)},
+        {"bass": _FakeSlider(80, True), "piano": _FakeSlider(80, True)},
+        {},
+        {},
+    )
+
+    controller.prepare_players(result)
+    first_players = dict(controller.track_players)
+    controller.prepare_players(result)
+
+    assert controller.track_players == first_players
+    assert len(players) == 2
+    assert len(outputs) == 2
+    assert players[0].actions == [
+        "setAudioOutput",
+        f"setSource:{QUrl.fromLocalFile(str(tmp_path / 'bass.wav')).toString()}",
+    ]
+    assert players[1].actions == [
+        "setAudioOutput",
+        f"setSource:{QUrl.fromLocalFile(str(tmp_path / 'piano.wav')).toString()}",
+    ]
+
+
 def test_safe_qt_multimedia_call_reports_deleted_qt_objects() -> None:
     logger = _Logger()
 
