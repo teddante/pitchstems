@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from pitchstems.gui_track_controls import (
     TRACK_CONTROL_MIN_HEIGHT,
+    TrackControlEditorState,
     reset_track_control_widgets,
     track_control_panel_height,
     track_control_visibility,
@@ -28,6 +29,37 @@ def test_track_control_visibility_hides_volume_rows_only_below_supported_height(
     assert visible.toggles
     assert not visible.audio_volume
     assert not visible.midi_volume
+
+
+def test_track_control_editor_state_reads_saved_maps() -> None:
+    track_visibility = {"bass": False}
+    editor_state = {
+        "track_analysis_enabled": {"bass": True},
+        "track_audio_enabled": {"bass": False},
+        "track_audio_volume": {"bass": 61},
+        "track_midi_enabled": {"bass": True},
+        "track_midi_volume": {"bass": 72},
+    }
+
+    state = TrackControlEditorState.from_editor_state(track_visibility, editor_state)
+
+    assert state.track_visibility == {"bass": False}
+    assert state.analysis_enabled == {"bass": True}
+    assert state.audio_enabled == {"bass": False}
+    assert state.audio_volume == {"bass": 61}
+    assert state.midi_enabled == {"bass": True}
+    assert state.midi_volume == {"bass": 72}
+
+
+def test_track_control_editor_state_defaults_missing_maps() -> None:
+    state = TrackControlEditorState.from_editor_state({"piano": True}, {})
+
+    assert state.track_visibility == {"piano": True}
+    assert state.analysis_enabled == {}
+    assert state.audio_enabled == {}
+    assert state.audio_volume == {}
+    assert state.midi_enabled == {}
+    assert state.midi_volume == {}
 
 
 def test_reset_track_control_widgets_clears_widget_registries() -> None:

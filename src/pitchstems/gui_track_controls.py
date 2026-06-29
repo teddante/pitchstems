@@ -29,6 +29,27 @@ class TrackControlVisibility:
     midi_volume: bool
 
 
+@dataclass(frozen=True)
+class TrackControlEditorState:
+    track_visibility: dict
+    analysis_enabled: dict
+    audio_enabled: dict
+    audio_volume: dict
+    midi_enabled: dict
+    midi_volume: dict
+
+    @classmethod
+    def from_editor_state(cls, track_visibility: dict, editor_state: dict) -> "TrackControlEditorState":
+        return cls(
+            track_visibility=track_visibility,
+            analysis_enabled=editor_state.get("track_analysis_enabled", {}),
+            audio_enabled=editor_state.get("track_audio_enabled", {}),
+            audio_volume=editor_state.get("track_audio_volume", {}),
+            midi_enabled=editor_state.get("track_midi_enabled", {}),
+            midi_volume=editor_state.get("track_midi_volume", {}),
+        )
+
+
 def track_control_panel_height(timeline_track_height: float | int | None) -> int:
     if timeline_track_height is None:
         return TRACK_CONTROL_MIN_HEIGHT
@@ -65,12 +86,7 @@ def rebuild_track_controls(window, editor_state: dict) -> None:
     if window.editor_project is None:
         return
 
-    track_visibility = window.editor_track_visibility
-    analysis_enabled = editor_state.get("track_analysis_enabled", {})
-    audio_enabled = editor_state.get("track_audio_enabled", {})
-    audio_volume = editor_state.get("track_audio_volume", {})
-    midi_enabled = editor_state.get("track_midi_enabled", {})
-    midi_volume = editor_state.get("track_midi_volume", {})
+    control_state = TrackControlEditorState.from_editor_state(window.editor_track_visibility, editor_state)
 
     window.track_control_top_spacer = QWidget()
     window.track_control_top_spacer.setObjectName("trackControlHeader")
@@ -114,14 +130,7 @@ def rebuild_track_controls(window, editor_state: dict) -> None:
         add_track_control_row(
             window,
             track,
-            editor_state={
-                "track_visibility": track_visibility,
-                "track_analysis_enabled": analysis_enabled,
-                "track_audio_enabled": audio_enabled,
-                "track_audio_volume": audio_volume,
-                "track_midi_enabled": midi_enabled,
-                "track_midi_volume": midi_volume,
-            },
+            editor_state=control_state,
         )
     window.track_control_bottom_spacer = QWidget()
     window.track_control_bottom_spacer.setFixedHeight(34)
@@ -129,7 +138,7 @@ def rebuild_track_controls(window, editor_state: dict) -> None:
     sync_track_control_panel(window)
 
 
-def add_track_control_row(window, track, editor_state: dict) -> None:
+def add_track_control_row(window, track, editor_state: TrackControlEditorState) -> None:
     note_count = window.track_note_counts.get(track.name, 0)
     track_color = TRACK_COLORS.get(track.name.lower(), "#64748b")
     track_panel = QWidget()
@@ -179,12 +188,12 @@ def add_track_control_row(window, track, editor_state: dict) -> None:
     toggle_row.setContentsMargins(0, 0, 0, 0)
     toggle_row.setSpacing(6)
 
-    track_visibility = editor_state["track_visibility"]
-    analysis_enabled = editor_state["track_analysis_enabled"]
-    audio_enabled = editor_state["track_audio_enabled"]
-    audio_volume = editor_state["track_audio_volume"]
-    midi_enabled = editor_state["track_midi_enabled"]
-    midi_volume = editor_state["track_midi_volume"]
+    track_visibility = editor_state.track_visibility
+    analysis_enabled = editor_state.analysis_enabled
+    audio_enabled = editor_state.audio_enabled
+    audio_volume = editor_state.audio_volume
+    midi_enabled = editor_state.midi_enabled
+    midi_volume = editor_state.midi_volume
 
     show_check = QCheckBox("View")
     show_check.setChecked(editor_bool(track_visibility.get(track.name), True))
