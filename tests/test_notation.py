@@ -4,7 +4,7 @@ from pitchstems.editor_project import (
     chord_tones_for_label,
     display_chord_label,
 )
-from pitchstems.notation import scale_label, spell_scale
+from pitchstems.notation import pitch_class_for_name, scale_label, spell_scale
 
 
 def test_chord_tones_use_the_chord_root_spelling() -> None:
@@ -32,3 +32,10 @@ def test_heptatonic_scale_spelling_uses_one_letter_per_degree() -> None:
     assert spell_scale(1, major) == ["Db", "Eb", "F", "Gb", "Ab", "Bb", "C"]
     assert spell_scale(6, major, "sharp") == ["F#", "G#", "A#", "B", "C#", "D#", "E#"]
     assert spell_scale(6, major, "flat") == ["Gb", "Ab", "Bb", "Cb", "Db", "Eb", "F"]
+
+
+def test_pitch_class_parser_supports_double_accidentals() -> None:
+    assert pitch_class_for_name("C##") == 2
+    assert pitch_class_for_name("E##4") == 6
+    assert pitch_class_for_name("Dbb") == 0
+    assert pitch_class_for_name("Abb3") == 7

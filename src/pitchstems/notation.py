@@ -50,7 +50,14 @@ def normalize_spelling_preference(preference: str | None) -> str:
 
 def pitch_class_for_name(note_name: str) -> int | None:
     token = _note_token(note_name)
-    return NOTE_NAME_TO_PITCH_CLASS.get(token)
+    if not token:
+        return None
+    letter = token[0]
+    natural = NATURAL_PITCH_CLASSES.get(letter)
+    if natural is None:
+        return None
+    accidental_offset = sum(1 if accidental == "#" else -1 for accidental in token[1:])
+    return (natural + accidental_offset) % 12
 
 
 def pitch_class_name(pitch_class: int, preference: str | None = "auto") -> str:
@@ -83,14 +90,16 @@ def split_chord_label(label: str) -> ChordLabelParts | None:
     root = _leading_note_name(base_label)
     if root is None:
         return None
-    root_pc = NOTE_NAME_TO_PITCH_CLASS[root]
+    root_pc = pitch_class_for_name(root)
+    if root_pc is None:
+        return None
     bass_name = None
     bass_pc = None
     if slash:
         bass = _leading_note_name(bass_label)
         if bass is not None:
             bass_name = bass
-            bass_pc = NOTE_NAME_TO_PITCH_CLASS[bass]
+            bass_pc = pitch_class_for_name(bass)
     return ChordLabelParts(
         root_name=root,
         root_pitch_class=root_pc,
@@ -213,17 +222,17 @@ def _resolve_preference(preference: str | None, root_name: str | None = None) ->
 
 
 def _leading_note_name(text: str) -> str | None:
-    for length in (2, 1):
-        token = text[:length]
-        if token in NOTE_NAME_TO_PITCH_CLASS:
-            return token
-    return None
+    token = _note_token(text)
+    return token if pitch_class_for_name(token) is not None else None
 
 
 def _note_token(note_name: str) -> str:
-    if len(note_name) >= 2 and note_name[1] in {"#", "b"}:
-        return note_name[:2]
-    return note_name[:1]
+    if not note_name or note_name[0] not in NATURAL_PITCH_CLASSES:
+        return ""
+    index = 1
+    while index < len(note_name) and note_name[index] in {"#", "b"}:
+        index += 1
+    return note_name[:index]
 
 
 def _spell_interval_from_root(root_name: str, target_pitch_class: int, interval: int) -> str:

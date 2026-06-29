@@ -69,6 +69,15 @@ def test_piano_chord_widget_set_notes_supports_scale_display() -> None:
     assert "D - D# - F - A - A#" in widget.toolTip()
 
 
+def test_piano_chord_widget_maps_double_sharp_to_sounding_key() -> None:
+    _app()
+    widget = PianoChordWidget()
+
+    widget.set_chord("A#add4(no5)/D#", ["A#", "C##", "D#"], "Inspector")
+
+    assert widget.pitch_classes == {2, 3, 10}
+
+
 class _MouseEvent:
     def __init__(self, position: QPointF) -> None:
         self._position = position
