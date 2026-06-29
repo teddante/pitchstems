@@ -11,13 +11,6 @@ def prepare_transport_players(window, result) -> None:
     window.pause_transport()
     window.transport.prepare_players(result)
     window.attach_midi_preview_players(dict(window.transport.midi_preview_paths), finish_activity=False)
-    requested_midi = {
-        stem_name
-        for stem_name, checkbox in window.track_midi_checks.items()
-        if checkbox.isChecked() and stem_name not in window.transport.midi_preview_paths
-    }
-    if requested_midi:
-        window.start_midi_preview_render(result, requested_midi)
     window.refresh_playback_mix()
 
 

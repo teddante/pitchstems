@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 from PySide6.QtCore import QPointF, QTimer, Qt
 from PySide6.QtGui import QColor, QBrush, QFontMetrics, QImage, QPainter, QPen, QPixmap
@@ -32,6 +34,7 @@ from pitchstems.time_format import format_time
 
 def _track_color(stem_name: str) -> QColor:
     return QColor(TRACK_COLORS.get(stem_name.lower(), "#475569"))
+
 
 class TimelineView(QGraphicsView):
     def __init__(self) -> None:
@@ -81,6 +84,8 @@ class TimelineView(QGraphicsView):
         self._selection_anchor: float | None = None
         self._panning = False
         self._last_pan_pos = None
+        self._redraw_batch_depth = 0
+        self._redraw_pending = False
         self.scene = QGraphicsScene(self)
         self.scene.setItemIndexMethod(QGraphicsScene.NoIndex)
         self.setScene(self.scene)
@@ -103,7 +108,28 @@ class TimelineView(QGraphicsView):
         self.view_redraw_timer.setSingleShot(True)
         self.view_redraw_timer.timeout.connect(self.redraw)
 
-    def set_project(self, project: EditorProject | None, *, redraw: bool = True) -> None:
+    @contextmanager
+    def deferred_redraw(self) -> Iterator[None]:
+        self._redraw_batch_depth += 1
+        succeeded = False
+        try:
+            yield
+            succeeded = True
+        finally:
+            self._redraw_batch_depth -= 1
+            if self._redraw_batch_depth == 0:
+                should_redraw = succeeded and self._redraw_pending
+                self._redraw_pending = False
+                if should_redraw:
+                    self.redraw()
+
+    def request_redraw(self) -> None:
+        if self._redraw_batch_depth:
+            self._redraw_pending = True
+            return
+        self.redraw()
+
+    def set_project(self, project: EditorProject | None) -> None:
         self.project = project
         self.visible_tracks = {track.name.lower() for track in project.tracks} if project else set()
         self._index_project()
@@ -115,13 +141,11 @@ class TimelineView(QGraphicsView):
         self._selection_additive = False
         self._chord_drag = None
         self.selected_chord = None
-        if redraw:
-            self.redraw()
+        self.request_redraw()
 
-    def set_manual_chords(self, chords: list[ChordRegion], *, redraw: bool = True) -> None:
+    def set_manual_chords(self, chords: list[ChordRegion]) -> None:
         self.manual_chords = list(chords)
-        if redraw:
-            self.redraw()
+        self.request_redraw()
 
     def _index_project(self) -> None:
         self.notes_by_track = {}
@@ -147,10 +171,9 @@ class TimelineView(QGraphicsView):
                     min(127, max(pitches) + 2),
                 )
 
-    def set_visible_tracks(self, tracks: set[str], *, redraw: bool = True) -> None:
+    def set_visible_tracks(self, tracks: set[str]) -> None:
         self.visible_tracks = {track.lower() for track in tracks}
-        if redraw:
-            self.redraw()
+        self.request_redraw()
 
     def set_note_name_formatter(self, formatter) -> None:
         self.note_name_formatter = formatter

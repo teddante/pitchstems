@@ -176,6 +176,18 @@ def test_prepare_players_reuses_players_for_same_result(monkeypatch, tmp_path: P
     ]
 
 
+def test_prepare_transport_players_does_not_render_missing_midi_previews(tmp_path: Path) -> None:
+    result = _pipeline_result(tmp_path, [StemResult("bass", tmp_path / "bass.wav")])
+    window = _PrepareTransportWindow()
+
+    gui_transport_flow.prepare_transport_players(window, result)
+
+    assert window.transport.prepared_results == [result]
+    assert window.attached_previews == [{}]
+    assert window.started_midi_renders == []
+    assert window.refreshed_mix
+
+
 def test_safe_qt_multimedia_call_reports_deleted_qt_objects() -> None:
     logger = _Logger()
 
@@ -323,6 +335,45 @@ class _PreviewWindow:
     def _midi_preview_worker_running(self, project_dir: Path, stem_name: str) -> bool:
         self.worker_checks.append((project_dir, stem_name))
         return stem_name.lower() in self.running
+
+
+class _PrepareTransport:
+    def __init__(self) -> None:
+        self.midi_preview_paths: dict[str, Path] = {}
+        self.prepared_results: list[PipelineResult] = []
+
+    def prepare_players(self, result: PipelineResult) -> None:
+        self.prepared_results.append(result)
+
+
+class _PrepareTransportWindow:
+    def __init__(self) -> None:
+        self.transport = _PrepareTransport()
+        self.track_midi_checks = {"bass": _FakeCheck(True, True)}
+        self.activity_messages: list[str] = []
+        self.attached_previews: list[dict[str, Path]] = []
+        self.started_midi_renders: list[tuple[PipelineResult, set[str] | None]] = []
+        self.refreshed_mix = False
+
+    def set_activity_message(self, message: str) -> None:
+        self.activity_messages.append(message)
+
+    def pause_transport(self) -> None:
+        pass
+
+    def attach_midi_preview_players(self, previews: dict[str, Path], finish_activity: bool = True) -> None:
+        del finish_activity
+        self.attached_previews.append(previews)
+
+    def start_midi_preview_render(
+        self,
+        result: PipelineResult,
+        requested_stems: set[str] | None = None,
+    ) -> None:
+        self.started_midi_renders.append((result, requested_stems))
+
+    def refresh_playback_mix(self) -> None:
+        self.refreshed_mix = True
 
 
 class _FakeAudioOutput:

@@ -57,25 +57,36 @@ def test_timeline_indexes_notes_and_filters_visible_tracks(tmp_path: Path) -> No
     assert set(view.track_geometries) == {"piano"}
 
 
-def test_timeline_load_setup_can_defer_redraws(tmp_path: Path) -> None:
+def test_timeline_load_setup_can_batch_redraws(tmp_path: Path) -> None:
     _app()
     view = TimelineView()
     redraws = []
     view.on_redraw_started = lambda: redraws.append("redraw")
     project = _project(tmp_path)
 
-    view.set_project(project, redraw=False)
-    view.set_manual_chords([project.chords[0]], redraw=False)
-    view.set_visible_tracks({"piano"}, redraw=False)
+    with view.deferred_redraw():
+        view.set_project(project)
+        view.set_manual_chords([project.chords[0]])
+        view.set_visible_tracks({"piano"})
 
-    assert redraws == []
     assert view.manual_chords == [project.chords[0]]
     assert view.visible_tracks == {"piano"}
-
-    view.redraw()
-
     assert redraws == ["redraw"]
     assert set(view.track_geometries) == {"piano"}
+
+
+def test_timeline_deferred_redraw_does_not_flush_after_error(tmp_path: Path) -> None:
+    _app()
+    view = TimelineView()
+    redraws = []
+    view.on_redraw_started = lambda: redraws.append("redraw")
+
+    with pytest.raises(RuntimeError):
+        with view.deferred_redraw():
+            view.set_project(_project(tmp_path))
+            raise RuntimeError("failed timeline update")
+
+    assert redraws == []
 
 
 def test_timeline_selection_is_clamped_and_cleared(tmp_path: Path) -> None:
