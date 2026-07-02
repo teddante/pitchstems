@@ -153,27 +153,48 @@ def refresh_chord_keyboard(window) -> None:
             "Chord track",
             note_roles,
         )
+        if hasattr(window, "chord_fretboard_view"):
+            window.chord_fretboard_view.set_chord(
+                window.display_chord(track_chord.label),
+                note_names,
+                "Chord track",
+                note_roles,
+            )
         if hasattr(window.piano_chord_view, "set_note_constraints"):
             window.piano_chord_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
+        if hasattr(window, "chord_fretboard_view"):
+            window.chord_fretboard_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
         return
     item = window.chord_list.currentItem()
     if item is None:
         window.piano_chord_view.set_chord(None, [])
+        if hasattr(window, "chord_fretboard_view"):
+            window.chord_fretboard_view.set_chord(None, [])
         if hasattr(window.piano_chord_view, "set_note_constraints"):
             window.piano_chord_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
+        if hasattr(window, "chord_fretboard_view"):
+            window.chord_fretboard_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
         return
     label = item.data(Qt.UserRole)
     if not label:
         window.piano_chord_view.set_chord(None, [])
+        if hasattr(window, "chord_fretboard_view"):
+            window.chord_fretboard_view.set_chord(None, [])
         if hasattr(window.piano_chord_view, "set_note_constraints"):
             window.piano_chord_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
+        if hasattr(window, "chord_fretboard_view"):
+            window.chord_fretboard_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
         return
     note_names = item.data(Qt.UserRole + 2) or []
     source_label = window.preview_voicing_source_label() if hasattr(window, "preview_voicing_source_label") else "Inspector"
     note_roles = window.preview_voicing_note_roles(label) if hasattr(window, "preview_voicing_note_roles") else {}
     window.piano_chord_view.set_chord(window.display_chord(label), note_names, source_label, note_roles)
+    if hasattr(window, "chord_fretboard_view"):
+        window.chord_fretboard_view.set_chord(window.display_chord(label), note_names, source_label, note_roles)
     if hasattr(window.piano_chord_view, "set_note_constraints"):
         window.piano_chord_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
+    if hasattr(window, "chord_fretboard_view"):
+        window.chord_fretboard_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
 
 
 def active_chord_track_region(window) -> ChordRegion | None:

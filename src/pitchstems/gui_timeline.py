@@ -503,8 +503,7 @@ class TimelineView(QGraphicsView):
                 "Drag the middle to move, drag an edge to resize, Delete removes the selected chord."
             )
             label_width = max(8, int(width) - 8)
-            badge_width = 38 if source_label == "Edited" and width >= 72 else 16 if source_label == "Edited" else 0
-            shown_label = self._chord_label_for_width(display_label, max(8, label_width - badge_width))
+            shown_label = self._chord_label_for_width(display_label, label_width)
             text = self.scene.addText(shown_label)
             text.setDefaultTextColor(QColor("#4c1d95"))
             text.setPos(x + 5, self.ruler_height + 5)
@@ -513,7 +512,12 @@ class TimelineView(QGraphicsView):
             text.setZValue(8)
             self._make_sticky_y(text, 34)
             if source_label == "Edited":
-                marker = "Edited" if width >= 72 else "E"
+                full_label_width = QFontMetrics(QApplication.font()).horizontalAdvance(display_label)
+                spare_width = label_width - full_label_width
+                if spare_width < 18:
+                    continue
+                marker = "Edited" if spare_width >= 42 else "E"
+                badge_width = 38 if marker == "Edited" else 12
                 marker_text = self.scene.addText(marker)
                 marker_text.setDefaultTextColor(QColor("#1d4ed8"))
                 marker_text.setPos(x + max(5, width - badge_width), self.ruler_height + 5)

@@ -87,6 +87,7 @@ def main() -> int:
             QPushButton,
             QScrollArea,
             QSizePolicy,
+            QStackedWidget,
             QSlider,
             QSpinBox,
             QTabWidget,
@@ -100,6 +101,7 @@ def main() -> int:
 
     from pitchstems.gui_widgets import (
         DropZone,
+        FretboardNoteMapWidget,
         NoWheelComboBox,
         NoWheelDoubleSpinBox,
         NoWheelSpinBox,
@@ -451,6 +453,21 @@ def main() -> int:
             self.piano_chord_view.on_note_constraints_reset = self.reset_chord_note_filter
             self.piano_chord_view.on_preview_range_changed = self.handle_chord_preview_range_changed
             self.piano_chord_view.set_preview_range(*self.chord_preview_range)
+            self.chord_fretboard_view = FretboardNoteMapWidget()
+            self.chord_fretboard_view.set_pitch_class_formatter(self.display_pitch_class_name)
+            self.chord_fretboard_view.on_note_clicked = self.preview_piano_note
+            self.chord_fretboard_view.on_note_constraint_changed = self.handle_chord_piano_constraint_changed
+            self.chord_fretboard_view.on_note_constraints_reset = self.reset_chord_note_filter
+            self.chord_note_map_stack = QStackedWidget()
+            self.chord_note_map_stack.addWidget(self.piano_chord_view)
+            self.chord_note_map_stack.addWidget(self.chord_fretboard_view)
+            self.chord_view_mode = NoWheelComboBox()
+            self.chord_view_mode.addItem("Piano", "piano")
+            self.chord_view_mode.addItem("Bass", "bass")
+            self.chord_view_mode.addItem("Guitar", "guitar")
+            self.chord_view_mode.setToolTip("Choose how the selected harmony notes are mapped visually.")
+            self.chord_one_octave_button = QPushButton("1 Oct")
+            self.chord_one_octave_button.setToolTip("Reset the chord preview range to one octave around the chord root.")
             self.theory_scale_view = PianoChordWidget()
             self.theory_scale_view.set_pitch_class_formatter(self.display_pitch_class_name)
             self.theory_scale_view.on_note_clicked = self.preview_piano_note
@@ -459,6 +476,22 @@ def main() -> int:
             self.theory_scale_view.on_preview_range_changed = self.handle_scale_preview_range_changed
             self.theory_scale_view.set_preview_range(*self.scale_preview_range)
             self.theory_scale_view.set_notes(None, [], "Theory scale", empty_message="No scale selected")
+            self.theory_fretboard_view = FretboardNoteMapWidget()
+            self.theory_fretboard_view.set_pitch_class_formatter(self.display_pitch_class_name)
+            self.theory_fretboard_view.on_note_clicked = self.preview_piano_note
+            self.theory_fretboard_view.on_note_constraint_changed = self.handle_theory_piano_constraint_changed
+            self.theory_fretboard_view.on_note_constraints_reset = self.reset_theory_note_filter
+            self.theory_fretboard_view.set_notes(None, [], "Theory scale", empty_message="No scale selected")
+            self.theory_note_map_stack = QStackedWidget()
+            self.theory_note_map_stack.addWidget(self.theory_scale_view)
+            self.theory_note_map_stack.addWidget(self.theory_fretboard_view)
+            self.theory_view_mode = NoWheelComboBox()
+            self.theory_view_mode.addItem("Piano", "piano")
+            self.theory_view_mode.addItem("Bass", "bass")
+            self.theory_view_mode.addItem("Guitar", "guitar")
+            self.theory_view_mode.setToolTip("Choose how the selected scale notes are mapped visually.")
+            self.theory_one_octave_button = QPushButton("1 Oct")
+            self.theory_one_octave_button.setToolTip("Reset the scale preview range to one octave from the scale root.")
             self.preview_bass_note = NoWheelComboBox()
             self.preview_bass_note.addItem("Bass: Auto", None)
             self.preview_bass_note.setEnabled(False)
@@ -555,6 +588,10 @@ def main() -> int:
             self.inspect_chord_button.clicked.connect(self.inspect_current_chord_analysis)
             self.inspect_theory_button.clicked.connect(self.inspect_current_theory_analysis)
             self.preview_scale_button.clicked.connect(self.preview_selected_scale)
+            self.chord_view_mode.currentIndexChanged.connect(self.handle_chord_note_map_mode_changed)
+            self.theory_view_mode.currentIndexChanged.connect(self.handle_theory_note_map_mode_changed)
+            self.chord_one_octave_button.clicked.connect(self.reset_chord_preview_to_one_octave)
+            self.theory_one_octave_button.clicked.connect(self.reset_scale_preview_to_one_octave)
             self.use_gap_suggestion_button.clicked.connect(self.use_selected_gap_suggestion)
             self.inspect_gap_suggestion_button.clicked.connect(self.inspect_current_gap_suggestions)
             self.gap_suggestion_list.currentItemChanged.connect(
@@ -1104,16 +1141,26 @@ def main() -> int:
             self.preview_scale_pattern.setEnabled(has_candidate)
             if candidate is None:
                 self.theory_scale_view.set_notes(None, [], "Theory scale", empty_message="No scale selected")
+                self.theory_fretboard_view.set_notes(None, [], "Theory scale", empty_message="No scale selected")
                 self.theory_scale_view.set_note_constraints(self.theory_note_overrides)
+                self.theory_fretboard_view.set_note_constraints(self.theory_note_overrides)
                 self.theory_scale_view.set_preview_range(*self.scale_preview_range)
                 return
+            note_roles = {candidate.root: {"root"}}
             self.theory_scale_view.set_notes(
                 self.display_scale_candidate_label(candidate),
                 self.display_scale_candidate_notes(candidate),
                 "Theory scale",
-                {candidate.root: {"root"}},
+                note_roles,
+            )
+            self.theory_fretboard_view.set_notes(
+                self.display_scale_candidate_label(candidate),
+                self.display_scale_candidate_notes(candidate),
+                "Theory scale",
+                note_roles,
             )
             self.theory_scale_view.set_note_constraints(self.theory_note_overrides)
+            self.theory_fretboard_view.set_note_constraints(self.theory_note_overrides)
             self.theory_scale_view.set_preview_range(*self.scale_preview_range)
 
         def selected_theory_scale_candidate(self):
@@ -1258,7 +1305,9 @@ def main() -> int:
             self.timeline.set_note_name_formatter(self.display_note_name)
             self.timeline.set_chord_label_formatter(self.display_chord)
             self.piano_chord_view.set_pitch_class_formatter(self.display_pitch_class_name)
+            self.chord_fretboard_view.set_pitch_class_formatter(self.display_pitch_class_name)
             self.theory_scale_view.set_pitch_class_formatter(self.display_pitch_class_name)
+            self.theory_fretboard_view.set_pitch_class_formatter(self.display_pitch_class_name)
             self.refresh_current_harmony(self.timeline.position, force=True)
 
         def refresh_current_harmony(self, seconds: float, force: bool = False) -> None:
@@ -1290,16 +1339,19 @@ def main() -> int:
                 gui_harmony_flow.populate_note_filter_list(self, self.current_chord_base_weights)
             finally:
                 self.note_filter_list.blockSignals(False)
+            self.chord_fretboard_view.set_note_constraints(self.chord_note_overrides)
             self.refresh_current_harmony(self.timeline.position, force=True)
 
         def handle_theory_piano_constraint_changed(self, pitch_class: int, state: str) -> None:
             self._set_note_override(self.theory_note_overrides, pitch_class, state)
             self.theory_scale_view.set_note_constraints(self.theory_note_overrides)
+            self.theory_fretboard_view.set_note_constraints(self.theory_note_overrides)
             self.refresh_current_harmony(self.timeline.position, force=True)
 
         def reset_theory_note_filter(self) -> None:
             self.theory_note_overrides = {}
             self.theory_scale_view.set_note_constraints(self.theory_note_overrides)
+            self.theory_fretboard_view.set_note_constraints(self.theory_note_overrides)
             self.refresh_current_harmony(self.timeline.position, force=True)
 
         def _set_note_override(self, overrides: dict[int, str], pitch_class: int, state: str) -> None:
@@ -1316,6 +1368,49 @@ def main() -> int:
         def handle_scale_preview_range_changed(self, low_pitch: int, high_pitch: int) -> None:
             self.scale_preview_range = (low_pitch, high_pitch)
             self.refresh_theory_preview_actions()
+
+        def handle_chord_note_map_mode_changed(self, *_args) -> None:
+            mode = self.chord_view_mode.currentData() or "piano"
+            self.chord_note_map_stack.setCurrentWidget(
+                self.piano_chord_view if mode == "piano" else self.chord_fretboard_view
+            )
+            if mode in {"bass", "guitar"}:
+                self.chord_fretboard_view.set_tuning(mode)
+
+        def handle_theory_note_map_mode_changed(self, *_args) -> None:
+            mode = self.theory_view_mode.currentData() or "piano"
+            self.theory_note_map_stack.setCurrentWidget(
+                self.theory_scale_view if mode == "piano" else self.theory_fretboard_view
+            )
+            if mode in {"bass", "guitar"}:
+                self.theory_fretboard_view.set_tuning(mode)
+
+        def reset_chord_preview_to_one_octave(self) -> None:
+            root = self.selected_chord_root_pitch_class()
+            low = 48 + (root or 0)
+            while low > 60:
+                low -= 12
+            self.chord_preview_range = (low, low + 12)
+            self.piano_chord_view.set_preview_range(*self.chord_preview_range)
+            self.refresh_chord_keyboard()
+
+        def reset_scale_preview_to_one_octave(self) -> None:
+            candidate = self.selected_theory_scale_candidate()
+            root = candidate.root if candidate is not None else 0
+            low = 60 + root
+            self.scale_preview_range = (low, low + 12)
+            self.theory_scale_view.set_preview_range(*self.scale_preview_range)
+            self.refresh_theory_preview_actions()
+
+        def selected_chord_root_pitch_class(self) -> int | None:
+            track_chord = harmony_panel.active_chord_track_region(self)
+            if track_chord is not None:
+                parts = split_chord_label(track_chord.label)
+                return parts.root_pitch_class if parts is not None else None
+            item = self.chord_list.currentItem()
+            label = item.data(Qt.UserRole) if item is not None else None
+            parts = split_chord_label(label) if label else None
+            return parts.root_pitch_class if parts is not None else None
 
         def inspect_current_chord_analysis(self) -> None:
             gui_harmony_dialogs.inspect_current_chord_analysis(self)

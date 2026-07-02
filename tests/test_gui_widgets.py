@@ -10,7 +10,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtWidgets import QApplication
 
-from pitchstems.gui_widgets import DropZone, PianoChordWidget
+from pitchstems.gui_widgets import DropZone, FretboardNoteMapWidget, PianoChordWidget
 
 
 def _app() -> QApplication:
@@ -162,6 +162,40 @@ def test_piano_chord_widget_ctrl_click_cycles_note_constraint() -> None:
 
     assert changed == [(2, "force"), (2, "exclude"), (2, "auto")]
     assert widget.note_constraints == {}
+
+
+def test_fretboard_note_map_widget_maps_notes_across_bass_frets() -> None:
+    app = _app()
+    widget = FretboardNoteMapWidget()
+    widget.set_tuning("bass")
+    widget.set_chord("C", ["C", "E", "G"], "Inspector", {0: {"root"}})
+    widget.resize(360, 130)
+    widget.show()
+    app.processEvents()
+
+    hit_pitch_classes = {pitch % 12 for _rect, pitch, _name in widget._note_hitboxes}
+
+    assert widget.pitch_classes == {0, 4, 7}
+    assert hit_pitch_classes == {0, 4, 7}
+    assert widget.note_roles == {0: {"root"}}
+
+
+def test_fretboard_note_map_widget_ctrl_click_cycles_note_constraint() -> None:
+    app = _app()
+    widget = FretboardNoteMapWidget()
+    changed = []
+    widget.on_note_constraint_changed = lambda pitch_class, state: changed.append((pitch_class, state))
+    widget.set_chord("C", ["C", "E", "G"], "Inspector")
+    widget.resize(360, 130)
+    widget.show()
+    app.processEvents()
+
+    c_note = next(rect for rect, pitch, _name in widget._note_hitboxes if pitch % 12 == 0)
+
+    widget.mousePressEvent(_MouseEvent(c_note.center(), Qt.ControlModifier))
+
+    assert changed == [(0, "force")]
+    assert widget.note_constraints == {0: "force"}
 
 
 def test_drop_zone_project_label_uses_bounded_project_text(tmp_path: Path) -> None:

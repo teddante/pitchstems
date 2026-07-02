@@ -58,6 +58,8 @@ def refresh_current_harmony(window, seconds: float) -> None:
             window.theory_note_overrides = {}
         if hasattr(window, "piano_chord_view"):
             window.piano_chord_view.set_note_constraints(window.chord_note_overrides)
+        if hasattr(window, "chord_fretboard_view"):
+            window.chord_fretboard_view.set_note_constraints(window.chord_note_overrides)
         if hasattr(window, "theory_scale_view"):
             window.theory_scale_view.set_note_constraints(getattr(window, "theory_note_overrides", {}))
     source_notes = chord_analysis_notes(window)
@@ -284,6 +286,8 @@ def populate_note_filter_list(window, weights: dict[int, float]) -> None:
     harmony_panel.populate_note_filter_list(window, weights)
     if hasattr(window, "piano_chord_view"):
         window.piano_chord_view.set_note_constraints(window.chord_note_overrides)
+    if hasattr(window, "chord_fretboard_view"):
+        window.chord_fretboard_view.set_note_constraints(window.chord_note_overrides)
 
 
 def handle_chord_note_filter_changed(window, item) -> None:
@@ -311,4 +315,6 @@ def reset_chord_note_filter(window) -> None:
     window.chord_note_overrides = {}
     if hasattr(window, "piano_chord_view"):
         window.piano_chord_view.set_note_constraints(window.chord_note_overrides)
+    if hasattr(window, "chord_fretboard_view"):
+        window.chord_fretboard_view.set_note_constraints(window.chord_note_overrides)
     window.refresh_current_harmony(window.timeline.position, force=True)

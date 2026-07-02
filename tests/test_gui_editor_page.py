@@ -16,13 +16,14 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSlider,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from pitchstems.gui_editor_page import build_editor_page
 from pitchstems.gui_timeline import TimelineView
-from pitchstems.gui_widgets import PianoChordWidget
+from pitchstems.gui_widgets import FretboardNoteMapWidget, PianoChordWidget
 
 
 def _app() -> QApplication:
@@ -48,11 +49,23 @@ class _EditorWindow:
         self.reset_note_filter_button = QPushButton("Reset Evidence")
         self.inspect_chord_button = QPushButton("Inspect")
         self.piano_chord_view = PianoChordWidget()
+        self.chord_fretboard_view = FretboardNoteMapWidget()
+        self.chord_note_map_stack = QStackedWidget()
+        self.chord_note_map_stack.addWidget(self.piano_chord_view)
+        self.chord_note_map_stack.addWidget(self.chord_fretboard_view)
+        self.chord_view_mode = QComboBox()
+        self.chord_one_octave_button = QPushButton("1 Oct")
         self.preview_bass_note = QComboBox()
         self.preview_top_note = QComboBox()
         self.chord_list = QListWidget()
         self.theory_context = _wrapped_label("Theory: -", 54)
         self.theory_scale_view = PianoChordWidget()
+        self.theory_fretboard_view = FretboardNoteMapWidget()
+        self.theory_note_map_stack = QStackedWidget()
+        self.theory_note_map_stack.addWidget(self.theory_scale_view)
+        self.theory_note_map_stack.addWidget(self.theory_fretboard_view)
+        self.theory_view_mode = QComboBox()
+        self.theory_one_octave_button = QPushButton("1 Oct")
         self.theory_list = QListWidget()
         self.show_chromatic_scales = QCheckBox("Chromatic")
         self.preview_scale_button = QPushButton("Play Scale")
