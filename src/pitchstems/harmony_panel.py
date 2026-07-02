@@ -164,6 +164,8 @@ def refresh_chord_keyboard(window) -> None:
             window.piano_chord_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
         if hasattr(window, "chord_fretboard_view"):
             window.chord_fretboard_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
+        if hasattr(window, "set_chord_note_map_colours"):
+            window.set_chord_note_map_colours(track_chord.label, note_names)
         return
     item = window.chord_list.currentItem()
     if item is None:
@@ -174,6 +176,8 @@ def refresh_chord_keyboard(window) -> None:
             window.piano_chord_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
         if hasattr(window, "chord_fretboard_view"):
             window.chord_fretboard_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
+        if hasattr(window, "set_chord_note_map_colours"):
+            window.set_chord_note_map_colours(None, [])
         return
     label = item.data(Qt.UserRole)
     if not label:
@@ -184,6 +188,8 @@ def refresh_chord_keyboard(window) -> None:
             window.piano_chord_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
         if hasattr(window, "chord_fretboard_view"):
             window.chord_fretboard_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
+        if hasattr(window, "set_chord_note_map_colours"):
+            window.set_chord_note_map_colours(None, [])
         return
     note_names = item.data(Qt.UserRole + 2) or []
     source_label = window.preview_voicing_source_label() if hasattr(window, "preview_voicing_source_label") else "Inspector"
@@ -195,6 +201,8 @@ def refresh_chord_keyboard(window) -> None:
         window.piano_chord_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
     if hasattr(window, "chord_fretboard_view"):
         window.chord_fretboard_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
+    if hasattr(window, "set_chord_note_map_colours"):
+        window.set_chord_note_map_colours(label, note_names)
 
 
 def active_chord_track_region(window) -> ChordRegion | None:

@@ -51,6 +51,7 @@ def build_editor_page(window) -> QWidget:
     chord_map_row.setSpacing(6)
     chord_map_row.addWidget(window.chord_view_mode, 1)
     chord_map_row.addWidget(window.chord_one_octave_button)
+    chord_map_row.addWidget(window.note_map_colours)
     editor_side.addLayout(chord_map_row)
     editor_side.addWidget(window.chord_note_map_stack)
     editor_side.addWidget(window.chord_list, 1)
@@ -72,6 +73,8 @@ def build_editor_page(window) -> QWidget:
     theory_preview_row.setSpacing(6)
     theory_preview_row.addWidget(window.preview_scale_button)
     theory_preview_row.addWidget(window.preview_scale_pattern, 1)
+    theory_preview_row.addWidget(window.scale_chords_button)
+    theory_preview_row.addWidget(window.scale_browser_button)
     editor_side.addLayout(theory_preview_row)
     editor_side.addWidget(window.theory_list, 1)
 

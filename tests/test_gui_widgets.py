@@ -78,6 +78,18 @@ def test_piano_chord_widget_maps_double_sharp_to_sounding_key() -> None:
     assert widget.pitch_classes == {2, 3, 10}
 
 
+def test_piano_and_fretboard_widgets_accept_note_colours() -> None:
+    _app()
+    piano = PianoChordWidget()
+    fretboard = FretboardNoteMapWidget()
+
+    piano.set_note_colours({0: "#f97316", 4: "#2563eb"})
+    fretboard.set_note_colours({0: "#f97316", 4: "#2563eb"})
+
+    assert piano.note_colours == {0: "#f97316", 4: "#2563eb"}
+    assert fretboard.note_colours == {0: "#f97316", 4: "#2563eb"}
+
+
 class _MouseEvent:
     def __init__(self, position: QPointF, modifiers=Qt.NoModifier) -> None:
         self._position = position

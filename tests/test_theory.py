@@ -6,6 +6,8 @@ from pitchstems.theory import (
     analyze_chord_gap,
     analyze_theory_region,
     chord_gap_report,
+    contained_chords_for_scale,
+    searchable_scale_labels,
     theory_analysis_report,
 )
 
@@ -45,6 +47,34 @@ def test_generated_modes_keep_intervals_relative_to_each_mode_root() -> None:
     assert scales["Dorian"].intervals == (0, 2, 3, 5, 7, 9, 10)
     assert scales["Phrygian dominant"].intervals == (0, 1, 4, 5, 7, 8, 10)
     assert scales["Bebop dominant"].intervals == (0, 2, 4, 5, 7, 9, 10, 11)
+
+
+def test_contained_chords_for_major_scale_include_diatonic_triads_and_sevenths() -> None:
+    scales = {scale.name: scale for scale in SCALE_REGISTRY}
+    chords = contained_chords_for_scale(0, scales["Ionian"])
+    labels = {chord.label for chord in chords}
+
+    assert {"C", "Dm", "Em", "F", "G", "Am", "Bdim"} <= labels
+    assert {"Cmaj7", "Dm7", "G7", "Bm7b5"} <= labels
+
+
+def test_contained_chords_for_blues_scale_use_same_chord_vocabulary() -> None:
+    scales = {scale.name: scale for scale in SCALE_REGISTRY}
+    chords = contained_chords_for_scale(0, scales["Minor blues"])
+    labels = {chord.label for chord in chords}
+
+    assert "Cm" in labels
+    assert "Csus4" in labels
+    assert all(set(chord.pitch_classes) <= {0, 3, 5, 6, 7, 10} for chord in chords)
+
+
+def test_searchable_scale_labels_include_all_roots_and_registry_entries() -> None:
+    rows = searchable_scale_labels()
+    labels = {label for label, _root, _scale in rows}
+
+    assert len(rows) == len(SCALE_REGISTRY) * 12
+    assert "C major" in labels
+    assert "C Minor blues" in labels
 
 
 def test_theory_analysis_separates_pitch_collection_from_tonal_centre() -> None:

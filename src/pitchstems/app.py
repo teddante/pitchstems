@@ -24,9 +24,11 @@ from pitchstems.editor_loader import EditorLoadResult
 from pitchstems.evidence_display import percent_with_bar, visible_scale_candidates
 from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
 from pitchstems.midi_preview import render_note_preview
+from pitchstems.note_colours import note_colour_map
 from pitchstems.note_preview import single_note_preview_notes
-from pitchstems.notation import pitch_class_for_name, pitch_class_name, split_chord_label
+from pitchstems.notation import pitch_class_for_name, pitch_class_name, spell_scale, split_chord_label
 from pitchstems.pipeline_models import PipelineResult, StemResult
+from pitchstems.scale_chords import contained_chords_for_scale, searchable_scale_labels
 from pitchstems.scale_preview import SCALE_PREVIEW_PATTERNS, scale_preview_notes
 from pitchstems.theory_display import (
     display_scale_candidate_label,
@@ -74,6 +76,8 @@ def main() -> int:
             QButtonGroup,
             QCheckBox,
             QComboBox,
+            QDialog,
+            QDialogButtonBox,
             QDoubleSpinBox,
             QFrame,
             QGridLayout,
@@ -379,6 +383,8 @@ def main() -> int:
             self.notation_spelling.setToolTip(
                 "Controls enharmonic spelling for displayed notes and chords. Auto follows the current key/chord context where possible."
             )
+            self.note_map_colours = QCheckBox("Colours")
+            self.note_map_colours.setToolTip("Colour selected notes by their role/order in the current chord or scale.")
             self.timeline = TimelineView()
             self.timeline.set_note_name_formatter(self.display_note_name)
             self.timeline.set_chord_label_formatter(self.display_chord)
@@ -434,6 +440,11 @@ def main() -> int:
             self.preview_scale_button = QPushButton("Play Scale")
             self.preview_scale_button.setEnabled(False)
             self.preview_scale_button.setToolTip("Play a short preview of the selected Theory Inspector scale.")
+            self.scale_chords_button = QPushButton("Scale Chords")
+            self.scale_chords_button.setEnabled(False)
+            self.scale_chords_button.setToolTip("Show recognised chord shapes whose notes fit inside the selected scale.")
+            self.scale_browser_button = QPushButton("Scale Browser")
+            self.scale_browser_button.setToolTip("Search the scale registry and inspect contained chord shapes.")
             self.inspect_theory_button = QPushButton("Inspect Theory")
             self.inspect_theory_button.setEnabled(False)
             self.inspect_theory_button.setToolTip(
@@ -588,6 +599,9 @@ def main() -> int:
             self.inspect_chord_button.clicked.connect(self.inspect_current_chord_analysis)
             self.inspect_theory_button.clicked.connect(self.inspect_current_theory_analysis)
             self.preview_scale_button.clicked.connect(self.preview_selected_scale)
+            self.scale_chords_button.clicked.connect(self.show_selected_scale_chords)
+            self.scale_browser_button.clicked.connect(self.show_scale_browser)
+            self.note_map_colours.toggled.connect(self.refresh_note_map_colours)
             self.chord_view_mode.currentIndexChanged.connect(self.handle_chord_note_map_mode_changed)
             self.theory_view_mode.currentIndexChanged.connect(self.handle_theory_note_map_mode_changed)
             self.chord_one_octave_button.clicked.connect(self.reset_chord_preview_to_one_octave)
@@ -1139,11 +1153,14 @@ def main() -> int:
             has_candidate = candidate is not None
             self.preview_scale_button.setEnabled(has_candidate)
             self.preview_scale_pattern.setEnabled(has_candidate)
+            self.scale_chords_button.setEnabled(has_candidate)
             if candidate is None:
                 self.theory_scale_view.set_notes(None, [], "Theory scale", empty_message="No scale selected")
                 self.theory_fretboard_view.set_notes(None, [], "Theory scale", empty_message="No scale selected")
                 self.theory_scale_view.set_note_constraints(self.theory_note_overrides)
                 self.theory_fretboard_view.set_note_constraints(self.theory_note_overrides)
+                self.theory_scale_view.set_note_colours({})
+                self.theory_fretboard_view.set_note_colours({})
                 self.theory_scale_view.set_preview_range(*self.scale_preview_range)
                 return
             note_roles = {candidate.root: {"root"}}
@@ -1161,6 +1178,7 @@ def main() -> int:
             )
             self.theory_scale_view.set_note_constraints(self.theory_note_overrides)
             self.theory_fretboard_view.set_note_constraints(self.theory_note_overrides)
+            self.set_theory_note_map_colours(candidate)
             self.theory_scale_view.set_preview_range(*self.scale_preview_range)
 
         def selected_theory_scale_candidate(self):
@@ -1310,6 +1328,28 @@ def main() -> int:
             self.theory_fretboard_view.set_pitch_class_formatter(self.display_pitch_class_name)
             self.refresh_current_harmony(self.timeline.position, force=True)
 
+        def refresh_note_map_colours(self, *_args) -> None:
+            self.refresh_chord_keyboard()
+            self.refresh_theory_preview_actions()
+
+        def set_chord_note_map_colours(self, label: str | None, note_names: list[str]) -> None:
+            colours = {}
+            if self.note_map_colours.isChecked() and note_names:
+                parts = split_chord_label(label or "")
+                colours = note_colour_map(
+                    note_names,
+                    parts.root_pitch_class if parts is not None else None,
+                )
+            self.piano_chord_view.set_note_colours(colours)
+            self.chord_fretboard_view.set_note_colours(colours)
+
+        def set_theory_note_map_colours(self, candidate) -> None:
+            colours = {}
+            if self.note_map_colours.isChecked() and candidate is not None:
+                colours = note_colour_map(self.display_scale_candidate_notes(candidate), candidate.root)
+            self.theory_scale_view.set_note_colours(colours)
+            self.theory_fretboard_view.set_note_colours(colours)
+
         def refresh_current_harmony(self, seconds: float, force: bool = False) -> None:
             if self.harmony_refresh_gate.should_refresh(time.monotonic(), force=force):
                 gui_harmony_flow.refresh_current_harmony(self, seconds)
@@ -1417,6 +1457,104 @@ def main() -> int:
 
         def inspect_current_theory_analysis(self) -> None:
             gui_harmony_dialogs.inspect_current_theory_analysis(self)
+
+        def show_selected_scale_chords(self) -> None:
+            candidate = self.selected_theory_scale_candidate()
+            if candidate is None:
+                return
+            dialog = QDialog(self)
+            dialog.setWindowTitle(f"Scale Chords - {self.display_scale_candidate_label(candidate)}")
+            layout = QVBoxLayout()
+            summary = QLabel(
+                f"{self.display_scale_candidate_label(candidate)}\n"
+                f"{' - '.join(self.display_scale_candidate_notes(candidate))}"
+            )
+            summary.setWordWrap(True)
+            layout.addWidget(summary)
+            chord_list = QListWidget()
+            chord_list.setAlternatingRowColors(True)
+            self.populate_scale_chord_list(chord_list, candidate.root, candidate.scale)
+            layout.addWidget(chord_list, 1)
+            buttons = QDialogButtonBox(QDialogButtonBox.Close)
+            buttons.rejected.connect(dialog.reject)
+            layout.addWidget(buttons)
+            dialog.setLayout(layout)
+            dialog.resize(520, 460)
+            dialog.exec()
+
+        def show_scale_browser(self) -> None:
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Scale Browser")
+            layout = QVBoxLayout()
+            search = QLineEdit()
+            search.setPlaceholderText("Search scales, families, aliases, or roots")
+            layout.addWidget(search)
+            body = QHBoxLayout()
+            scale_list = QListWidget()
+            scale_list.setAlternatingRowColors(True)
+            chord_list = QListWidget()
+            chord_list.setAlternatingRowColors(True)
+            body.addWidget(scale_list, 1)
+            body.addWidget(chord_list, 1)
+            layout.addLayout(body, 1)
+            buttons = QDialogButtonBox(QDialogButtonBox.Close)
+            buttons.rejected.connect(dialog.reject)
+            layout.addWidget(buttons)
+            rows = searchable_scale_labels(self.selected_notation_preference())
+
+            def refresh_scale_rows(_text: str = "") -> None:
+                query = search.text().strip().lower()
+                scale_list.clear()
+                for label, root, scale in rows:
+                    haystack = f"{label} {scale.family} {' '.join(scale.aliases)}".lower()
+                    if query and query not in haystack:
+                        continue
+                    item = QListWidgetItem(
+                        f"{label}\n"
+                        f"{' - '.join(spell_scale(root, scale.intervals, self.selected_notation_preference()))}"
+                    )
+                    item.setData(Qt.UserRole, root)
+                    item.setData(Qt.UserRole + 1, scale)
+                    item.setToolTip(f"Family: {scale.family}\nAliases: {', '.join(scale.aliases) or '-'}")
+                    scale_list.addItem(item)
+                if scale_list.count():
+                    scale_list.setCurrentRow(0)
+                else:
+                    chord_list.clear()
+                    chord_list.addItem("No matching scales.")
+
+            def refresh_chords_for_item(item) -> None:
+                chord_list.clear()
+                if item is None:
+                    return
+                root = item.data(Qt.UserRole)
+                scale = item.data(Qt.UserRole + 1)
+                self.populate_scale_chord_list(chord_list, root, scale)
+
+            scale_list.currentItemChanged.connect(lambda item, _previous: refresh_chords_for_item(item))
+            search.textChanged.connect(refresh_scale_rows)
+            dialog.setLayout(layout)
+            dialog.resize(820, 520)
+            refresh_scale_rows()
+            dialog.exec()
+
+        def populate_scale_chord_list(self, chord_list, root: int, scale) -> None:
+            chord_list.clear()
+            chords = contained_chords_for_scale(root, scale, self.selected_notation_preference())
+            if not chords:
+                chord_list.addItem("No recognised contained chord shapes.")
+                return
+            for chord in chords:
+                item = QListWidgetItem(
+                    f"{chord.category.title()}  degree {chord.degree}: {chord.label}\n"
+                    f"{' - '.join(chord.notes)}"
+                )
+                item.setToolTip(
+                    f"{chord.label}\n"
+                    f"Notes: {' - '.join(chord.notes)}\n"
+                    f"All listed tones are inside the selected scale."
+                )
+                chord_list.addItem(item)
 
         def inspect_current_gap_suggestions(self) -> None:
             gui_harmony_dialogs.inspect_current_gap_suggestions(self)

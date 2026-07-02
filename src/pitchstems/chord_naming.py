@@ -69,6 +69,10 @@ def exact_chord_names_for_pitch_classes(pitch_classes: set[int], bass: int | Non
     return names
 
 
+def chord_quality_templates() -> tuple[tuple[str, tuple[int, ...]], ...]:
+    return tuple(_chord_qualities())
+
+
 def chord_pitch_classes_for_label(label: str) -> list[int]:
     parts = split_chord_label(label)
     if parts is None:

@@ -122,6 +122,7 @@ class PianoChordWidget(QWidget):
         self.pitch_classes: set[int] = set()
         self.note_roles: dict[int, set[str]] = {}
         self.note_constraints: dict[int, str] = {}
+        self.note_colours: dict[int, str] = {}
         self.preview_low_pitch = 48
         self.preview_high_pitch = 72
         self.pitch_class_formatter = pitch_class_name
@@ -190,6 +191,14 @@ class PianoChordWidget(QWidget):
         }
         self.update()
 
+    def set_note_colours(self, colours: dict[int, str] | None) -> None:
+        self.note_colours = {
+            pitch_class % 12: colour
+            for pitch_class, colour in (colours or {}).items()
+            if colour
+        }
+        self.update()
+
     def set_preview_range(self, low_pitch: int, high_pitch: int) -> None:
         low, high = _normalized_preview_range(low_pitch, high_pitch)
         self.preview_low_pitch = low
@@ -240,13 +249,14 @@ class PianoChordWidget(QWidget):
             width = max(1, next_x - x)
             self._key_hitboxes.append((QRectF(x, keyboard_top, width, keyboard_height), pitch, name))
             highlighted = pitch_class in self.pitch_classes
-            painter.setBrush(QBrush(QColor("#fde68a" if highlighted else "#ffffff")))
+            fill_colour = self._highlight_colour(pitch_class, "#fde68a") if highlighted else QColor("#ffffff")
+            painter.setBrush(QBrush(fill_colour))
             painter.setPen(QPen(QColor("#94a3b8"), 1))
             painter.drawRect(x, keyboard_top, width, keyboard_height)
             self._draw_constraint_marker(painter, QRectF(x, keyboard_top, width, keyboard_height), pitch_class)
             if highlighted:
                 self._draw_role_badge(painter, QRectF(x, keyboard_top, width, keyboard_height), pitch_class)
-            painter.setPen(QColor("#1f2937" if highlighted else "#64748b"))
+            painter.setPen(_contrast_text_colour(fill_colour) if highlighted else QColor("#64748b"))
             painter.drawText(
                 x,
                 keyboard_top + keyboard_height - 18,
@@ -270,13 +280,14 @@ class PianoChordWidget(QWidget):
             x = round(center_x - black_width / 2)
             self._key_hitboxes.append((QRectF(x, keyboard_top, black_width, black_height), pitch, name))
             highlighted = pitch_class in self.pitch_classes
-            painter.setBrush(QBrush(QColor("#fbbf24" if highlighted else "#111827")))
+            fill_colour = self._highlight_colour(pitch_class, "#fbbf24") if highlighted else QColor("#111827")
+            painter.setBrush(QBrush(fill_colour))
             painter.setPen(QPen(QColor("#475569" if highlighted else "#020617"), 1))
             painter.drawRect(x, keyboard_top, black_width, black_height)
             self._draw_constraint_marker(painter, QRectF(x, keyboard_top, black_width, black_height), pitch_class)
             if highlighted:
                 self._draw_role_badge(painter, QRectF(x, keyboard_top, black_width, black_height), pitch_class)
-            painter.setPen(QColor("#111827" if highlighted else "#f8fafc"))
+            painter.setPen(_contrast_text_colour(fill_colour) if highlighted else QColor("#f8fafc"))
             painter.drawText(x, keyboard_top + black_height - 16, black_width, 14, Qt.AlignCenter, name)
 
         if not self.pitch_classes:
@@ -331,6 +342,9 @@ class PianoChordWidget(QWidget):
         if key_width >= 22:
             return f"{name}{pitch // 12 - 1}"
         return name
+
+    def _highlight_colour(self, pitch_class: int, fallback: str) -> QColor:
+        return QColor(self.note_colours.get(pitch_class, fallback))
 
     def _draw_role_badge(self, painter: QPainter, rect: QRectF, pitch_class: int) -> None:
         roles = self.note_roles.get(pitch_class)
@@ -516,6 +530,7 @@ class FretboardNoteMapWidget(QWidget):
         self.pitch_classes: set[int] = set()
         self.note_roles: dict[int, set[str]] = {}
         self.note_constraints: dict[int, str] = {}
+        self.note_colours: dict[int, str] = {}
         self.pitch_class_formatter = pitch_class_name
         self.tuning_key = "bass"
         self.on_note_clicked = None
@@ -579,6 +594,14 @@ class FretboardNoteMapWidget(QWidget):
             pitch_class % 12: state
             for pitch_class, state in (constraints or {}).items()
             if state in {"force", "exclude"}
+        }
+        self.update()
+
+    def set_note_colours(self, colours: dict[int, str] | None) -> None:
+        self.note_colours = {
+            pitch_class % 12: colour
+            for pitch_class, colour in (colours or {}).items()
+            if colour
         }
         self.update()
 
@@ -649,9 +672,10 @@ class FretboardNoteMapWidget(QWidget):
                 rect = QRectF(x - radius, y - radius, radius * 2, radius * 2)
                 self._note_hitboxes.append((rect, pitch, name))
                 painter.setPen(QPen(QColor("#92400e"), 1))
-                painter.setBrush(QBrush(QColor("#fde68a")))
+                fill_colour = QColor(self.note_colours.get(pitch_class, "#fde68a"))
+                painter.setBrush(QBrush(fill_colour))
                 painter.drawEllipse(rect)
-                painter.setPen(QColor("#1f2937"))
+                painter.setPen(_contrast_text_colour(fill_colour))
                 painter.drawText(rect, Qt.AlignCenter, name[:2])
                 self._draw_role_badge(painter, rect, pitch_class)
                 self._draw_constraint_marker(painter, rect, pitch_class)
@@ -762,3 +786,8 @@ class FretboardNoteMapWidget(QWidget):
         if self.on_note_constraint_changed is not None:
             self.on_note_constraint_changed(pitch_class, state)
         self.update()
+
+
+def _contrast_text_colour(colour: QColor) -> QColor:
+    luminance = (colour.red() * 0.299) + (colour.green() * 0.587) + (colour.blue() * 0.114)
+    return QColor("#111827" if luminance > 150 else "#f8fafc")
