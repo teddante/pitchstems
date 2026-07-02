@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QRectF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QBrush, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import (
     QMenu,
@@ -522,6 +522,7 @@ class FretboardNoteMapWidget(QWidget):
         self.on_note_constraint_changed = None
         self.on_note_constraints_reset = None
         self._note_hitboxes: list[tuple[QRectF, int, str]] = []
+        self._fret_hitboxes: list[tuple[QRectF, int, str]] = []
         self.setMinimumHeight(118)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.setToolTip("Shows every matching note position across the selected fretted instrument.")
@@ -606,6 +607,7 @@ class FretboardNoteMapWidget(QWidget):
         fret_width = board.width() / max(1, fret_count)
         string_gap = board.height() / max(1, string_count - 1)
         self._note_hitboxes = []
+        self._fret_hitboxes = []
 
         painter.setPen(QPen(QColor("#94a3b8"), 1))
         for fret in range(fret_count + 1):
@@ -616,6 +618,8 @@ class FretboardNoteMapWidget(QWidget):
             if fret > 0 and fret in {3, 5, 7, 9, 12, 15, 17, 19}:
                 painter.setPen(QColor("#64748b"))
                 painter.drawText(QRectF(x - fret_width, board.bottom() - 13, fret_width, 12), Qt.AlignCenter, str(fret))
+
+        self._draw_fret_markers(painter, board, fret_width, string_gap)
 
         for string_index, open_pitch in enumerate(reversed(strings)):
             y = board.top() + string_index * string_gap
@@ -630,12 +634,19 @@ class FretboardNoteMapWidget(QWidget):
             for fret in range(fret_count + 1):
                 pitch = open_pitch + fret
                 pitch_class = pitch % 12
+                x = board.left() if fret == 0 else board.left() + (fret - 0.5) * fret_width
+                name = self.pitch_class_formatter(pitch_class)
+                hitbox_width = max(16, fret_width)
+                hitbox_height = max(16, min(30, string_gap if string_count > 1 else board.height()))
+                if fret == 0:
+                    hitbox_left = max(bounds.left(), board.left() - hitbox_width * 0.5)
+                else:
+                    hitbox_left = board.left() + (fret - 1) * fret_width
+                self._fret_hitboxes.append((QRectF(hitbox_left, y - hitbox_height * 0.5, hitbox_width, hitbox_height), pitch, name))
                 if pitch_class not in self.pitch_classes:
                     continue
-                x = board.left() if fret == 0 else board.left() + (fret - 0.5) * fret_width
                 radius = max(6, min(11, fret_width * 0.32))
                 rect = QRectF(x - radius, y - radius, radius * 2, radius * 2)
-                name = self.pitch_class_formatter(pitch_class)
                 self._note_hitboxes.append((rect, pitch, name))
                 painter.setPen(QPen(QColor("#92400e"), 1))
                 painter.setBrush(QBrush(QColor("#fde68a")))
@@ -650,28 +661,52 @@ class FretboardNoteMapWidget(QWidget):
             painter.drawText(board, Qt.AlignCenter, self.empty_message)
 
     def mousePressEvent(self, event) -> None:
+        hit = self._hit_note(event.position())
         if event.button() == Qt.RightButton:
-            for rect, pitch, name in reversed(self._note_hitboxes):
-                if rect.contains(event.position()):
-                    self._show_note_constraint_menu(event.globalPosition().toPoint(), pitch % 12, name)
-                    event.accept()
-                    return
+            if hit is not None:
+                pitch, name = hit
+                self._show_note_constraint_menu(event.globalPosition().toPoint(), pitch % 12, name)
+                event.accept()
+                return
         if event.button() != Qt.LeftButton:
             super().mousePressEvent(event)
             return
-        for rect, pitch, name in reversed(self._note_hitboxes):
-            if rect.contains(event.position()):
-                modifiers = event.modifiers() if hasattr(event, "modifiers") else Qt.NoModifier
-                if modifiers & Qt.ControlModifier:
-                    self._cycle_note_constraint(pitch % 12)
-                elif self.on_note_clicked is not None:
-                    self.on_note_clicked(pitch, name)
-                else:
-                    super().mousePressEvent(event)
-                    return
-                event.accept()
+        if hit is not None:
+            pitch, name = hit
+            modifiers = event.modifiers() if hasattr(event, "modifiers") else Qt.NoModifier
+            if modifiers & Qt.ControlModifier:
+                self._cycle_note_constraint(pitch % 12)
+            elif self.on_note_clicked is not None:
+                self.on_note_clicked(pitch, name)
+            else:
+                super().mousePressEvent(event)
                 return
+            event.accept()
+            return
         super().mousePressEvent(event)
+
+    def _hit_note(self, position) -> tuple[int, str] | None:
+        for rect, pitch, name in reversed(self._note_hitboxes):
+            if rect.contains(position):
+                return pitch, name
+        for rect, pitch, name in reversed(self._fret_hitboxes):
+            if rect.contains(position):
+                return pitch, name
+        return None
+
+    def _draw_fret_markers(self, painter: QPainter, board: QRectF, fret_width: float, string_gap: float) -> None:
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(QColor("#cbd5e1")))
+        radius = max(3.0, min(5.0, fret_width * 0.16))
+        center_y = board.center().y()
+        for fret in (3, 5, 7, 9, 12, 15, 17, 19):
+            x = board.left() + (fret - 0.5) * fret_width
+            if fret == 12:
+                offset = max(10.0, string_gap * 0.7)
+                painter.drawEllipse(QPointF(x, center_y - offset * 0.5), radius, radius)
+                painter.drawEllipse(QPointF(x, center_y + offset * 0.5), radius, radius)
+            else:
+                painter.drawEllipse(QPointF(x, center_y), radius, radius)
 
     def _draw_role_badge(self, painter: QPainter, rect: QRectF, pitch_class: int) -> None:
         roles = self.note_roles.get(pitch_class)

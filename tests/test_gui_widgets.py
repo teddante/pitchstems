@@ -198,6 +198,50 @@ def test_fretboard_note_map_widget_ctrl_click_cycles_note_constraint() -> None:
     assert widget.note_constraints == {0: "force"}
 
 
+def test_fretboard_note_map_widget_clicks_unhighlighted_fret_note() -> None:
+    app = _app()
+    widget = FretboardNoteMapWidget()
+    clicked = []
+    widget.on_note_clicked = lambda pitch, name: clicked.append((pitch, name))
+    widget.set_chord("C", ["C", "E", "G"], "Inspector")
+    widget.resize(360, 130)
+    widget.show()
+    app.processEvents()
+
+    unhighlighted = next(
+        (rect, pitch, _name)
+        for rect, pitch, _name in widget._fret_hitboxes
+        if pitch % 12 not in widget.pitch_classes
+    )
+
+    widget.mousePressEvent(_MouseEvent(unhighlighted[0].center()))
+
+    assert clicked
+    assert clicked[-1][0] == unhighlighted[1]
+
+
+def test_fretboard_note_map_widget_ctrl_clicks_unhighlighted_fret_constraint() -> None:
+    app = _app()
+    widget = FretboardNoteMapWidget()
+    changed = []
+    widget.on_note_constraint_changed = lambda pitch_class, state: changed.append((pitch_class, state))
+    widget.set_chord("C", ["C", "E", "G"], "Inspector")
+    widget.resize(360, 130)
+    widget.show()
+    app.processEvents()
+
+    unhighlighted = next(
+        (rect, pitch, _name)
+        for rect, pitch, _name in widget._fret_hitboxes
+        if pitch % 12 not in widget.pitch_classes
+    )
+
+    widget.mousePressEvent(_MouseEvent(unhighlighted[0].center(), Qt.ControlModifier))
+
+    assert changed == [(unhighlighted[1] % 12, "force")]
+    assert widget.note_constraints == {unhighlighted[1] % 12: "force"}
+
+
 def test_drop_zone_project_label_uses_bounded_project_text(tmp_path: Path) -> None:
     _app()
     widget = DropZone()
