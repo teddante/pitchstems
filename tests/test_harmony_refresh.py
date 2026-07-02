@@ -7,6 +7,7 @@ from pitchstems.gui_harmony_flow import (
     analysis_notes_active_at,
     analysis_notes_overlapping_ranges,
     chord_context_key,
+    current_review_target,
     current_chord_gap_range,
     refresh_current_gap_suggestions,
     refresh_current_theory,
@@ -36,6 +37,17 @@ def test_chord_context_key_prefers_explicit_selection_over_selected_chord() -> N
     window = _Window([(3.0, 4.0)], ChordRegion(1.0, 2.0, "G", 0.8))
 
     assert chord_context_key(window, 9.0) == ("selection", 3.0, 4.0)
+
+
+def test_current_review_target_names_selected_chord() -> None:
+    chord = ChordRegion(1.0, 2.0, "G", 0.8)
+    window = _Window([], chord)
+
+    target = current_review_target(window, 9.0)
+
+    assert target.mode == "selected_chord"
+    assert target.heading == "Selected chord"
+    assert target.single_range == (1.0, 2.0)
 
 
 def test_analysis_notes_overlapping_ranges_filters_by_note_index() -> None:
@@ -80,6 +92,18 @@ def test_current_chord_gap_range_falls_back_to_playhead_gap() -> None:
     assert window.editor_project.chord_index.positions == [4.25]
 
 
+def test_current_chord_gap_range_ignores_playhead_gap_while_chord_selected() -> None:
+    window = _GapWindow(
+        selection=None,
+        gap=(4.0, 5.0),
+        position=4.25,
+        selected_chord=ChordRegion(1.0, 2.0, "G", 0.8),
+    )
+
+    assert current_chord_gap_range(window) is None
+    assert window.editor_project.chord_index.positions == []
+
+
 def test_current_chord_gap_range_requires_project() -> None:
     window = _GapWindow(selection=(2.0, 3.0), gap=(4.0, 5.0))
     window.editor_project = None
@@ -110,6 +134,19 @@ def test_refresh_current_gap_suggestions_clears_when_no_gap() -> None:
     refresh_current_gap_suggestions(window, [])
 
     assert window.gap_analyses == [None]
+
+
+def test_refresh_current_gap_suggestions_explains_selected_chord_context() -> None:
+    window = _GapWindow(
+        selection=None,
+        gap=(4.0, 5.0),
+        selected_chord=ChordRegion(1.0, 2.0, "G", 0.8),
+    )
+
+    refresh_current_gap_suggestions(window, [])
+
+    assert window.gap_analyses == [None]
+    assert window.current_gap_empty_message.startswith("Selected chord is being reviewed")
 
 
 def test_refresh_current_theory_clears_without_project() -> None:
@@ -252,12 +289,21 @@ class _GapProject:
 
 
 class _GapTimeline:
-    def __init__(self, selection: tuple[float, float] | None, position: float) -> None:
+    def __init__(
+        self,
+        selection: tuple[float, float] | None,
+        position: float,
+        selected_chord: ChordRegion | None,
+    ) -> None:
         self._selection = selection
         self.position = position
+        self.selected_chord = selected_chord
 
     def selection_range(self) -> tuple[float, float] | None:
         return self._selection
+
+    def selection_ranges(self) -> list[tuple[float, float]]:
+        return [self._selection] if self._selection is not None else []
 
 
 class _GapWindow:
@@ -266,8 +312,9 @@ class _GapWindow:
         selection: tuple[float, float] | None,
         gap: tuple[float, float] | None,
         position: float = 0.0,
+        selected_chord: ChordRegion | None = None,
     ) -> None:
-        self.timeline = _GapTimeline(selection, position)
+        self.timeline = _GapTimeline(selection, position, selected_chord)
         self.editor_project: _GapProject | None = _GapProject(gap)
         self.gap_analyses = []
 

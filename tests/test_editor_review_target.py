@@ -5,6 +5,7 @@ from pitchstems.editor_review_target import (
     review_ranges_brief_text,
     review_ranges_detail_text,
     review_ranges_total_seconds,
+    review_target,
     single_review_range,
 )
 
@@ -19,6 +20,36 @@ def test_review_ranges_fall_back_to_selected_chord() -> None:
     selected_chord = ChordRegion(3.0, 4.0, "G", 0.8)
 
     assert review_ranges([], selected_chord) == [(3.0, 4.0)]
+
+
+def test_review_target_names_explicit_selection() -> None:
+    selected_chord = ChordRegion(3.0, 4.0, "G", 0.8)
+
+    target = review_target([(1.0, 2.0)], selected_chord, 9.0)
+
+    assert target.mode == "selection"
+    assert target.heading == "Timeline range"
+    assert target.ranges == ((1.0, 2.0),)
+    assert target.chord is None
+
+
+def test_review_target_names_selected_chord_fallback() -> None:
+    selected_chord = ChordRegion(3.0, 4.0, "G", 0.8)
+
+    target = review_target([], selected_chord, 9.0)
+
+    assert target.mode == "selected_chord"
+    assert target.heading == "Selected chord"
+    assert target.single_range == (3.0, 4.0)
+    assert target.chord == selected_chord
+
+
+def test_review_target_names_playhead_without_range_or_chord() -> None:
+    target = review_target([], None, 9.0)
+
+    assert target.mode == "playhead"
+    assert target.heading == "Playhead"
+    assert target.ranges == ()
 
 
 def test_single_review_range_requires_exactly_one_range() -> None:

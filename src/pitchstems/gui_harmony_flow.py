@@ -3,8 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from pitchstems.editor_review_target import (
-    review_ranges,
+    ReviewTarget,
     review_ranges_brief_text,
+    review_target,
     single_review_range,
 )
 from pitchstems.editor_project import analyze_chord_at, analyze_chord_regions
@@ -64,26 +65,25 @@ def refresh_current_harmony(window, seconds: float) -> None:
     analysis_notes = filtered_chord_analysis_notes(window, source_notes, context)
     sample_text = chord_sample_text(window, source_notes)
     scoring_options = window.chord_scoring_options()
-    explicit_ranges = window.timeline.selection_ranges()
-    selection_ranges = review_ranges(explicit_ranges, window.timeline.selected_chord)
-    if selection_ranges:
+    target = current_review_target(window, seconds)
+    if target.ranges:
         required, excluded = chord_note_constraints(window)
         region_analysis_notes = analysis_notes_overlapping_ranges(
             window.editor_project,
             analysis_notes,
-            selection_ranges,
+            list(target.ranges),
         )
         analysis = analyze_chord_regions(
             region_analysis_notes,
-            selection_ranges,
+            list(target.ranges),
             required_pitch_classes=required,
             excluded_pitch_classes=excluded,
             scoring_options=scoring_options,
         )
         window.refresh_current_theory(source_notes, seconds)
         chord = window.display_chord(analysis.label)
-        range_text = review_ranges_brief_text(selection_ranges)
-        label = "Selected chord" if not explicit_ranges and window.timeline.selected_chord is not None else "Selection"
+        range_text = review_ranges_brief_text(list(target.ranges))
+        label = target.heading
         window.current_chord.setText(
             f"{label}: {chord}  (score {analysis.confidence:.0%})  "
             f"{range_text}"
@@ -148,7 +148,7 @@ def analysis_notes_active_at(editor_project, notes, seconds: float):
 
 
 def chord_context_key(window, seconds: float):
-    ranges = review_ranges(window.timeline.selection_ranges(), window.timeline.selected_chord)
+    ranges = list(current_review_target(window, seconds).ranges)
     return inspector_harmony_context_key(
         seconds,
         single_review_range(ranges),
@@ -160,12 +160,12 @@ def refresh_current_theory(window, source_notes, seconds: float) -> None:
     if window.editor_project is None:
         window.set_theory_analysis(None)
         return
-    selection_ranges = review_ranges(window.timeline.selection_ranges(), window.timeline.selected_chord)
-    if len(selection_ranges) > 1:
+    target = current_review_target(window, seconds)
+    if len(target.ranges) > 1:
         window.set_theory_analysis(None)
         return
     required, excluded = theory_note_constraints(window)
-    selection = single_review_range(selection_ranges)
+    selection = target.single_range
     if selection is not None:
         start, end = selection
         analysis = analyze_theory_region(
@@ -189,10 +189,12 @@ def refresh_current_theory(window, source_notes, seconds: float) -> None:
 
 def refresh_current_gap_suggestions(window, source_notes) -> None:
     if window.editor_project is None:
+        window.current_gap_empty_message = "No chord-track gap selected or under the playhead."
         window.set_gap_analysis(None)
         return
     gap = current_chord_gap_range(window)
     if gap is None:
+        window.current_gap_empty_message = gap_empty_message(window)
         window.set_gap_analysis(None)
         return
     start, end = gap
@@ -206,16 +208,36 @@ def refresh_current_gap_suggestions(window, source_notes) -> None:
     window.set_gap_analysis(analysis)
 
 
+def current_review_target(window, seconds: float) -> ReviewTarget:
+    return review_target(
+        window.timeline.selection_ranges(),
+        window.timeline.selected_chord,
+        seconds,
+    )
+
+
 def current_chord_gap_range(window) -> tuple[float, float] | None:
     if window.editor_project is None:
         return None
     selection = window.timeline.selection_range()
+    if window.timeline.selection_ranges() and selection is None:
+        return None
     if selection is not None:
         start, end = selection
         if end - start >= 0.05:
             return start, end
         return None
+    if window.timeline.selected_chord is not None:
+        return None
     return window.editor_project.chord_index.gap_at(window.timeline.position)
+
+
+def gap_empty_message(window) -> str:
+    if window.timeline.selection_ranges() and window.timeline.selection_range() is None:
+        return "Multiple timeline ranges are being reviewed. Select one gap range or move the playhead into a chord-track gap."
+    if window.timeline.selected_chord is not None and not window.timeline.selection_range():
+        return "Selected chord is being reviewed. Clear it or move the playhead into a chord-track gap."
+    return "No chord-track gap selected or under the playhead."
 
 
 def chord_analysis_notes(window):

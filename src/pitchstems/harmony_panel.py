@@ -14,7 +14,9 @@ def set_gap_analysis(window, analysis) -> None:
     window.current_chord_gap_analysis = analysis
     window.gap_suggestion_list.clear()
     if analysis is None or not analysis.suggestions:
-        window.gap_suggestion_list.addItem("No chord-track gap selected or under the playhead.")
+        window.gap_suggestion_list.addItem(
+            getattr(window, "current_gap_empty_message", "No chord-track gap selected or under the playhead.")
+        )
         refresh_gap_suggestion_actions(window)
         return
     window.gap_suggestion_list.addItem(f"Gap {format_time(analysis.start)} - {format_time(analysis.end)}")

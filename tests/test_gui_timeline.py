@@ -75,6 +75,25 @@ def test_timeline_load_setup_can_batch_redraws(tmp_path: Path) -> None:
     assert set(view.track_geometries) == {"piano"}
 
 
+def test_timeline_chord_labels_use_formatter_and_edited_marker(tmp_path: Path) -> None:
+    _app()
+    view = TimelineView()
+    project = _project(tmp_path)
+    view.set_chord_label_formatter(lambda label: {"G": "F##"}.get(label, label))
+    view.set_project(project)
+    view.set_manual_chords([project.chords[0]])
+
+    labels = [
+        item.toPlainText()
+        for item in view.scene.items()
+        if hasattr(item, "toPlainText")
+    ]
+
+    assert "F##" in labels
+    assert "Edited" in labels
+    assert not any(label.endswith("*") for label in labels)
+
+
 def test_timeline_deferred_redraw_does_not_flush_after_error(tmp_path: Path) -> None:
     _app()
     view = TimelineView()

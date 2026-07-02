@@ -1,8 +1,38 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Literal
+
 from pitchstems.chord_regions import merge_or_selected_chord_range
 from pitchstems.editor_project import ChordRegion
 from pitchstems.time_format import format_time
+
+ReviewTargetMode = Literal["playhead", "selected_chord", "selection", "multi_selection"]
+
+
+@dataclass(frozen=True)
+class ReviewTarget:
+    mode: ReviewTargetMode
+    ranges: tuple[tuple[float, float], ...]
+    chord: ChordRegion | None = None
+    position_seconds: float | None = None
+
+    @property
+    def single_range(self) -> tuple[float, float] | None:
+        return single_review_range(list(self.ranges))
+
+    @property
+    def is_range_based(self) -> bool:
+        return bool(self.ranges)
+
+    @property
+    def heading(self) -> str:
+        return {
+            "playhead": "Playhead",
+            "selected_chord": "Selected chord",
+            "selection": "Timeline range",
+            "multi_selection": "Timeline ranges",
+        }[self.mode]
 
 
 def review_ranges(
@@ -10,6 +40,25 @@ def review_ranges(
     selected_chord: ChordRegion | None,
 ) -> list[tuple[float, float]]:
     return merge_or_selected_chord_range(selection_ranges, selected_chord)
+
+
+def review_target(
+    selection_ranges: list[tuple[float, float]],
+    selected_chord: ChordRegion | None,
+    position_seconds: float,
+) -> ReviewTarget:
+    ranges = merge_or_selected_chord_range(selection_ranges, selected_chord)
+    if selection_ranges:
+        mode: ReviewTargetMode = "multi_selection" if len(ranges) > 1 else "selection"
+        return ReviewTarget(mode=mode, ranges=tuple(ranges), position_seconds=position_seconds)
+    if selected_chord is not None:
+        return ReviewTarget(
+            mode="selected_chord",
+            ranges=((selected_chord.start, selected_chord.end),),
+            chord=selected_chord,
+            position_seconds=position_seconds,
+        )
+    return ReviewTarget(mode="playhead", ranges=(), position_seconds=position_seconds)
 
 
 def single_review_range(ranges: list[tuple[float, float]]) -> tuple[float, float] | None:

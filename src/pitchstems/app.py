@@ -172,6 +172,7 @@ def main() -> int:
             self.harmony_refresh_gate = gui_harmony_flow.HarmonyRefreshGate()
             self.current_theory_analysis: TheoryAnalysis | None = None
             self.current_chord_gap_analysis: ChordGapAnalysis | None = None
+            self.current_gap_empty_message = "No chord-track gap selected or under the playhead."
             self.updating_chord_note_filter = False
 
             self.drop_zone = DropZone()
@@ -378,6 +379,7 @@ def main() -> int:
             )
             self.timeline = TimelineView()
             self.timeline.set_note_name_formatter(self.display_note_name)
+            self.timeline.set_chord_label_formatter(self.display_chord)
             self.timeline.on_position_changed = self.set_editor_position_seconds
             self.timeline.on_selection_changed = self.set_editor_selection
             self.timeline.on_chord_edited = self.edit_timeline_chord
@@ -1254,6 +1256,7 @@ def main() -> int:
 
         def handle_notation_spelling_changed(self, *_args) -> None:
             self.timeline.set_note_name_formatter(self.display_note_name)
+            self.timeline.set_chord_label_formatter(self.display_chord)
             self.piano_chord_view.set_pitch_class_formatter(self.display_pitch_class_name)
             self.theory_scale_view.set_pitch_class_formatter(self.display_pitch_class_name)
             self.refresh_current_harmony(self.timeline.position, force=True)

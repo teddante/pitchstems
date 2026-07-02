@@ -55,6 +55,7 @@ class TimelineView(QGraphicsView):
         self.max_note_duration_by_track: dict[str, float] = {}
         self.pitch_ranges: dict[str, tuple[int, int]] = {}
         self.note_name_formatter = midi_note_name
+        self.chord_label_formatter = lambda label: label
         self.last_redraw_stats = ""
         self.sticky_x_items = []
         self.sticky_y_items = []
@@ -177,6 +178,10 @@ class TimelineView(QGraphicsView):
 
     def set_note_name_formatter(self, formatter) -> None:
         self.note_name_formatter = formatter
+        self.redraw()
+
+    def set_chord_label_formatter(self, formatter) -> None:
+        self.chord_label_formatter = formatter
         self.redraw()
 
     def zoom_horizontal(self, factor: float) -> None:
@@ -491,14 +496,15 @@ class TimelineView(QGraphicsView):
             )
             self._make_sticky_y(rect, 28)
             rect.setData(0, chord)
+            display_label = self.chord_label_formatter(chord.label)
             rect.setToolTip(
-                f"{chord.label}  {source_label}  {format_time(chord.start)} - {format_time(chord.end)}\n"
+                f"{display_label}  {source_label}  {format_time(chord.start)} - {format_time(chord.end)}\n"
                 f"Ranking score: {chord.confidence:.0%}\n"
                 "Drag the middle to move, drag an edge to resize, Delete removes the selected chord."
             )
             label_width = max(8, int(width) - 8)
-            timeline_label = f"{chord.label}*" if source_label == "Edited" else chord.label
-            shown_label = self._chord_label_for_width(timeline_label, label_width)
+            badge_width = 38 if source_label == "Edited" and width >= 72 else 16 if source_label == "Edited" else 0
+            shown_label = self._chord_label_for_width(display_label, max(8, label_width - badge_width))
             text = self.scene.addText(shown_label)
             text.setDefaultTextColor(QColor("#4c1d95"))
             text.setPos(x + 5, self.ruler_height + 5)
@@ -506,6 +512,15 @@ class TimelineView(QGraphicsView):
             text.setToolTip(rect.toolTip())
             text.setZValue(8)
             self._make_sticky_y(text, 34)
+            if source_label == "Edited":
+                marker = "Edited" if width >= 72 else "E"
+                marker_text = self.scene.addText(marker)
+                marker_text.setDefaultTextColor(QColor("#1d4ed8"))
+                marker_text.setPos(x + max(5, width - badge_width), self.ruler_height + 5)
+                marker_text.setData(0, chord)
+                marker_text.setToolTip(rect.toolTip())
+                marker_text.setZValue(9)
+                self._make_sticky_y(marker_text, 34)
 
     def _chord_label_for_width(self, label: str, label_width: int) -> str:
         if label_width < 24:
