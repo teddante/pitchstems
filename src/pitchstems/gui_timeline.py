@@ -209,12 +209,7 @@ class TimelineView(QGraphicsView):
     def fit_song_to_view(self) -> None:
         if self.project is None:
             return
-        self.zoom_redraw_timer.stop()
-        self.view_redraw_timer.stop()
-        self.pending_pixels_per_second = None
-        self.pending_vertical_zoom = None
-        self.pending_zoom_center_seconds = None
-        self.pending_zoom_center_y = None
+        self._clear_pending_zoom(stop_zoom_timer=True, stop_view_timer=True)
 
         duration = max(self.project.duration, 1.0)
         viewport = self.viewport().rect()
@@ -246,12 +241,7 @@ class TimelineView(QGraphicsView):
         end = max(0.0, min(end, duration))
         if end - start < 0.05:
             return False
-        self.zoom_redraw_timer.stop()
-        self.view_redraw_timer.stop()
-        self.pending_pixels_per_second = None
-        self.pending_vertical_zoom = None
-        self.pending_zoom_center_seconds = None
-        self.pending_zoom_center_y = None
+        self._clear_pending_zoom(stop_zoom_timer=True, stop_view_timer=True)
 
         viewport = self.viewport().rect()
         time_width = max(80, viewport.width() - self.label_width - 92)
@@ -266,11 +256,7 @@ class TimelineView(QGraphicsView):
     def reset_zoom(self) -> None:
         if self.project is None:
             return
-        self.zoom_redraw_timer.stop()
-        self.pending_pixels_per_second = None
-        self.pending_vertical_zoom = None
-        self.pending_zoom_center_seconds = None
-        self.pending_zoom_center_y = None
+        self._clear_pending_zoom(stop_zoom_timer=True)
         center_seconds = self._view_center_seconds()
         self.pixels_per_second = 92
         self.vertical_zoom = 1.0
@@ -279,10 +265,7 @@ class TimelineView(QGraphicsView):
 
     def commit_pending_zoom(self) -> None:
         if self.project is None:
-            self.pending_pixels_per_second = None
-            self.pending_vertical_zoom = None
-            self.pending_zoom_center_seconds = None
-            self.pending_zoom_center_y = None
+            self._clear_pending_zoom()
             return
         has_time_zoom = self.pending_pixels_per_second is not None
         has_pitch_zoom = self.pending_vertical_zoom is not None
@@ -298,10 +281,7 @@ class TimelineView(QGraphicsView):
         if self.pending_vertical_zoom is not None:
             self.vertical_zoom = self.pending_vertical_zoom
 
-        self.pending_pixels_per_second = None
-        self.pending_vertical_zoom = None
-        self.pending_zoom_center_seconds = None
-        self.pending_zoom_center_y = None
+        self._clear_pending_zoom()
 
         self._update_scene_rect_for_current_zoom()
         if has_time_zoom:
@@ -312,6 +292,21 @@ class TimelineView(QGraphicsView):
         self.view_redraw_timer.stop()
         self.redraw()
         self.update_sticky_labels()
+
+    def _clear_pending_zoom(
+        self,
+        *,
+        stop_zoom_timer: bool = False,
+        stop_view_timer: bool = False,
+    ) -> None:
+        if stop_zoom_timer:
+            self.zoom_redraw_timer.stop()
+        if stop_view_timer:
+            self.view_redraw_timer.stop()
+        self.pending_pixels_per_second = None
+        self.pending_vertical_zoom = None
+        self.pending_zoom_center_seconds = None
+        self.pending_zoom_center_y = None
 
     def request_view_redraw(self, _value: int | None = None) -> None:
         if self.project is None:

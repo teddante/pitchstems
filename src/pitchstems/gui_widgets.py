@@ -110,34 +110,20 @@ class NoWheelSpinBox(_NoWheelMixin, QSpinBox):
     pass
 
 
-class PianoChordWidget(QWidget):
-    black_pitch_classes = {1, 3, 6, 8, 10}
-    black_key_offsets = {1: 0.72, 3: 0.72, 6: 0.72, 8: 0.72, 10: 0.72}
-
-    def __init__(self) -> None:
+class _NoteMapWidget(QWidget):
+    def __init__(self, source_label: str, empty_message: str) -> None:
         super().__init__()
         self.chord_label = ""
-        self.source_label = "Selected chord"
-        self.empty_message = "No chord selected"
+        self.source_label = source_label
+        self.empty_message = empty_message
         self.pitch_classes: set[int] = set()
         self.note_roles: dict[int, set[str]] = {}
         self.note_constraints: dict[int, str] = {}
         self.note_colours: dict[int, str] = {}
-        self.preview_low_pitch = 48
-        self.preview_high_pitch = 72
         self.pitch_class_formatter = pitch_class_name
         self.on_note_clicked = None
         self.on_note_constraint_changed = None
         self.on_note_constraints_reset = None
-        self.on_preview_range_changed = None
-        self._key_hitboxes: list[tuple[QRectF, int, str]] = []
-        self._range_hitboxes: dict[str, QRectF] = {}
-        self._range_rect = QRectF()
-        self._dragging_range_bound: str | None = None
-        self.setMinimumHeight(90)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.setMouseTracking(True)
-        self.setToolTip("Select a chord candidate to see its tones on one octave of piano keys.")
 
     def set_pitch_class_formatter(self, formatter) -> None:
         self.pitch_class_formatter = formatter
@@ -176,8 +162,7 @@ class PianoChordWidget(QWidget):
         }
         if self.chord_label and self.pitch_classes:
             tones = " - ".join(note_names)
-            voicing = self._role_tooltip_text()
-            suffix = f"\nVoicing: {voicing}" if voicing else ""
+            suffix = self._tooltip_suffix()
             self.setToolTip(f"{self.source_label}: {self.chord_label}\n{tones}{suffix}")
         else:
             self.setToolTip(self.empty_message)
@@ -198,6 +183,65 @@ class PianoChordWidget(QWidget):
             if colour
         }
         self.update()
+
+    def _tooltip_suffix(self) -> str:
+        return ""
+
+    def _highlight_colour(self, pitch_class: int, fallback: str) -> QColor:
+        return QColor(self.note_colours.get(pitch_class, fallback))
+
+    def _show_note_constraint_menu(self, position, pitch_class: int, name: str) -> None:
+        menu = QMenu(self)
+        actions = {
+            "auto": menu.addAction(f"Auto {name}"),
+            "force": menu.addAction(f"Force include {name}"),
+            "exclude": menu.addAction(f"Force exclude {name}"),
+        }
+        menu.addSeparator()
+        clear_action = menu.addAction("Clear forced notes")
+        selected = menu.exec(position)
+        if selected == clear_action:
+            if self.on_note_constraints_reset is not None:
+                self.on_note_constraints_reset()
+            return
+        for state, action in actions.items():
+            if selected == action:
+                self._set_note_constraint(pitch_class, state)
+                return
+
+    def _cycle_note_constraint(self, pitch_class: int) -> None:
+        state = self.note_constraints.get(pitch_class, "auto")
+        next_state = {"auto": "force", "force": "exclude", "exclude": "auto"}[state]
+        self._set_note_constraint(pitch_class, next_state)
+
+    def _set_note_constraint(self, pitch_class: int, state: str) -> None:
+        pitch_class %= 12
+        if state == "auto":
+            self.note_constraints.pop(pitch_class, None)
+        elif state in {"force", "exclude"}:
+            self.note_constraints[pitch_class] = state
+        if self.on_note_constraint_changed is not None:
+            self.on_note_constraint_changed(pitch_class, state)
+        self.update()
+
+
+class PianoChordWidget(_NoteMapWidget):
+    black_pitch_classes = {1, 3, 6, 8, 10}
+    black_key_offsets = {1: 0.72, 3: 0.72, 6: 0.72, 8: 0.72, 10: 0.72}
+
+    def __init__(self) -> None:
+        super().__init__("Selected chord", "No chord selected")
+        self.preview_low_pitch = 48
+        self.preview_high_pitch = 72
+        self.on_preview_range_changed = None
+        self._key_hitboxes: list[tuple[QRectF, int, str]] = []
+        self._range_hitboxes: dict[str, QRectF] = {}
+        self._range_rect = QRectF()
+        self._dragging_range_bound: str | None = None
+        self.setMinimumHeight(90)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.setMouseTracking(True)
+        self.setToolTip("Select a chord candidate to see its tones on one octave of piano keys.")
 
     def set_preview_range(self, low_pitch: int, high_pitch: int) -> None:
         low, high = _normalized_preview_range(low_pitch, high_pitch)
@@ -311,6 +355,10 @@ class PianoChordWidget(QWidget):
             labels.append(f"{role_text} {note_name}")
         return ", ".join(labels)
 
+    def _tooltip_suffix(self) -> str:
+        voicing = self._role_tooltip_text()
+        return f"\nVoicing: {voicing}" if voicing else ""
+
     def _visible_white_pitches(self) -> list[int]:
         low = self._previous_white_pitch(self.preview_low_pitch)
         high = self._next_white_pitch(self.preview_high_pitch)
@@ -348,9 +396,6 @@ class PianoChordWidget(QWidget):
         if metrics.horizontalAdvance(name) <= key_width:
             return name
         return ""
-
-    def _highlight_colour(self, pitch_class: int, fallback: str) -> QColor:
-        return QColor(self.note_colours.get(pitch_class, fallback))
 
     def _draw_role_badge(self, painter: QPainter, rect: QRectF, pitch_class: int) -> None:
         roles = self.note_roles.get(pitch_class)
@@ -451,40 +496,6 @@ class PianoChordWidget(QWidget):
             return
         super().mouseReleaseEvent(event)
 
-    def _show_note_constraint_menu(self, position, pitch_class: int, name: str) -> None:
-        menu = QMenu(self)
-        actions = {
-            "auto": menu.addAction(f"Auto {name}"),
-            "force": menu.addAction(f"Force include {name}"),
-            "exclude": menu.addAction(f"Force exclude {name}"),
-        }
-        menu.addSeparator()
-        clear_action = menu.addAction("Clear forced notes")
-        selected = menu.exec(position)
-        if selected == clear_action:
-            if self.on_note_constraints_reset is not None:
-                self.on_note_constraints_reset()
-            return
-        for state, action in actions.items():
-            if selected == action:
-                self._set_note_constraint(pitch_class, state)
-                return
-
-    def _cycle_note_constraint(self, pitch_class: int) -> None:
-        state = self.note_constraints.get(pitch_class, "auto")
-        next_state = {"auto": "force", "force": "exclude", "exclude": "auto"}[state]
-        self._set_note_constraint(pitch_class, next_state)
-
-    def _set_note_constraint(self, pitch_class: int, state: str) -> None:
-        pitch_class %= 12
-        if state == "auto":
-            self.note_constraints.pop(pitch_class, None)
-        elif state in {"force", "exclude"}:
-            self.note_constraints[pitch_class] = state
-        if self.on_note_constraint_changed is not None:
-            self.on_note_constraint_changed(pitch_class, state)
-        self.update()
-
     def _set_preview_range_from_position(self, bound: str, x: float) -> None:
         pitch = self._pitch_for_range_x(x)
         if bound == "low":
@@ -525,26 +536,15 @@ def _normalized_preview_range(low_pitch: int, high_pitch: int) -> tuple[int, int
     return low, high
 
 
-class FretboardNoteMapWidget(QWidget):
+class FretboardNoteMapWidget(_NoteMapWidget):
     tunings = {
         "bass": ("Bass", (28, 33, 38, 43), 20),
         "guitar": ("Guitar", (40, 45, 50, 55, 59, 64), 20),
     }
 
     def __init__(self) -> None:
-        super().__init__()
-        self.chord_label = ""
-        self.source_label = "Selected notes"
-        self.empty_message = "No notes selected"
-        self.pitch_classes: set[int] = set()
-        self.note_roles: dict[int, set[str]] = {}
-        self.note_constraints: dict[int, str] = {}
-        self.note_colours: dict[int, str] = {}
-        self.pitch_class_formatter = pitch_class_name
+        super().__init__("Selected notes", "No notes selected")
         self.tuning_key = "bass"
-        self.on_note_clicked = None
-        self.on_note_constraint_changed = None
-        self.on_note_constraints_reset = None
         self._note_hitboxes: list[tuple[QRectF, int, str]] = []
         self._fret_hitboxes: list[tuple[QRectF, int, str]] = []
         self.setMinimumHeight(118)
@@ -555,64 +555,6 @@ class FretboardNoteMapWidget(QWidget):
         if tuning_key in self.tunings:
             self.tuning_key = tuning_key
             self.update()
-
-    def set_pitch_class_formatter(self, formatter) -> None:
-        self.pitch_class_formatter = formatter
-        self.update()
-
-    def set_chord(
-        self,
-        label: str | None,
-        note_names: list[str],
-        source_label: str = "Selected chord",
-        note_roles: dict[int, set[str]] | None = None,
-    ) -> None:
-        self.set_notes(label, note_names, source_label, note_roles, empty_message="No chord selected")
-
-    def set_notes(
-        self,
-        label: str | None,
-        note_names: list[str],
-        source_label: str = "Selected notes",
-        note_roles: dict[int, set[str]] | None = None,
-        empty_message: str = "No notes selected",
-    ) -> None:
-        self.chord_label = label or ""
-        self.source_label = source_label
-        self.empty_message = empty_message
-        self.pitch_classes = {
-            pitch_class
-            for note_name in note_names
-            for pitch_class in [pitch_class_for_name(note_name)]
-            if pitch_class is not None
-        }
-        self.note_roles = {
-            pitch_class % 12: set(roles)
-            for pitch_class, roles in (note_roles or {}).items()
-            if roles
-        }
-        if self.chord_label and self.pitch_classes:
-            tones = " - ".join(note_names)
-            self.setToolTip(f"{self.source_label}: {self.chord_label}\n{tones}")
-        else:
-            self.setToolTip(self.empty_message)
-        self.update()
-
-    def set_note_constraints(self, constraints: dict[int, str] | None) -> None:
-        self.note_constraints = {
-            pitch_class % 12: state
-            for pitch_class, state in (constraints or {}).items()
-            if state in {"force", "exclude"}
-        }
-        self.update()
-
-    def set_note_colours(self, colours: dict[int, str] | None) -> None:
-        self.note_colours = {
-            pitch_class % 12: colour
-            for pitch_class, colour in (colours or {}).items()
-            if colour
-        }
-        self.update()
 
     def paintEvent(self, _event) -> None:
         painter = QPainter(self)
@@ -761,41 +703,6 @@ class FretboardNoteMapWidget(QWidget):
         painter.setPen(QPen(color, 2))
         painter.setBrush(Qt.NoBrush)
         painter.drawEllipse(rect.adjusted(-2, -2, 2, 2))
-
-    def _show_note_constraint_menu(self, position, pitch_class: int, name: str) -> None:
-        menu = QMenu(self)
-        actions = {
-            "auto": menu.addAction(f"Auto {name}"),
-            "force": menu.addAction(f"Force include {name}"),
-            "exclude": menu.addAction(f"Force exclude {name}"),
-        }
-        menu.addSeparator()
-        clear_action = menu.addAction("Clear forced notes")
-        selected = menu.exec(position)
-        if selected == clear_action:
-            if self.on_note_constraints_reset is not None:
-                self.on_note_constraints_reset()
-            return
-        for state, action in actions.items():
-            if selected == action:
-                self._set_note_constraint(pitch_class, state)
-                return
-
-    def _cycle_note_constraint(self, pitch_class: int) -> None:
-        state = self.note_constraints.get(pitch_class, "auto")
-        next_state = {"auto": "force", "force": "exclude", "exclude": "auto"}[state]
-        self._set_note_constraint(pitch_class, next_state)
-
-    def _set_note_constraint(self, pitch_class: int, state: str) -> None:
-        pitch_class %= 12
-        if state == "auto":
-            self.note_constraints.pop(pitch_class, None)
-        elif state in {"force", "exclude"}:
-            self.note_constraints[pitch_class] = state
-        if self.on_note_constraint_changed is not None:
-            self.on_note_constraint_changed(pitch_class, state)
-        self.update()
-
 
 def _contrast_text_colour(colour: QColor) -> QColor:
     luminance = (colour.red() * 0.299) + (colour.green() * 0.587) + (colour.blue() * 0.114)

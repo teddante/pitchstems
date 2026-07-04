@@ -637,6 +637,8 @@ def _roman_for_chord(label: str, key_root: int, scale: ScaleDefinition) -> str:
         degree_index = scale.intervals.index(relative)
     except ValueError:
         return f"{pitch_class_name(root)}"
+    if degree_index >= len(ROMAN_NUMERALS):
+        return f"{pitch_class_name(root)}"
     numeral = ROMAN_NUMERALS[degree_index]
     suffix = symbol.suffix
     if _minor_or_diminished_suffix(suffix):

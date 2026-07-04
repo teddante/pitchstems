@@ -159,6 +159,15 @@ def test_progression_roman_numerals_preserve_inversions_and_suffixes() -> None:
     assert analysis.progression.roman_numerals == ["I6", "V65", "Iadd9/D"]
 
 
+def test_non_diatonic_progression_romanization_does_not_crash() -> None:
+    from pitchstems.scale_analysis import _roman_for_chord
+
+    scales = {scale.name: scale for scale in SCALE_REGISTRY}
+
+    assert _roman_for_chord("B", 0, scales["Bebop major"]) == "B"
+    assert _roman_for_chord("B", 0, scales["Chromatic"]) == "B"
+
+
 def test_theory_analysis_names_harmonic_minor_when_raised_seventh_is_present() -> None:
     notes = [
         _note(0.0, 2.0, 45, 112),  # A
