@@ -27,7 +27,7 @@ from pitchstems.editor_project import (
 )
 from pitchstems.editor_playback import review_playback_loop_range
 from pitchstems.editor_loader import EditorLoadResult
-from pitchstems.evidence_display import percent_text, percent_with_bar, visible_scale_candidates
+from pitchstems.evidence_display import percent_text, visible_scale_candidates
 from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
 from pitchstems.midi_preview import render_note_preview
 from pitchstems.note_colours import note_colour_map
@@ -1172,7 +1172,7 @@ def main() -> int:
             )
             interpretation_prefix = "Likely" if analysis.label else "Possible"
             self.theory_context.setText(
-                f"{interpretation_prefix}: {shown_best_label} (score {percent_with_bar(shown_best.score)})\n"
+                f"{interpretation_prefix}: {shown_best_label} (score {percent_text(shown_best.score)})\n"
                 f"Weighted notes: {note_text or '-'}"
             )
             self.theory_context.setToolTip(self.theory_context.text())

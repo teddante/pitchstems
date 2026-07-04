@@ -5,7 +5,7 @@ from pathlib import Path
 
 from pitchstems.editor_loader import build_editor_load_result
 from pitchstems.editor_state import editor_float
-from pitchstems.evidence_display import percent_with_bar
+from pitchstems.evidence_display import percent_text
 from pitchstems.gui_editor_model import EditorSummaryModel
 from pitchstems.gui_helpers import blocked_signals
 from pitchstems.gui_project_flow import remember_recent_project
@@ -180,7 +180,7 @@ def refresh_detected_chord_list(window) -> None:
     for chord in window.editor_project.chords[:200]:
         window.chord_list.addItem(
             f"{format_time(chord.start)}  {window.display_chord(chord.label)}  "
-            f"{chord_source_label(window, chord)}  ({percent_with_bar(chord.confidence)})"
+            f"{chord_source_label(window, chord)}  ({percent_text(chord.confidence)})"
         )
     if len(window.editor_project.chords) > 200:
         window.chord_list.addItem(f"... {len(window.editor_project.chords) - 200} more")

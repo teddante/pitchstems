@@ -139,3 +139,28 @@ def test_editor_theory_preview_controls_use_two_row_grid() -> None:
     assert grid.itemAtPosition(0, 1).widget() is window.preview_scale_pattern
     assert grid.itemAtPosition(1, 0).widget() is window.scale_chords_button
     assert grid.itemAtPosition(1, 1).widget() is window.scale_browser_button
+
+
+def test_editor_chord_map_controls_use_two_row_grid() -> None:
+    _app()
+    window = _EditorWindow(width=900)
+    page = build_editor_page(window)
+    side_scroll = page.layout().itemAt(0).layout().itemAt(2).widget()
+    side_panel = side_scroll.widget()
+    grid = side_panel.layout().itemAt(6).layout()
+
+    assert grid.itemAtPosition(0, 0).widget() is window.chord_view_mode
+    assert grid.itemAtPosition(1, 0).widget() is window.chord_one_octave_button
+    assert grid.itemAtPosition(1, 1).widget() is window.note_map_colours
+
+
+def test_editor_theory_header_uses_wrapped_grid() -> None:
+    _app()
+    window = _EditorWindow(width=900)
+    page = build_editor_page(window)
+    side_scroll = page.layout().itemAt(0).layout().itemAt(2).widget()
+    side_panel = side_scroll.widget()
+    grid = side_panel.layout().itemAt(9).layout()
+
+    assert grid.itemAtPosition(0, 1).widget() is window.show_chromatic_scales
+    assert grid.itemAtPosition(1, 0).widget() is window.inspect_theory_button

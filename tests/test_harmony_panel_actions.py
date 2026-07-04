@@ -4,10 +4,20 @@ import pytest
 pytest.importorskip("PySide6")
 
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QListWidget
 
 from pitchstems.editor_project import ChordRegion
-from pitchstems.harmony_panel import partial_hint_text, refresh_chord_actions, refresh_chord_keyboard
+from pitchstems.harmony_panel import (
+    partial_hint_text,
+    refresh_chord_actions,
+    refresh_chord_keyboard,
+    set_chord_candidates,
+)
 from pitchstems.notation import pitch_class_name
+
+
+def _app() -> QApplication:
+    return QApplication.instance() or QApplication([])
 
 
 class _Button:
@@ -81,6 +91,9 @@ class _Window:
 
     def display_chord_tones(self, label: str) -> list[str]:
         return ["A#", "D", "F"] if label == "Bb/D" else ["C", "E", "G"]
+
+    def display_chord_bass(self, _label: str) -> str | None:
+        return None
 
     def display_pitch_class_name(self, pitch_class: int) -> str:
         return pitch_class_name(pitch_class, "sharp")
@@ -166,3 +179,29 @@ def test_partial_hint_text_formats_detected_note_set_with_window_spelling() -> N
     assert partial_hint_text(_Window(), _Analysis(), "Detected note set: Eb - Bb - D.") == (
         "Detected note set: D# - A# - D."
     )
+
+
+class _CandidateAnalysis:
+    candidates = [("F#dim/C", 0.55)]
+    partial_candidates = []
+    partial_hints = []
+    candidate_notes = {"F#dim/C": [6, 9, 0]}
+    candidate_aliases = {"F#dim/C": []}
+    partial_candidate_aliases = {}
+    candidate_explanations = {"F#dim/C": []}
+    partial_candidate_explanations = {}
+
+    def chord_tones_for_label(self, _label: str):
+        return ["F#", "A", "C"]
+
+
+def test_set_chord_candidates_uses_compact_percent_text() -> None:
+    _app()
+    window = _Window()
+    window.chord_list = QListWidget()
+
+    set_chord_candidates(window, _CandidateAnalysis())
+
+    assert window.chord_list.item(0).text().startswith("F#dim/C  55%")
+    assert "[" not in window.chord_list.item(0).text()
+    assert "]" not in window.chord_list.item(0).text()

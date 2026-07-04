@@ -1,6 +1,11 @@
 from types import SimpleNamespace
 
-from pitchstems.gui_editor_load import _apply_current_result_state, _apply_loaded_editor_result
+from pitchstems.editor_project import ChordRegion
+from pitchstems.gui_editor_load import (
+    _apply_current_result_state,
+    _apply_loaded_editor_result,
+    refresh_detected_chord_list,
+)
 
 
 class _PreviewJobs:
@@ -66,3 +71,31 @@ def test_apply_loaded_editor_result_transfers_editor_state() -> None:
     assert window.editor_project is loaded.editor_project
     assert window.manual_chords == loaded.manual_chords
     assert window.removed_chord_ranges == loaded.removed_chord_ranges
+
+
+class _List:
+    def __init__(self) -> None:
+        self.items = []
+
+    def clear(self) -> None:
+        self.items.clear()
+
+    def addItem(self, text: str) -> None:
+        self.items.append(text)
+
+
+def test_refresh_detected_chord_list_uses_compact_percent_text() -> None:
+    chord_list = _List()
+    window = SimpleNamespace(
+        editor_project=SimpleNamespace(chords=[ChordRegion(0.0, 1.0, "F#dim/C", 0.55)]),
+        chord_list=chord_list,
+        manual_chords=[],
+        display_chord=lambda label: label,
+        refresh_chord_actions=lambda: None,
+        refresh_chord_keyboard=lambda: None,
+    )
+
+    refresh_detected_chord_list(window)
+
+    assert "55%" in chord_list.items[0]
+    assert "[" not in chord_list.items[0]
