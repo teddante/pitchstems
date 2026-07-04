@@ -16,6 +16,10 @@ def percent_with_bar(value: float, width: int = 10) -> str:
     return f"{value:.0%} {percent_bar(value, width)}"
 
 
+def percent_text(value: float) -> str:
+    return f"{max(0.0, min(1.0, value)):.0%}"
+
+
 def is_chromatic_candidate(candidate) -> bool:
     scale = getattr(candidate, "scale", None)
     return getattr(scale, "name", "") == "Chromatic"

@@ -13,7 +13,10 @@ from pitchstems.editor_project import ChordRegion, EditorProject, NoteEvent, mid
 from pitchstems.gui_theme import TRACK_COLORS
 from pitchstems.gui_track_controls import TRACK_CONTROL_MIN_HEIGHT
 from pitchstems.timeline_chord_geometry import (
+    TimelineLayoutGeometry,
+    TimelineTrackGeometry,
     build_track_geometries,
+    build_timeline_layout,
     chord_drag_mode,
     compact_chord_label,
     dragged_chord_region,
@@ -49,7 +52,8 @@ class TimelineView(QGraphicsView):
         self.chord_height = self.ruler_height + self.chord_lane_height
         self.minimum_track_height = TRACK_CONTROL_MIN_HEIGHT
         self.visible_tracks: set[str] = set()
-        self.track_geometries: dict[str, tuple[float, float, int, int]] = {}
+        self.layout_geometry: TimelineLayoutGeometry | None = None
+        self.track_geometries: dict[str, TimelineTrackGeometry] = {}
         self.notes_by_track: dict[str, list] = {}
         self.note_starts_by_track: dict[str, list[float]] = {}
         self.max_note_duration_by_track: dict[str, float] = {}
@@ -318,12 +322,10 @@ class TimelineView(QGraphicsView):
         if self.project is None:
             return
         duration = max(self.project.duration, 10.0)
-        self.track_geometries = self._build_track_geometries()
-        width = self.label_width + duration * self.pixels_per_second + 80
-        height = self.chord_height + sum(
-            geometry[1] for geometry in self.track_geometries.values()
-        ) + 34
-        self.scene.setSceneRect(0, 0, width, height)
+        layout = self._build_layout_geometry(duration)
+        self.layout_geometry = layout
+        self.track_geometries = layout.track_geometries
+        self.scene.setSceneRect(0, 0, layout.content_width, layout.content_height)
 
     def set_position(self, seconds: float) -> None:
         if self.project is None:
@@ -340,6 +342,7 @@ class TimelineView(QGraphicsView):
             self.scene.clear()
             self.playhead = None
             self.selection_rects = []
+            self.layout_geometry = None
             self.track_geometries = {}
             self.sticky_x_items = []
             self.sticky_y_items = []
@@ -350,11 +353,11 @@ class TimelineView(QGraphicsView):
                 return
 
             duration = max(self.project.duration, 10.0)
-            self.track_geometries = self._build_track_geometries()
-            width = self.label_width + duration * self.pixels_per_second + 80
-            height = self.chord_height + sum(
-                geometry[1] for geometry in self.track_geometries.values()
-            ) + 34
+            layout = self._build_layout_geometry(duration)
+            self.layout_geometry = layout
+            self.track_geometries = layout.track_geometries
+            width = layout.content_width
+            height = layout.content_height
             self.scene.setSceneRect(0, 0, width, height)
             self.scene.addRect(0, 0, width, height, QPen(Qt.NoPen), QBrush(QColor("#f8fafc")))
             visible_rect = self._visible_scene_rect().adjusted(-160, -90, 220, 90)
@@ -503,37 +506,54 @@ class TimelineView(QGraphicsView):
                 "Drag the middle to move, drag an edge to resize, Delete removes the selected chord."
             )
             label_width = max(8, int(width) - 8)
-            shown_label = self._chord_label_for_width(display_label, label_width)
-            text = self.scene.addText(shown_label)
-            text.setDefaultTextColor(QColor("#4c1d95"))
-            text.setPos(x + 5, self.ruler_height + 5)
-            text.setData(0, chord)
-            text.setToolTip(rect.toolTip())
-            text.setZValue(8)
-            self._make_sticky_y(text, 34)
+            marker = self._edited_marker_for_width(label_width) if source_label == "Edited" else ""
+            marker_width = QFontMetrics(QApplication.font()).horizontalAdvance(marker) if marker else 0
+            text_width = label_width - marker_width - (8 if marker else 0)
+            shown_label = self._chord_label_for_width(display_label, text_width)
+            if shown_label:
+                text = self.scene.addText(shown_label)
+                text.setDefaultTextColor(QColor("#4c1d95"))
+                text.setPos(x + 5, self.ruler_height + 5)
+                text.setData(0, chord)
+                text.setToolTip(rect.toolTip())
+                text.setZValue(8)
+                self._make_sticky_y(text, 34)
             if source_label == "Edited":
-                full_label_width = QFontMetrics(QApplication.font()).horizontalAdvance(display_label)
-                spare_width = label_width - full_label_width
-                if spare_width < 18:
+                if not marker:
                     continue
-                marker = "Edited" if spare_width >= 42 else "E"
-                badge_width = 38 if marker == "Edited" else 12
                 marker_text = self.scene.addText(marker)
                 marker_text.setDefaultTextColor(QColor("#1d4ed8"))
-                marker_text.setPos(x + max(5, width - badge_width), self.ruler_height + 5)
+                marker_text.setPos(x + max(5, width - marker_width - 5), self.ruler_height + 5)
                 marker_text.setData(0, chord)
                 marker_text.setToolTip(rect.toolTip())
                 marker_text.setZValue(9)
                 self._make_sticky_y(marker_text, 34)
 
     def _chord_label_for_width(self, label: str, label_width: int) -> str:
+        if label_width < 10:
+            return ""
+        metrics = QFontMetrics(QApplication.font())
+        compact = compact_chord_label(label)
         if label_width < 24:
-            return compact_chord_label(label)
-        return QFontMetrics(QApplication.font()).elidedText(
+            return compact if metrics.horizontalAdvance(compact) <= label_width else ""
+        if metrics.horizontalAdvance(label) > label_width and label_width < 42:
+            return compact if metrics.horizontalAdvance(compact) <= label_width else ""
+        shown = metrics.elidedText(
             label,
             Qt.ElideRight,
             label_width,
-        ) or compact_chord_label(label)
+        )
+        if metrics.horizontalAdvance(shown) <= label_width:
+            return shown
+        return compact if metrics.horizontalAdvance(compact) <= label_width else ""
+
+    def _edited_marker_for_width(self, label_width: int) -> str:
+        metrics = QFontMetrics(QApplication.font())
+        if label_width >= metrics.horizontalAdvance("Edited") + 22:
+            return "Edited"
+        if label_width >= metrics.horizontalAdvance("E") + 18:
+            return "E"
+        return ""
 
     def _draw_tracks(
         self,
@@ -550,7 +570,8 @@ class TimelineView(QGraphicsView):
             self._make_sticky_y(text, 12)
             return
         for index, track in enumerate(tracks):
-            y, height, low_pitch, high_pitch = self.track_geometries[track.name.lower()]
+            geometry = self.track_geometries[track.name.lower()]
+            y, height, low_pitch, high_pitch = geometry
             fill = QColor("#ffffff") if index % 2 == 0 else QColor("#f1f5f9")
             self.scene.addRect(0, y, self.scene.width(), height, QPen(Qt.NoPen), QBrush(fill))
             self.scene.addLine(
@@ -639,10 +660,22 @@ class TimelineView(QGraphicsView):
             )
         rect.setData(1, note)
         if draw_note_labels and width >= 36:
-            label = self.scene.addText(self.note_name_formatter(note.pitch))
+            note_label = self._note_label_for_width(self.note_name_formatter(note.pitch), int(width) - 6)
+            if not note_label:
+                return
+            label = self.scene.addText(note_label)
             label.setDefaultTextColor(QColor("#0f172a"))
             label.setPos(x + 3, pitch_y - 3)
             label.setData(1, note)
+
+    def _note_label_for_width(self, label: str, label_width: int) -> str:
+        if label_width < 10:
+            return ""
+        metrics = QFontMetrics(QApplication.font())
+        if metrics.horizontalAdvance(label) <= label_width:
+            return label
+        elided = metrics.elidedText(label, Qt.ElideRight, label_width)
+        return elided if metrics.horizontalAdvance(elided) <= label_width else ""
 
     def _draw_dense_notes(
         self,
@@ -823,7 +856,7 @@ class TimelineView(QGraphicsView):
         self.selection_start, self.selection_end = selection
         self._clear_selected_chord()
 
-    def _build_track_geometries(self) -> dict[str, tuple[float, float, int, int]]:
+    def _build_track_geometries(self) -> dict[str, TimelineTrackGeometry]:
         if self.project is None:
             return {}
         return build_track_geometries(
@@ -831,6 +864,29 @@ class TimelineView(QGraphicsView):
             visible_tracks=self.visible_tracks,
             pitch_ranges=self.pitch_ranges,
             chord_height=self.chord_height,
+            minimum_track_height=self.minimum_track_height,
+            vertical_zoom=self.vertical_zoom,
+        )
+
+    def _build_layout_geometry(self, duration: float) -> TimelineLayoutGeometry:
+        if self.project is None:
+            return TimelineLayoutGeometry(
+                label_width=self.label_width,
+                ruler_height=self.ruler_height,
+                chord_lane_height=self.chord_lane_height,
+                content_width=760,
+                content_height=320,
+                track_geometries={},
+            )
+        return build_timeline_layout(
+            tracks=self.project.tracks,
+            visible_tracks=self.visible_tracks,
+            pitch_ranges=self.pitch_ranges,
+            duration=duration,
+            pixels_per_second=self.pixels_per_second,
+            label_width=self.label_width,
+            ruler_height=self.ruler_height,
+            chord_lane_height=self.chord_lane_height,
             minimum_track_height=self.minimum_track_height,
             vertical_zoom=self.vertical_zoom,
         )

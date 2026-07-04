@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from collections.abc import Sequence
 from typing import Callable, Literal, Protocol
 
@@ -12,6 +13,37 @@ class TimelineTrack(Protocol):
 
 
 ChordDragMode = Literal["move", "resize_start", "resize_end"]
+
+
+@dataclass(frozen=True)
+class TimelineTrackGeometry:
+    y: float
+    height: float
+    low_pitch: int
+    high_pitch: int
+
+    def __iter__(self):
+        yield self.y
+        yield self.height
+        yield self.low_pitch
+        yield self.high_pitch
+
+    def __getitem__(self, index: int):
+        return tuple(self)[index]
+
+
+@dataclass(frozen=True)
+class TimelineLayoutGeometry:
+    label_width: float
+    ruler_height: float
+    chord_lane_height: float
+    content_width: float
+    content_height: float
+    track_geometries: dict[str, TimelineTrackGeometry]
+
+    @property
+    def chord_height(self) -> float:
+        return self.ruler_height + self.chord_lane_height
 
 
 def compact_chord_label(label: str) -> str:
@@ -149,8 +181,8 @@ def build_track_geometries(
     chord_height: float,
     minimum_track_height: float,
     vertical_zoom: float,
-) -> dict[str, tuple[float, float, int, int]]:
-    geometries: dict[str, tuple[float, float, int, int]] = {}
+) -> dict[str, TimelineTrackGeometry]:
+    geometries: dict[str, TimelineTrackGeometry] = {}
     y = chord_height
     for track in tracks:
         track_key = track.name.lower()
@@ -165,6 +197,48 @@ def build_track_geometries(
             low_pitch = 48
             high_pitch = 72
             height = max(minimum_track_height, 132 * vertical_zoom)
-        geometries[track_key] = (y, height, low_pitch, high_pitch)
+        geometries[track_key] = TimelineTrackGeometry(
+            y=y,
+            height=height,
+            low_pitch=low_pitch,
+            high_pitch=high_pitch,
+        )
         y += height
     return geometries
+
+
+def build_timeline_layout(
+    *,
+    tracks: Sequence[TimelineTrack],
+    visible_tracks: set[str],
+    pitch_ranges: dict[str, tuple[int, int]],
+    duration: float,
+    pixels_per_second: float,
+    label_width: float,
+    ruler_height: float,
+    chord_lane_height: float,
+    minimum_track_height: float,
+    vertical_zoom: float,
+    right_padding: float = 80,
+    bottom_padding: float = 34,
+) -> TimelineLayoutGeometry:
+    chord_height = ruler_height + chord_lane_height
+    track_geometries = build_track_geometries(
+        tracks=tracks,
+        visible_tracks=visible_tracks,
+        pitch_ranges=pitch_ranges,
+        chord_height=chord_height,
+        minimum_track_height=minimum_track_height,
+        vertical_zoom=vertical_zoom,
+    )
+    return TimelineLayoutGeometry(
+        label_width=label_width,
+        ruler_height=ruler_height,
+        chord_lane_height=chord_lane_height,
+        content_width=label_width + duration * pixels_per_second + right_padding,
+        content_height=chord_height + sum(
+            geometry.height for geometry in track_geometries.values()
+        )
+        + bottom_padding,
+        track_geometries=track_geometries,
+    )

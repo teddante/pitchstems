@@ -2,7 +2,9 @@ from types import SimpleNamespace
 
 from pitchstems.editor_models import ChordRegion
 from pitchstems.timeline_chord_geometry import (
+    TimelineTrackGeometry,
     build_track_geometries,
+    build_timeline_layout,
     chord_drag_mode,
     compact_chord_label,
     dragged_chord_region,
@@ -26,7 +28,7 @@ def test_build_track_geometries_uses_visible_tracks_and_pitch_ranges() -> None:
     )
 
     assert set(geometries) == {"bass"}
-    assert geometries["bass"] == (64, 138, 40, 52)
+    assert geometries["bass"] == TimelineTrackGeometry(y=64, height=138, low_pitch=40, high_pitch=52)
 
 
 def test_build_track_geometries_uses_default_pitch_range_for_empty_tracks() -> None:
@@ -41,7 +43,29 @@ def test_build_track_geometries_uses_default_pitch_range_for_empty_tracks() -> N
         vertical_zoom=0.5,
     )
 
-    assert geometries["other"] == (64, 90, 48, 72)
+    assert geometries["other"] == TimelineTrackGeometry(y=64, height=90, low_pitch=48, high_pitch=72)
+
+
+def test_build_timeline_layout_centralizes_content_and_track_geometry() -> None:
+    tracks = [SimpleNamespace(name="Bass"), SimpleNamespace(name="Piano")]
+
+    layout = build_timeline_layout(
+        tracks=tracks,
+        visible_tracks={"bass", "piano"},
+        pitch_ranges={"bass": (40, 52), "piano": (60, 72)},
+        duration=8.0,
+        pixels_per_second=100,
+        label_width=72,
+        ruler_height=28,
+        chord_lane_height=36,
+        minimum_track_height=96,
+        vertical_zoom=1.0,
+    )
+
+    assert layout.chord_height == 64
+    assert layout.content_width == 952
+    assert layout.track_geometries["bass"].y == layout.chord_height
+    assert layout.track_geometries["piano"].y == layout.chord_height + layout.track_geometries["bass"].height
 
 
 def test_compact_chord_label_falls_back_to_root_name() -> None:

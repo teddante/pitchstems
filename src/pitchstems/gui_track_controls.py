@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from PySide6.QtGui import QFontMetrics
 from PySide6.QtCore import QSignalBlocker, Qt
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -20,6 +21,7 @@ from pitchstems.gui_theme import TRACK_COLORS
 
 
 TRACK_CONTROL_MIN_HEIGHT = 96
+TRACK_CONTROL_TOGGLE_MIN_WIDTH = 46
 
 
 @dataclass(frozen=True)
@@ -137,6 +139,7 @@ def rebuild_track_controls(window, editor_state: dict) -> None:
         ("midi", "MIDI", "Enable or mute all generated MIDI preview tracks."),
     ):
         master = QCheckBox(label)
+        _apply_checkbox_fit(master)
         master.setToolTip(tooltip)
         master.toggled.connect(lambda checked, group=group: set_track_group_checked(window, group, checked))
         window.track_master_checks[group] = master
@@ -218,6 +221,7 @@ def add_track_control_row(window, track, editor_state: TrackControlEditorState) 
     midi_volume = editor_state.midi_volume
 
     show_check = QCheckBox("View")
+    _apply_checkbox_fit(show_check)
     show_check.setChecked(editor_bool(track_visibility.get(track.name), True))
     show_check.setToolTip(
         "Show this track's lane on the timeline. Turning it off hides this row too; use Show All to restore hidden tracks."
@@ -228,6 +232,7 @@ def add_track_control_row(window, track, editor_state: TrackControlEditorState) 
     toggle_row.addWidget(show_check)
 
     analysis_check = QCheckBox("Chord")
+    _apply_checkbox_fit(analysis_check)
     analysis_check.setChecked(
         editor_bool(
             analysis_enabled.get(track.name),
@@ -243,6 +248,7 @@ def add_track_control_row(window, track, editor_state: TrackControlEditorState) 
     toggle_row.addWidget(analysis_check)
 
     audio_check = QCheckBox("Audio")
+    _apply_checkbox_fit(audio_check)
     audio_check.setChecked(editor_bool(audio_enabled.get(track.name), True))
     audio_check.setToolTip("Play this separated stem audio in the editor transport. Does not affect chord detection.")
     audio_slider = QSlider(Qt.Horizontal)
@@ -262,6 +268,7 @@ def add_track_control_row(window, track, editor_state: TrackControlEditorState) 
 
     has_midi_notes = note_count > 0
     midi_check = QCheckBox("MIDI")
+    _apply_checkbox_fit(midi_check)
     midi_check.setChecked(has_midi_notes and editor_bool(midi_enabled.get(track.name), False))
     midi_check.setEnabled(has_midi_notes)
     midi_check.setToolTip("Play this stem's generated MIDI preview audio. Missing previews render only when this MIDI track is turned on.")
@@ -378,7 +385,7 @@ def sync_track_control_panel(window) -> None:
         if not is_visible:
             continue
         geometry = window.timeline.track_geometries.get(track.name.lower())
-        height = track_control_panel_height(geometry[1] if geometry else None)
+        height = track_control_panel_height(geometry.height if geometry else None)
         panel.setFixedHeight(height)
         detail_rows = window.track_control_detail_rows.get(track.name)
         if detail_rows is None:
@@ -437,6 +444,11 @@ def refresh_track_master_toggles(window) -> None:
 
 def volume_value_text(value: int) -> str:
     return f"{int(value)}%"
+
+
+def _apply_checkbox_fit(checkbox: QCheckBox) -> None:
+    metrics = QFontMetrics(checkbox.font())
+    checkbox.setMinimumWidth(max(TRACK_CONTROL_TOGGLE_MIN_WIDTH, metrics.horizontalAdvance(checkbox.text()) + 24))
 
 
 def _volume_tooltip(label: str, value: int) -> str:

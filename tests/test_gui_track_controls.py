@@ -1,13 +1,25 @@
 from types import SimpleNamespace
 
+import pytest
+
+pytest.importorskip("PySide6")
+
+from PySide6.QtWidgets import QApplication, QCheckBox
+
 from pitchstems.gui_track_controls import (
+    TRACK_CONTROL_TOGGLE_MIN_WIDTH,
     TRACK_CONTROL_MIN_HEIGHT,
     TrackControlEditorState,
+    _apply_checkbox_fit,
     reset_track_control_widgets,
     track_control_panel_height,
     track_control_visibility,
     volume_value_text,
 )
+
+
+def _app() -> QApplication:
+    return QApplication.instance() or QApplication([])
 
 
 def test_track_control_panel_height_never_shrinks_below_usable_controls() -> None:
@@ -100,3 +112,12 @@ def test_reset_track_control_widgets_clears_widget_registries() -> None:
 def test_volume_value_text_uses_percentage_units() -> None:
     assert volume_value_text(0) == "0%"
     assert volume_value_text(80) == "80%"
+
+
+def test_track_control_checkbox_reserves_label_width() -> None:
+    _app()
+    checkbox = QCheckBox("Chord")
+
+    _apply_checkbox_fit(checkbox)
+
+    assert checkbox.minimumWidth() >= TRACK_CONTROL_TOGGLE_MIN_WIDTH

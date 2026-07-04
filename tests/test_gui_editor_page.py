@@ -115,3 +115,27 @@ def test_editor_timeline_width_ignores_long_inspector_text() -> None:
     app.processEvents()
 
     assert timeline.width() == initial_width
+
+
+def test_editor_track_mix_uses_policy_width_for_playback_scroll() -> None:
+    _app()
+    window = _EditorWindow(width=900)
+    page = build_editor_page(window)
+
+    assert window.playback_scroll.minimumWidth() == 220
+    assert window.playback_scroll.maximumWidth() == 250
+    page.close()
+
+
+def test_editor_theory_preview_controls_use_two_row_grid() -> None:
+    _app()
+    window = _EditorWindow(width=1220)
+    page = build_editor_page(window)
+    side_scroll = page.layout().itemAt(0).layout().itemAt(2).widget()
+    side_panel = side_scroll.widget()
+    grid = side_panel.layout().itemAt(13).layout()
+
+    assert grid.itemAtPosition(0, 0).widget() is window.preview_scale_button
+    assert grid.itemAtPosition(0, 1).widget() is window.preview_scale_pattern
+    assert grid.itemAtPosition(1, 0).widget() is window.scale_chords_button
+    assert grid.itemAtPosition(1, 1).widget() is window.scale_browser_button

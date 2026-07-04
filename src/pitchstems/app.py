@@ -27,7 +27,7 @@ from pitchstems.editor_project import (
 )
 from pitchstems.editor_playback import review_playback_loop_range
 from pitchstems.editor_loader import EditorLoadResult
-from pitchstems.evidence_display import percent_with_bar, visible_scale_candidates
+from pitchstems.evidence_display import percent_text, percent_with_bar, visible_scale_candidates
 from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
 from pitchstems.midi_preview import render_note_preview
 from pitchstems.note_colours import note_colour_map
@@ -370,6 +370,8 @@ def main() -> int:
             self.note_filter_list = QListWidget()
             self.note_filter_list.setMinimumHeight(96)
             self.note_filter_list.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            self.note_filter_list.setWordWrap(True)
+            self.note_filter_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             self.note_filter_list.setAlternatingRowColors(True)
             self.note_filter_list.setToolTip("Optional corrections: Auto uses energy evidence, Exclude rejects chord names containing a note, Force requires chord names containing a note.")
             self.note_filter_help = QLabel(
@@ -438,6 +440,8 @@ def main() -> int:
             self.editor_track_visibility: dict[str, bool] = {}
             self.chord_list = QListWidget()
             self.chord_list.setMinimumHeight(130)
+            self.chord_list.setWordWrap(True)
+            self.chord_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             self.chord_list.setAlternatingRowColors(True)
             self.theory_context = QLabel("Theory: -")
             self.theory_context.setWordWrap(True)
@@ -446,6 +450,8 @@ def main() -> int:
             self.theory_context.setStyleSheet("color: #475569;")
             self.theory_list = QListWidget()
             self.theory_list.setMinimumHeight(120)
+            self.theory_list.setWordWrap(True)
+            self.theory_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             self.theory_list.setAlternatingRowColors(True)
             self.show_chromatic_scales = QCheckBox("Chromatic")
             self.show_chromatic_scales.setToolTip(
@@ -471,6 +477,8 @@ def main() -> int:
             )
             self.gap_suggestion_list = QListWidget()
             self.gap_suggestion_list.setMinimumHeight(105)
+            self.gap_suggestion_list.setWordWrap(True)
+            self.gap_suggestion_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             self.gap_suggestion_list.setAlternatingRowColors(True)
             self.use_gap_suggestion_button = QPushButton("Use")
             self.use_gap_suggestion_button.setEnabled(False)
@@ -1172,12 +1180,12 @@ def main() -> int:
                 display_label = self.display_scale_candidate_label(candidate)
                 notes = " - ".join(self.display_scale_candidate_notes(candidate))
                 item = QListWidgetItem(
-                    f"{display_label}  {percent_with_bar(candidate.score)}\n"
+                    f"{display_label}  score {percent_text(candidate.score)}\n"
                     f"{notes}\n"
-                    f"fit {percent_with_bar(candidate.pitch_fit, 6)}, "
-                    f"coverage {percent_with_bar(candidate.evidence_strength, 6)}, "
-                    f"centre {percent_with_bar(candidate.center_strength, 6)}, "
-                    f"chords {percent_with_bar(candidate.chord_support, 6)}"
+                    f"fit {percent_text(candidate.pitch_fit)}, "
+                    f"coverage {percent_text(candidate.evidence_strength)}, "
+                    f"centre {percent_text(candidate.center_strength)}, "
+                    f"chords {percent_text(candidate.chord_support)}"
                 )
                 item.setData(Qt.UserRole, candidate)
                 item.setToolTip("\n".join(candidate.explanation))

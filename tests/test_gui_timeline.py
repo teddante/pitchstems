@@ -49,7 +49,9 @@ def test_timeline_indexes_notes_and_filters_visible_tracks(tmp_path: Path) -> No
 
     assert set(view.notes_by_track) == {"bass", "piano"}
     assert [note.pitch for note in view._visible_notes_for_track("bass", 0.8, 1.3)] == [43, 47]
+    assert view.layout_geometry is not None
     assert set(view.track_geometries) == {"bass", "piano"}
+    assert view.track_geometries["bass"].y == view.layout_geometry.chord_height
 
     view.set_visible_tracks({"piano"})
 
@@ -90,7 +92,7 @@ def test_timeline_chord_labels_use_formatter_and_edited_marker(tmp_path: Path) -
     ]
 
     assert "F##" in labels
-    assert "Edited" in labels
+    assert "E" in labels
     assert not any(label.endswith("*") for label in labels)
 
 
@@ -323,7 +325,17 @@ def test_tiny_chord_labels_fall_back_to_root_name() -> None:
     _app()
     view = TimelineView()
 
-    assert view._chord_label_for_width("F#m7b5", 10) == "F#"
+    assert view._chord_label_for_width("F#m7b5", 28) == "F#"
+    assert view._chord_label_for_width("F#m7b5", 5) == ""
+
+
+def test_edited_chord_marker_is_hidden_when_the_rect_is_too_narrow() -> None:
+    _app()
+    view = TimelineView()
+
+    assert view._edited_marker_for_width(120) == "Edited"
+    assert view._edited_marker_for_width(30) == "E"
+    assert view._edited_marker_for_width(12) == ""
 
 
 def test_chord_drag_preview_draws_lightweight_feedback(tmp_path: Path) -> None:

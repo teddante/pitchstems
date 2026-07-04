@@ -257,21 +257,22 @@ class PianoChordWidget(QWidget):
             if highlighted:
                 self._draw_role_badge(painter, QRectF(x, keyboard_top, width, keyboard_height), pitch_class)
             painter.setPen(_contrast_text_colour(fill_colour) if highlighted else QColor("#64748b"))
-            painter.drawText(
-                x,
-                keyboard_top + keyboard_height - 18,
-                width,
-                16,
-                Qt.AlignCenter,
-                name,
-            )
+            if name:
+                painter.drawText(
+                    x,
+                    keyboard_top + keyboard_height - 18,
+                    width,
+                    16,
+                    Qt.AlignCenter,
+                    name,
+                )
 
         black_width = max(8, round(white_width * 0.56))
         black_height = round(keyboard_height * 0.62)
         white_index = {pitch: index for index, pitch in enumerate(white_pitches)}
         for pitch in self._visible_black_pitches():
             pitch_class = pitch % 12
-            name = self._display_pitch_name(pitch, white_width)
+            name = self._display_pitch_name(pitch, black_width)
             previous_white = self._previous_white_pitch(pitch)
             if previous_white not in white_index:
                 continue
@@ -287,8 +288,9 @@ class PianoChordWidget(QWidget):
             self._draw_constraint_marker(painter, QRectF(x, keyboard_top, black_width, black_height), pitch_class)
             if highlighted:
                 self._draw_role_badge(painter, QRectF(x, keyboard_top, black_width, black_height), pitch_class)
-            painter.setPen(_contrast_text_colour(fill_colour) if highlighted else QColor("#f8fafc"))
-            painter.drawText(x, keyboard_top + black_height - 16, black_width, 14, Qt.AlignCenter, name)
+            if name:
+                painter.setPen(_contrast_text_colour(fill_colour) if highlighted else QColor("#f8fafc"))
+                painter.drawText(x, keyboard_top + black_height - 16, black_width, 14, Qt.AlignCenter, name)
 
         if not self.pitch_classes:
             painter.setPen(QColor("#64748b"))
@@ -339,9 +341,13 @@ class PianoChordWidget(QWidget):
 
     def _display_pitch_name(self, pitch: int, key_width: float) -> str:
         name = self.pitch_class_formatter(pitch % 12)
-        if key_width >= 22:
-            return f"{name}{pitch // 12 - 1}"
-        return name
+        metrics = QFontMetrics(self.font())
+        full = f"{name}{pitch // 12 - 1}"
+        if key_width >= 22 and metrics.horizontalAdvance(full) <= key_width:
+            return full
+        if metrics.horizontalAdvance(name) <= key_width:
+            return name
+        return ""
 
     def _highlight_colour(self, pitch_class: int, fallback: str) -> QColor:
         return QColor(self.note_colours.get(pitch_class, fallback))
@@ -394,8 +400,11 @@ class PianoChordWidget(QWidget):
             painter.drawRoundedRect(handle, 3, 3)
         label = f"{pitch_class_name(self.preview_low_pitch % 12)}{self.preview_low_pitch // 12 - 1}"
         label += f" - {pitch_class_name(self.preview_high_pitch % 12)}{self.preview_high_pitch // 12 - 1}"
-        painter.setPen(QColor("#334155"))
-        painter.drawText(rect.adjusted(6, -6, -6, 8), Qt.AlignCenter, label)
+        label_width = max(0, int(selected.width()) - 24)
+        metrics = QFontMetrics(self.font())
+        if label_width >= metrics.horizontalAdvance(label):
+            painter.setPen(QColor("#334155"))
+            painter.drawText(QRectF(selected.left() + 12, rect.top() - 6, label_width, rect.height() + 14), Qt.AlignCenter, label)
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.RightButton:

@@ -47,14 +47,23 @@ def test_piano_chord_widget_key_labels_follow_pitch_class_formatter() -> None:
         lambda pitch_class: {3: "D#", 8: "G#", 10: "A#"}.get(pitch_class, str(pitch_class))
     )
     widget.set_chord("A#", ["A#", "D#", "F"], "Inspector")
-    widget.resize(280, 100)
+    widget.set_preview_range(60, 70)
+    widget.resize(600, 100)
     widget.show()
     app.processEvents()
 
     labels_by_pitch_class = {pitch % 12: name for _rect, pitch, name in widget._key_hitboxes}
-    assert labels_by_pitch_class[3] == "D#"
-    assert labels_by_pitch_class[8] == "G#"
-    assert labels_by_pitch_class[10] == "A#"
+    assert labels_by_pitch_class[3].startswith("D#")
+    assert labels_by_pitch_class[8].startswith("G#")
+    assert labels_by_pitch_class[10].startswith("A#")
+
+
+def test_piano_chord_widget_hides_key_labels_that_cannot_fit() -> None:
+    _app()
+    widget = PianoChordWidget()
+    widget.set_pitch_class_formatter(lambda _pitch_class: "C##")
+
+    assert widget._display_pitch_name(60, 8) == ""
 
 
 def test_piano_chord_widget_set_notes_supports_scale_display() -> None:
