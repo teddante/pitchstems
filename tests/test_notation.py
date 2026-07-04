@@ -1,6 +1,7 @@
 from pitchstems.editor_project import (
     chord_bass_name_for_label,
     chord_pitch_classes_for_label,
+    chord_sounding_pitch_classes_for_label,
     chord_tones_for_label,
     display_chord_label,
 )
@@ -23,6 +24,19 @@ def test_chord_bass_name_for_label_uses_parsed_slash_bass() -> None:
     assert chord_bass_name_for_label("F#/C#", "flat") == "Db"
     assert chord_bass_name_for_label("Bb/D", "sharp") == "D"
     assert chord_bass_name_for_label("Cmaj7") is None
+
+
+def test_sounding_chord_pitch_classes_keep_slash_bass_semantics() -> None:
+    assert chord_pitch_classes_for_label("C/D") == [0, 4, 7]
+    assert chord_sounding_pitch_classes_for_label("C/D") == [2, 0, 4, 7]
+    assert chord_sounding_pitch_classes_for_label("C/E") == [4, 0, 7]
+
+
+def test_chord_tones_parse_common_altered_extensions() -> None:
+    assert chord_pitch_classes_for_label("C7#9") == [0, 4, 7, 10, 3]
+    assert chord_tones_for_label("C7#9") == ["C", "E", "G", "Bb", "D#"]
+    assert chord_pitch_classes_for_label("C13b9") == [0, 4, 7, 10, 2, 9, 1]
+    assert chord_tones_for_label("C7b5") == ["C", "E", "Gb", "Bb"]
 
 
 def test_heptatonic_scale_spelling_uses_one_letter_per_degree() -> None:

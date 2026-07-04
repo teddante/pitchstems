@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from pitchstems.chord_analysis import ChordAnalysis, chord_pitch_classes_for_label
+from pitchstems.chord_analysis import ChordAnalysis, chord_sounding_pitch_classes_for_label
 from pitchstems.chord_detection import analyze_chord_region
 from pitchstems.chord_scoring import ChordScoringOptions
 from pitchstems.editor_models import ChordRegion, NoteEvent
@@ -147,7 +147,7 @@ def _gap_suggestions(
     no_local_evidence = 1.0 if gap_note_energy <= 0 else 0.0
     local_scores = dict(local_chord_analysis.candidates)
     for label, (action, generated_local_score) in candidates.items():
-        tones = set(chord_pitch_classes_for_label(label))
+        tones = set(chord_sounding_pitch_classes_for_label(label))
         if not tones:
             continue
         local_evidence = max(generated_local_score, local_scores.get(label, 0.0))

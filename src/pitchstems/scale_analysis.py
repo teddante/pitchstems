@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from pitchstems.chord_analysis import chord_pitch_classes_for_label
+from pitchstems.chord_analysis import chord_sounding_pitch_classes_for_label
+from pitchstems.chord_naming import ChordSymbol, parse_chord_symbol
 from pitchstems.editor_models import ChordRegion, NoteEvent
 from pitchstems.midi_energy import (
     active_notes_at,
@@ -501,7 +502,7 @@ def _chord_support(pitch_classes: set[int], chords: list[ChordRegion]) -> float:
         duration = chord.duration
         if duration <= 0:
             continue
-        tones = set(chord_pitch_classes_for_label(chord.label))
+        tones = set(chord_sounding_pitch_classes_for_label(chord.label))
         if not tones:
             continue
         weighted_total += duration
@@ -532,27 +533,76 @@ def _progression_for_candidate(
 
 
 def _roman_for_chord(label: str, key_root: int, scale: ScaleDefinition) -> str:
-    root = _chord_root(label)
-    if root is None:
+    symbol = parse_chord_symbol(label)
+    if symbol is None:
         return "?"
+    root = symbol.root
     relative = (root - key_root) % 12
     try:
         degree_index = scale.intervals.index(relative)
     except ValueError:
         return f"{pitch_class_name(root)}"
     numeral = ROMAN_NUMERALS[degree_index]
-    suffix = _chord_suffix(label)
+    suffix = symbol.suffix
     if _minor_or_diminished_suffix(suffix):
         numeral = numeral.lower()
-    if "dim" in suffix:
-        numeral += "dim"
-    elif "aug" in suffix:
-        numeral += "aug"
-    elif "maj7" in suffix:
-        numeral += "maj7"
-    elif "7" in suffix:
-        numeral += "7"
-    return numeral
+    inversion = _roman_inversion_suffix(symbol)
+    return f"{numeral}{_roman_quality_suffix(suffix, inversion)}{inversion}"
+
+
+def _roman_quality_suffix(suffix: str, inversion: str = "") -> str:
+    if suffix in {"", "m"}:
+        return ""
+    if inversion in {"65", "43", "42"}:
+        return _quality_suffix_without_seventh(suffix)
+    if suffix.startswith("mMaj"):
+        return f"Maj{suffix[4:]}"
+    if suffix.startswith("m"):
+        return suffix[1:]
+    return suffix
+
+
+def _quality_suffix_without_seventh(suffix: str) -> str:
+    if suffix in {"7", "m7"}:
+        return ""
+    if suffix == "maj7":
+        return "maj"
+    if suffix == "mMaj7":
+        return "Maj"
+    if suffix == "dim7":
+        return "dim"
+    if suffix == "m7b5":
+        return "7b5"
+    return _roman_quality_suffix(suffix)
+
+
+def _roman_inversion_suffix(symbol: ChordSymbol) -> str:
+    if symbol.bass is None or symbol.bass == symbol.root:
+        return ""
+    bass_interval = (symbol.bass - symbol.root) % 12
+    if bass_interval not in {interval % 12 for interval in symbol.intervals}:
+        return f"/{pitch_class_name(symbol.bass)}"
+    if _has_seventh_stack(symbol.suffix):
+        if bass_interval in {3, 4}:
+            return "65"
+        if bass_interval in {6, 7, 8}:
+            return "43"
+        if bass_interval in {9, 10, 11}:
+            return "42"
+    if bass_interval in {3, 4}:
+        return "6"
+    if bass_interval in {6, 7, 8}:
+        return "64"
+    return f"/{pitch_class_name(symbol.bass)}"
+
+
+def _has_seventh_stack(suffix: str) -> bool:
+    return (
+        "7" in suffix
+        or suffix.startswith(("9", "11", "13"))
+        or suffix.startswith(("maj9", "maj11", "maj13"))
+        or suffix.startswith(("m9", "m11", "m13"))
+    )
 
 
 def _suggested_note_groups(
@@ -564,7 +614,7 @@ def _suggested_note_groups(
     core_pitch_classes: list[int] = []
     if chords:
         chord = sorted(chords, key=lambda item: item.duration, reverse=True)[0]
-        core_pitch_classes = chord_pitch_classes_for_label(chord.label)
+        core_pitch_classes = chord_sounding_pitch_classes_for_label(chord.label)
     scale_pitch_classes = [(candidate.root + interval) % 12 for interval in candidate.scale.intervals]
     scale_spellings = spell_scale(candidate.root, candidate.scale.intervals)
     core_note_set = set(core_pitch_classes)
@@ -601,11 +651,6 @@ def _chord_root_totals(chords: list[ChordRegion]) -> dict[int, float]:
 def _chord_root(label: str) -> int | None:
     parts = split_chord_label(label)
     return parts.root_pitch_class if parts is not None else None
-
-
-def _chord_suffix(label: str) -> str:
-    parts = split_chord_label(label)
-    return parts.suffix if parts is not None else ""
 
 
 def _minor_or_diminished_suffix(suffix: str) -> bool:

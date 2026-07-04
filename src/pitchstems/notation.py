@@ -137,6 +137,10 @@ def spell_chord_tones(
     ]
 
 
+def spell_pitch_for_letter(target_pitch_class: int, letter: str) -> str:
+    return _spell_pitch_for_letter(target_pitch_class, letter)
+
+
 def spell_scale(
     root_pitch_class: int,
     intervals: tuple[int, ...],

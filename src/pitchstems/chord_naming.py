@@ -1,14 +1,41 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from pitchstems.notation import (
     DEFAULT_PITCH_NAMES,
+    LETTERS,
     pitch_class_name,
     respell_chord_label,
     spell_chord_tones,
+    spell_pitch_for_letter,
     split_chord_label,
 )
 
 PITCH_NAMES = DEFAULT_PITCH_NAMES
+
+
+@dataclass(frozen=True)
+class ChordSymbol:
+    root: int
+    suffix: str
+    intervals: tuple[int, ...]
+    bass: int | None = None
+    alterations: tuple[str, ...] = ()
+
+    @property
+    def pitch_classes(self) -> tuple[int, ...]:
+        return tuple(_dedupe((self.root + interval) % 12 for interval in self.intervals))
+
+    @property
+    def sounding_pitch_classes(self) -> tuple[int, ...]:
+        tones = list(self.pitch_classes)
+        if self.bass is not None and self.bass in tones:
+            tones.remove(self.bass)
+            tones.insert(0, self.bass)
+        elif self.bass is not None:
+            tones.insert(0, self.bass)
+        return tuple(tones)
 
 
 def display_chord_label(label: str, spelling_preference: str | None = "auto") -> str:
@@ -23,25 +50,13 @@ def chord_bass_name_for_label(label: str, spelling_preference: str | None = "aut
 
 
 def chord_tones_for_label(label: str, spelling_preference: str | None = "auto") -> list[str]:
-    parts = split_chord_label(label)
-    if parts is None:
+    symbol = parse_chord_symbol(label)
+    if symbol is None:
         return [PITCH_NAMES[pitch_class] for pitch_class in chord_pitch_classes_for_label(label)]
-    suffix = parts.suffix
-    omitted_intervals: set[int] = set()
-    if "(no" in suffix:
-        suffix, omitted_intervals = _split_omitted_suffix(suffix)
-    quality = next(
-        (
-            intervals
-            for quality_suffix, intervals in _chord_qualities()
-            if quality_suffix == suffix
-        ),
-        None,
-    )
-    if quality is None:
-        return [PITCH_NAMES[pitch_class] for pitch_class in chord_pitch_classes_for_label(label)]
-    intervals = [interval for interval in quality if interval not in omitted_intervals]
-    return spell_chord_tones(label, intervals, spelling_preference)
+    names = spell_chord_tones(label, symbol.intervals, spelling_preference)
+    if symbol.alterations:
+        return _respell_altered_tones(label, symbol, names)
+    return names
 
 
 def alternate_chord_names_for_label(label: str, bass: int | None = None) -> list[str]:
@@ -73,15 +88,61 @@ def chord_quality_templates() -> tuple[tuple[str, tuple[int, ...]], ...]:
     return tuple(_chord_qualities())
 
 
-def chord_pitch_classes_for_label(label: str) -> list[int]:
+def parse_chord_symbol(label: str) -> ChordSymbol | None:
     parts = split_chord_label(label)
     if parts is None:
+        return None
+    quality = _quality_details(parts.suffix)
+    if quality is None:
+        return None
+    intervals, alterations = quality
+    return ChordSymbol(
+        root=parts.root_pitch_class,
+        suffix=parts.suffix,
+        intervals=intervals,
+        bass=parts.bass_pitch_class,
+        alterations=alterations,
+    )
+
+
+def chord_pitch_classes_for_label(label: str) -> list[int]:
+    symbol = parse_chord_symbol(label)
+    if symbol is None:
         return []
-    suffix = parts.suffix
+    return list(symbol.pitch_classes)
+
+
+def chord_sounding_pitch_classes_for_label(label: str) -> list[int]:
+    symbol = parse_chord_symbol(label)
+    if symbol is None:
+        return []
+    return list(symbol.sounding_pitch_classes)
+
+
+def _quality_details(suffix: str) -> tuple[tuple[int, ...], tuple[str, ...]] | None:
     omitted_intervals: set[int] = set()
     if "(no" in suffix:
         suffix, omitted_intervals = _split_omitted_suffix(suffix)
-    quality = next(
+    quality = _base_quality_details(suffix)
+    if quality is None:
+        return None
+    intervals, alterations = quality
+    return tuple(
+        interval
+        for interval in intervals
+        if interval not in omitted_intervals
+    ), alterations
+
+
+def _base_quality_details(suffix: str) -> tuple[tuple[int, ...], tuple[str, ...]] | None:
+    quality = _exact_quality_intervals(suffix)
+    if quality is not None:
+        return quality, ()
+    return _altered_quality_intervals(suffix)
+
+
+def _exact_quality_intervals(suffix: str) -> tuple[int, ...] | None:
+    return next(
         (
             intervals
             for quality_suffix, intervals in _chord_qualities()
@@ -89,16 +150,86 @@ def chord_pitch_classes_for_label(label: str) -> list[int]:
         ),
         None,
     )
-    if quality is None:
-        return []
+
+
+def _dedupe(values) -> list[int]:
     tones: list[int] = []
-    for interval in quality:
-        if interval in omitted_intervals:
-            continue
-        pitch_class = (parts.root_pitch_class + interval) % 12
+    for interval in values:
+        pitch_class = interval % 12
         if pitch_class not in tones:
             tones.append(pitch_class)
     return tones
+
+
+def _altered_quality_intervals(suffix: str) -> tuple[tuple[int, ...], tuple[str, ...]] | None:
+    for base_suffix, intervals in _alterable_quality_bases():
+        if not suffix.startswith(base_suffix):
+            continue
+        alteration_text = suffix[len(base_suffix):]
+        if not alteration_text:
+            return intervals, ()
+        alterations = _parse_alterations(alteration_text)
+        if alterations is None:
+            continue
+        return _apply_alterations(intervals, alterations), alterations
+    return None
+
+
+def _parse_alterations(text: str) -> tuple[str, ...] | None:
+    alterations: list[str] = []
+    index = 0
+    while index < len(text):
+        accidental = text[index]
+        if accidental not in {"b", "#"}:
+            return None
+        index += 1
+        start = index
+        while index < len(text) and text[index].isdigit():
+            index += 1
+        if start == index:
+            return None
+        token = f"{accidental}{text[start:index]}"
+        if token not in _ALTERED_INTERVALS:
+            return None
+        alterations.append(token)
+    return tuple(alterations)
+
+
+def _apply_alterations(intervals: tuple[int, ...], alterations: tuple[str, ...]) -> tuple[int, ...]:
+    result = list(intervals)
+    for alteration in alterations:
+        if alteration in {"b5", "#5"}:
+            result = [
+                _ALTERED_INTERVALS[alteration] if interval % 12 == 7 else interval
+                for interval in result
+            ]
+        else:
+            target = _ALTERED_INTERVALS[alteration]
+            result.append(target)
+    return tuple(_dedupe(result))
+
+
+def _respell_altered_tones(label: str, symbol: ChordSymbol, names: list[str]) -> list[str]:
+    parts = split_chord_label(label)
+    if parts is None:
+        return names
+    spelled = list(names)
+    root_letter = parts.root_name[0]
+    for alteration in symbol.alterations:
+        interval = _ALTERED_INTERVALS[alteration]
+        try:
+            index = next(
+                tone_index
+                for tone_index, tone_interval in enumerate(symbol.intervals)
+                if tone_interval % 12 == interval
+            )
+        except StopIteration:
+            continue
+        target_letter = LETTERS[
+            (LETTERS.index(root_letter) + _ALTERED_LETTER_STEPS[alteration]) % len(LETTERS)
+        ]
+        spelled[index] = spell_pitch_for_letter((symbol.root + interval) % 12, target_letter)
+    return spelled
 
 
 def _split_omitted_suffix(suffix: str) -> tuple[str, set[int]]:
@@ -120,6 +251,12 @@ def _split_omitted_suffix(suffix: str) -> tuple[str, set[int]]:
 
 def _chord_qualities() -> list[tuple[str, tuple[int, ...]]]:
     return [
+        ("maj13", (0, 4, 7, 11, 2, 9)),
+        ("13", (0, 4, 7, 10, 2, 9)),
+        ("m13", (0, 3, 7, 10, 2, 5, 9)),
+        ("maj11", (0, 4, 7, 11, 2, 5)),
+        ("11", (0, 4, 7, 10, 2, 5)),
+        ("m11", (0, 3, 7, 10, 2, 5)),
         ("maj9(no3)", (0, 7, 11, 2)),
         ("9(no3)", (0, 7, 10, 2)),
         ("maj9", (0, 4, 7, 11, 2)),
@@ -148,3 +285,36 @@ def _chord_qualities() -> list[tuple[str, tuple[int, ...]]]:
         ("m", (0, 3, 7)),
         ("", (0, 4, 7)),
     ]
+
+
+def _alterable_quality_bases() -> tuple[tuple[str, tuple[int, ...]], ...]:
+    return tuple(
+        sorted(
+            (
+                (suffix, intervals)
+                for suffix, intervals in _chord_qualities()
+                if suffix and "(no" not in suffix
+            ),
+            key=lambda item: len(item[0]),
+            reverse=True,
+        )
+    )
+
+
+_ALTERED_INTERVALS = {
+    "b5": 6,
+    "#5": 8,
+    "b9": 1,
+    "#9": 3,
+    "#11": 6,
+    "b13": 8,
+}
+
+_ALTERED_LETTER_STEPS = {
+    "b5": 4,
+    "#5": 4,
+    "b9": 1,
+    "#9": 1,
+    "#11": 3,
+    "b13": 5,
+}

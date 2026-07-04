@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from pitchstems.chord_analysis import chord_pitch_classes_for_label, exact_chord_names_for_pitch_classes
+from pitchstems.chord_analysis import (
+    chord_sounding_pitch_classes_for_label,
+    exact_chord_names_for_pitch_classes,
+)
 from pitchstems.editor_models import ChordRegion, NoteEvent
 from pitchstems.midi_energy import total_region_energy
 from pitchstems.time_format import format_time
@@ -57,7 +60,7 @@ def candidate_pitch_class_movement(
     for neighbor in [previous_chord, next_chord]:
         if neighbor is None:
             continue
-        neighbor_tones = set(chord_pitch_classes_for_label(neighbor.label))
+        neighbor_tones = set(chord_sounding_pitch_classes_for_label(neighbor.label))
         if neighbor_tones:
             scores.append(_pitch_class_movement_score(neighbor_tones, tones))
     if not scores:
@@ -89,7 +92,7 @@ def candidate_common_tones(
     for neighbor in [previous_chord, next_chord]:
         if neighbor is None:
             continue
-        neighbor_tones = set(chord_pitch_classes_for_label(neighbor.label))
+        neighbor_tones = set(chord_sounding_pitch_classes_for_label(neighbor.label))
         if neighbor_tones:
             scores.append(len(tones & neighbor_tones) / len(tones | neighbor_tones))
     if not scores:

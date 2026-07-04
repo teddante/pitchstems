@@ -102,6 +102,30 @@ def test_theory_analysis_separates_pitch_collection_from_tonal_centre() -> None:
     assert analysis.progression.roman_numerals == ["i7", "IV"]
 
 
+def test_progression_roman_numerals_preserve_inversions_and_suffixes() -> None:
+    notes = [
+        _note(0.0, 4.0, 48, 112),  # C bass centre
+        _note(0.0, 4.0, 60, 100),  # C
+        _note(0.0, 4.0, 62, 80),  # D
+        _note(0.0, 4.0, 64, 92),  # E
+        _note(0.0, 4.0, 65, 78),  # F
+        _note(0.0, 4.0, 67, 94),  # G
+        _note(0.0, 4.0, 69, 82),  # A
+        _note(0.0, 4.0, 71, 84),  # B
+    ]
+    chords = [
+        ChordRegion(0.0, 1.0, "C/E", 1.0),
+        ChordRegion(1.0, 2.0, "G7/B", 1.0),
+        ChordRegion(2.0, 3.0, "Cadd9/D", 1.0),
+    ]
+
+    analysis = analyze_theory_region(notes, chords, 0.0, 4.0)
+
+    assert analysis.label == "C major"
+    assert analysis.progression is not None
+    assert analysis.progression.roman_numerals == ["I6", "V65", "Iadd9/D"]
+
+
 def test_theory_analysis_names_harmonic_minor_when_raised_seventh_is_present() -> None:
     notes = [
         _note(0.0, 2.0, 45, 112),  # A
@@ -279,6 +303,15 @@ def test_theory_helpers_expose_gap_support_functions() -> None:
     assert region_energy(notes, 1.0, 2.0) > 0.0
     assert candidate_common_tones({0, 4, 7}, chords[0], chords[1]) > 0.0
     assert report_time(65.0) == "01:05.000"
+
+
+def test_theory_helpers_count_slash_bass_as_sounding_tone() -> None:
+    from pitchstems.editor_models import ChordRegion as SharedChordRegion
+    from pitchstems.theory_helpers import candidate_common_tones
+
+    chord = SharedChordRegion(0.0, 1.0, "C/D", 0.9)
+
+    assert candidate_common_tones({2}, chord, None) > 0.0
 
 
 def _note(start: float, end: float, pitch: int, velocity: int = 100) -> NoteEvent:
