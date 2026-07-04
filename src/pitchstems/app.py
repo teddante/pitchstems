@@ -7,6 +7,12 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from pitchstems.app_identity import (
+    APP_NAME,
+    APP_ORGANIZATION,
+    apply_windows_app_identity,
+    app_icon_path,
+)
 from pitchstems.app_logging import app_logger, setup_app_logging
 from pitchstems.chord_preview import chord_preview_notes
 from pitchstems.editor_project import (
@@ -69,7 +75,7 @@ def main() -> int:
     logger = app_logger()
     try:
         from PySide6.QtCore import QSettings, QTimer, Qt, QUrl
-        from PySide6.QtGui import QAction, QKeySequence, QShortcut
+        from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
         from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
         from PySide6.QtWidgets import (
             QApplication,
@@ -134,6 +140,9 @@ def main() -> int:
         def __init__(self) -> None:
             super().__init__()
             self.setWindowTitle("PitchStems")
+            icon_path = app_icon_path()
+            if icon_path is not None:
+                self.setWindowIcon(QIcon(str(icon_path)))
             self.resize(1220, 780)
             self.log_path = log_path
             self.logger = logger
@@ -1842,7 +1851,13 @@ def main() -> int:
         spin.setSpecialValueText(special)
         return spin
 
+    apply_windows_app_identity()
     app = QApplication([])
+    app.setApplicationName(APP_NAME)
+    app.setOrganizationName(APP_ORGANIZATION)
+    icon_path = app_icon_path()
+    if icon_path is not None:
+        app.setWindowIcon(QIcon(str(icon_path)))
     app.setStyleSheet(pitchstems_stylesheet())
     window = MainWindow()
     window.show()
