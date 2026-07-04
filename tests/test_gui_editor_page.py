@@ -164,3 +164,17 @@ def test_editor_theory_header_uses_wrapped_grid() -> None:
 
     assert grid.itemAtPosition(0, 1).widget() is window.show_chromatic_scales
     assert grid.itemAtPosition(1, 0).widget() is window.inspect_theory_button
+
+
+def test_editor_side_panel_shrinks_to_scroll_viewport() -> None:
+    app = _app()
+    window = _EditorWindow(width=900)
+    page = build_editor_page(window)
+    page.resize(900, 520)
+    page.show()
+    app.processEvents()
+    side_scroll = page.layout().itemAt(0).layout().itemAt(2).widget()
+    side_panel = side_scroll.widget()
+
+    assert side_panel.minimumWidth() == 0
+    assert side_panel.width() <= side_scroll.viewport().width()
