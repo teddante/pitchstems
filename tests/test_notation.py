@@ -35,8 +35,12 @@ def test_sounding_chord_pitch_classes_keep_slash_bass_semantics() -> None:
 def test_chord_tones_parse_common_altered_extensions() -> None:
     assert chord_pitch_classes_for_label("C7#9") == [0, 4, 7, 10, 3]
     assert chord_tones_for_label("C7#9") == ["C", "E", "G", "Bb", "D#"]
-    assert chord_pitch_classes_for_label("C13b9") == [0, 4, 7, 10, 2, 9, 1]
+    assert chord_pitch_classes_for_label("C13b9") == [0, 4, 7, 10, 1, 9]
+    assert chord_tones_for_label("C13b9") == ["C", "E", "G", "Bb", "Db", "A"]
+    assert chord_tones_for_label("C13#9") == ["C", "E", "G", "Bb", "D#", "A"]
     assert chord_tones_for_label("C7b5") == ["C", "E", "Gb", "Bb"]
+    assert chord_tones_for_label("C11#11") == ["C", "E", "G", "Bb", "D", "F#"]
+    assert chord_tones_for_label("C13b13") == ["C", "E", "G", "Bb", "D", "Ab"]
 
 
 def test_heptatonic_scale_spelling_uses_one_letter_per_degree() -> None:

@@ -70,6 +70,7 @@ class ScaleCandidate:
     outside_energy: float
     center_strength: float
     chord_support: float
+    evidence_strength: float = 0.0
     explanation: list[str] = field(default_factory=list)
 
 
@@ -229,6 +230,8 @@ def _scale_registry() -> tuple[ScaleDefinition, ...]:
 SCALE_REGISTRY: tuple[ScaleDefinition, ...] = _scale_registry()
 
 ROMAN_NUMERALS = ("I", "II", "III", "IV", "V", "VI", "VII")
+MIN_CLEAR_INTERPRETATION_SCORE = 0.75
+MIN_CLEAR_INTERPRETATION_PITCH_CLASSES = 4
 
 
 def analyze_theory_at(
@@ -283,15 +286,18 @@ def analyze_theory_region(
 
 
 def theory_analysis_report(analysis: TheoryAnalysis) -> str:
+    detected = analysis.label or "No clear key/mode"
+    score_label = "ranking score" if analysis.label else "best candidate score"
     lines = [
         "Theory Inspector Calculation",
         "============================",
-        f"Detected interpretation: {analysis.label or 'No clear key/mode'} (ranking score {analysis.confidence:.0%})",
+        f"Detected interpretation: {detected} ({score_label} {analysis.confidence:.0%})",
         "",
         "Pitch Evidence",
         "--------------",
         "MIDI energy model: note energy = overlap_seconds * (velocity / 127)^2.",
         "Pitch classes are summed across octaves and selected analysis tracks.",
+        "Pitch fit means the observed energy fits the scale; interpretation strength also needs enough coverage and tonal-centre evidence.",
         "",
         "Weighted Pitch Classes",
         "----------------------",
@@ -312,6 +318,7 @@ def theory_analysis_report(analysis: TheoryAnalysis) -> str:
                 f"Family: {candidate.scale.family}",
                 f"Aliases: {', '.join(candidate.scale.aliases) or '-'}",
                 f"Pitch fit: {candidate.pitch_fit:.0%}",
+                f"Evidence coverage: {candidate.evidence_strength:.0%}",
                 f"Outside energy: {candidate.outside_energy:.0%}",
                 f"Tonal-centre strength: {candidate.center_strength:.0%}",
                 f"Chord support: {candidate.chord_support:.0%}",
@@ -365,8 +372,9 @@ def _analyze_evidence(
     best = candidates[0] if candidates else None
     progression = _progression_for_candidate(best, chords) if best else None
     core_notes, scale_notes, outside_notes = _suggested_note_groups(best, chords)
+    has_clear_interpretation = _has_clear_interpretation(best, totals)
     return TheoryAnalysis(
-        label=best.label if best else None,
+        label=best.label if has_clear_interpretation and best else None,
         confidence=best.score if best else 0.0,
         note_weights=note_weights,
         candidates=candidates,
@@ -400,6 +408,13 @@ def _scale_candidates(
             outside_energy = 1.0 - pitch_fit
             center_strength = _center_strength(root, totals, bass_totals, chord_root_totals)
             chord_support = _chord_support(pitch_classes, chords)
+            evidence_strength = _scale_evidence_strength(pitch_classes, observed_pitch_classes)
+            score = _interpretation_score(
+                pitch_fit,
+                evidence_strength,
+                center_strength,
+                chord_support,
+            )
             if pitch_fit < 0.72 and scale.name != "Chromatic":
                 continue
             notes = spell_scale(root, scale.intervals)
@@ -410,16 +425,18 @@ def _scale_candidates(
                     root=root,
                     scale=scale,
                     notes=notes,
-                    score=fit_clamp(pitch_fit),
+                    score=fit_clamp(score),
                     pitch_fit=fit_clamp(pitch_fit),
                     outside_energy=fit_clamp(outside_energy),
                     center_strength=fit_clamp(center_strength),
                     chord_support=fit_clamp(chord_support),
+                    evidence_strength=fit_clamp(evidence_strength),
                     explanation=[
                         f"{label} is ranked as a formal explanation of the observed pitch evidence.",
-                        "Ranking rule: reject strong contradictions, then prefer higher explained "
-                        "energy, fewer unobserved scale tones, stronger tonal-centre evidence, "
-                        "and stronger chord-track support.",
+                        "Ranking rule: reject strong contradictions, then combine explained "
+                        "energy, evidence coverage, tonal-centre evidence, and chord-track support.",
+                        "Sparse evidence can fit many scales, so interpretation strength is lower "
+                        "than raw pitch fit until enough of the collection is observed.",
                     ],
                 )
             )
@@ -461,13 +478,72 @@ def _scale_candidate_sort_key(
     }
     unobserved_scale_tones = len(scale_tones - observed_pitch_classes)
     return (
+        candidate.score,
         -candidate.outside_energy,
         candidate.pitch_fit,
+        candidate.evidence_strength,
         -float(unobserved_scale_tones),
         candidate.center_strength,
         candidate.chord_support,
+        -float(_scale_family_priority(candidate.scale.family)),
         -float(len(scale_tones)),
+        -float(candidate.root),
     )
+
+
+def _has_clear_interpretation(
+    candidate: ScaleCandidate | None,
+    totals: dict[int, float],
+) -> bool:
+    if candidate is None:
+        return False
+    if len(totals) < MIN_CLEAR_INTERPRETATION_PITCH_CLASSES:
+        return False
+    if candidate.center_strength <= 0:
+        return False
+    return candidate.score >= MIN_CLEAR_INTERPRETATION_SCORE
+
+
+def _scale_evidence_strength(
+    scale_tones: set[int],
+    observed_pitch_classes: set[int],
+) -> float:
+    if not scale_tones:
+        return 0.0
+    observed_inside_scale = len(scale_tones & observed_pitch_classes)
+    return observed_inside_scale / len(scale_tones)
+
+
+def _interpretation_score(
+    pitch_fit: float,
+    evidence_strength: float,
+    center_strength: float,
+    chord_support: float,
+) -> float:
+    support = (
+        0.65 * evidence_strength
+        + 0.20 * center_strength
+        + 0.15 * chord_support
+    )
+    return pitch_fit * support
+
+
+def _scale_family_priority(family: str) -> int:
+    if family == "diatonic":
+        return 0
+    if family in {"harmonic minor mode", "melodic minor mode", "harmonic major mode"}:
+        return 1
+    if family == "double harmonic mode":
+        return 2
+    if family in {"pentatonic", "hexatonic"}:
+        return 3
+    if family == "blues":
+        return 4
+    if family == "bebop":
+        return 5
+    if family.startswith("symmetrical"):
+        return 6
+    return 7
 
 
 def _scale_label(root: int, scale: ScaleDefinition) -> str:
@@ -481,18 +557,37 @@ def _center_strength(
     chord_root_totals: dict[int, float],
 ) -> float:
     terms = []
-    max_total = max(totals.values(), default=0.0)
-    if max_total:
-        terms.append(totals.get(root, 0.0) / max_total)
-    max_bass = max(bass_totals.values(), default=0.0)
-    if max_bass:
-        terms.append(bass_totals.get(root, 0.0) / max_bass)
-    max_chord = max(chord_root_totals.values(), default=0.0)
-    if max_chord:
-        terms.append(chord_root_totals.get(root, 0.0) / max_chord)
+    pitch_prominence = _root_prominence(totals, root)
+    if pitch_prominence is not None:
+        terms.append(pitch_prominence)
+    bass_prominence = _root_prominence(bass_totals, root)
+    if bass_prominence is not None:
+        terms.append(bass_prominence)
+    chord_prominence = _root_prominence(chord_root_totals, root)
+    if chord_prominence is not None:
+        terms.append(chord_prominence)
     if not terms:
         return 0.0
     return sum(terms) / len(terms)
+
+
+def _root_prominence(totals: dict[int, float], root: int) -> float | None:
+    if not totals:
+        return None
+    root_weight = totals.get(root, 0.0)
+    if root_weight <= 0:
+        return 0.0
+    other_weights = [
+        weight
+        for pitch_class, weight in totals.items()
+        if pitch_class != root
+    ]
+    if not other_weights:
+        return 1.0
+    strongest_other = max(other_weights)
+    if root_weight <= strongest_other:
+        return 0.0
+    return (root_weight - strongest_other) / root_weight
 
 
 def _chord_support(pitch_classes: set[int], chords: list[ChordRegion]) -> float:

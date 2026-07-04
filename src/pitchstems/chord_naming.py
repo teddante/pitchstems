@@ -198,15 +198,19 @@ def _parse_alterations(text: str) -> tuple[str, ...] | None:
 def _apply_alterations(intervals: tuple[int, ...], alterations: tuple[str, ...]) -> tuple[int, ...]:
     result = list(intervals)
     for alteration in alterations:
-        if alteration in {"b5", "#5"}:
-            result = [
-                _ALTERED_INTERVALS[alteration] if interval % 12 == 7 else interval
-                for interval in result
-            ]
+        natural_interval = _ALTERATION_REPLACEMENTS[alteration]
+        if natural_interval in {interval % 12 for interval in result}:
+            result = _replace_interval(result, natural_interval, _ALTERED_INTERVALS[alteration])
         else:
-            target = _ALTERED_INTERVALS[alteration]
-            result.append(target)
+            result.append(_ALTERED_INTERVALS[alteration])
     return tuple(_dedupe(result))
+
+
+def _replace_interval(intervals: list[int], natural_interval: int, altered_interval: int) -> list[int]:
+    return [
+        altered_interval if interval % 12 == natural_interval else interval
+        for interval in intervals
+    ]
 
 
 def _respell_altered_tones(label: str, symbol: ChordSymbol, names: list[str]) -> list[str]:
@@ -308,6 +312,15 @@ _ALTERED_INTERVALS = {
     "#9": 3,
     "#11": 6,
     "b13": 8,
+}
+
+_ALTERATION_REPLACEMENTS = {
+    "b5": 7,
+    "#5": 7,
+    "b9": 2,
+    "#9": 2,
+    "#11": 5,
+    "b13": 9,
 }
 
 _ALTERED_LETTER_STEPS = {

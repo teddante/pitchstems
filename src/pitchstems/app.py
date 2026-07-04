@@ -1162,8 +1162,9 @@ def main() -> int:
                 f"{self.display_weighted_note_name(name)} ({weight:.0%})"
                 for name, weight in analysis.note_weights[:8]
             )
+            interpretation_prefix = "Likely" if analysis.label else "Possible"
             self.theory_context.setText(
-                f"Likely: {shown_best_label} (score {percent_with_bar(shown_best.score)})\n"
+                f"{interpretation_prefix}: {shown_best_label} (score {percent_with_bar(shown_best.score)})\n"
                 f"Weighted notes: {note_text or '-'}"
             )
             self.theory_context.setToolTip(self.theory_context.text())
@@ -1174,6 +1175,7 @@ def main() -> int:
                     f"{display_label}  {percent_with_bar(candidate.score)}\n"
                     f"{notes}\n"
                     f"fit {percent_with_bar(candidate.pitch_fit, 6)}, "
+                    f"coverage {percent_with_bar(candidate.evidence_strength, 6)}, "
                     f"centre {percent_with_bar(candidate.center_strength, 6)}, "
                     f"chords {percent_with_bar(candidate.chord_support, 6)}"
                 )

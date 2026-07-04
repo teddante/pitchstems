@@ -102,6 +102,39 @@ def test_theory_analysis_separates_pitch_collection_from_tonal_centre() -> None:
     assert analysis.progression.roman_numerals == ["i7", "IV"]
 
 
+def test_theory_analysis_does_not_overclaim_sparse_pitch_evidence() -> None:
+    notes = [
+        _note(0.0, 1.0, 60),
+        _note(0.0, 1.0, 64),
+        _note(0.0, 1.0, 67),
+    ]
+
+    analysis = analyze_theory_region(notes, [ChordRegion(0.0, 1.0, "C", 1.0)], 0.0, 1.0)
+
+    assert analysis.label is None
+    assert analysis.candidates
+    assert analysis.candidates[0].pitch_fit == 1.0
+    assert analysis.confidence < 0.75
+
+
+def test_theory_analysis_requires_centre_evidence_for_key_mode_label() -> None:
+    notes = [
+        _note(0.0, 2.0, 48, 118),
+        _note(0.0, 2.0, 60, 108),
+        _note(0.0, 2.0, 62, 80),
+        _note(0.0, 2.0, 64, 92),
+        _note(0.0, 2.0, 65, 78),
+        _note(0.0, 2.0, 67, 94),
+        _note(0.0, 2.0, 69, 82),
+        _note(0.0, 2.0, 71, 84),
+    ]
+
+    analysis = analyze_theory_region(notes, [ChordRegion(0.0, 2.0, "C", 1.0)], 0.0, 2.0)
+
+    assert analysis.label == "C major"
+    assert analysis.confidence >= 0.75
+
+
 def test_progression_roman_numerals_preserve_inversions_and_suffixes() -> None:
     notes = [
         _note(0.0, 4.0, 48, 112),  # C bass centre
@@ -172,9 +205,28 @@ def test_theory_analysis_can_identify_chromatic_collection() -> None:
 
     analysis = analyze_theory_region(notes, [], 0.0, 1.0)
 
-    assert analysis.label == "C Chromatic"
+    assert analysis.label is None
+    assert analysis.candidates[0].label == "C Chromatic"
     assert analysis.candidates[0].scale.intervals == tuple(range(12))
     assert analysis.candidates[0].pitch_fit == 1.0
+    assert analysis.candidates[0].center_strength == 0.0
+
+
+def test_theory_analysis_keeps_functional_ambiguity_unresolved_without_centre() -> None:
+    notes = [
+        _note(0.0, 2.0, pitch)
+        for pitch in [60, 62, 64, 65, 66, 67, 69, 71]
+    ]
+    chords = [
+        ChordRegion(0.0, 1.0, "D7", 1.0),
+        ChordRegion(1.0, 2.0, "G", 1.0),
+    ]
+
+    analysis = analyze_theory_region(notes, chords, 0.0, 2.0)
+
+    assert analysis.label is None
+    assert analysis.candidates
+    assert analysis.candidates[0].center_strength == 0.0
 
 
 def test_theory_analysis_requires_forced_pitch_classes() -> None:
@@ -227,6 +279,7 @@ def test_theory_report_explains_evidence_and_formula_terms() -> None:
 
     assert "MIDI energy model" in report
     assert "Scale / Key / Mode Candidates" in report
+    assert "Evidence coverage:" in report
     assert "Aliases:" in report
     assert "Ranking rule:" in report
     assert "Progression" in report
