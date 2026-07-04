@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSignalBlocker, Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
@@ -77,6 +77,10 @@ def reset_track_control_widgets(window) -> None:
     window.track_control_detail_rows.clear()
     window.track_control_top_spacer = None
     window.track_control_bottom_spacer = None
+    if hasattr(window, "track_master_checks"):
+        window.track_master_checks.clear()
+    if hasattr(window, "show_all_tracks_button"):
+        window.show_all_tracks_button = None
     window.hidden_track_status = None
 
 
@@ -117,13 +121,31 @@ def rebuild_track_controls(window, editor_state: dict) -> None:
     show_all_button = QPushButton("Show All")
     show_all_button.setToolTip("Restore every track to the timeline.")
     show_all_button.clicked.connect(window.show_all_timeline_tracks)
+    show_all_button.setVisible(False)
     top_title_row.addWidget(top_title)
     top_title_row.addStretch(1)
     top_title_row.addWidget(hidden_status)
+    top_title_row.addWidget(show_all_button)
     top_layout.addLayout(top_title_row)
-    top_layout.addWidget(show_all_button)
+    master_row = QHBoxLayout()
+    master_row.setContentsMargins(0, 0, 0, 0)
+    master_row.setSpacing(5)
+    for group, label, tooltip in (
+        ("view", "View", "Show or hide all timeline track lanes."),
+        ("analysis", "Chord", "Include or exclude all MIDI tracks from chord analysis."),
+        ("audio", "Audio", "Enable or mute all separated stem audio tracks."),
+        ("midi", "MIDI", "Enable or mute all generated MIDI preview tracks."),
+    ):
+        master = QCheckBox(label)
+        master.setToolTip(tooltip)
+        master.toggled.connect(lambda checked, group=group: set_track_group_checked(window, group, checked))
+        window.track_master_checks[group] = master
+        master_row.addWidget(master)
+    master_row.addStretch(1)
+    top_layout.addLayout(master_row)
     window.track_control_top_spacer.setLayout(top_layout)
     window.hidden_track_status = hidden_status
+    window.show_all_tracks_button = show_all_button
     window.playback_controls.addWidget(window.track_control_top_spacer)
 
     for track in window.editor_project.tracks:
@@ -201,6 +223,7 @@ def add_track_control_row(window, track, editor_state: TrackControlEditorState) 
         "Show this track's lane on the timeline. Turning it off hides this row too; use Show All to restore hidden tracks."
     )
     show_check.toggled.connect(lambda *_args: window.refresh_visible_tracks())
+    show_check.toggled.connect(lambda *_args: refresh_track_master_toggles(window))
     window.track_visibility_checks[track.name] = show_check
     toggle_row.addWidget(show_check)
 
@@ -215,6 +238,7 @@ def add_track_control_row(window, track, editor_state: TrackControlEditorState) 
     analysis_check.toggled.connect(lambda *_args: window.refresh_current_harmony(window.timeline.position, force=True))
     analysis_check.toggled.connect(lambda *_args: window.save_editor_state())
     analysis_check.toggled.connect(lambda *_args: window.refresh_timeline_track_summaries())
+    analysis_check.toggled.connect(lambda *_args: refresh_track_master_toggles(window))
     window.track_analysis_checks[track.name] = analysis_check
     toggle_row.addWidget(analysis_check)
 
@@ -224,10 +248,11 @@ def add_track_control_row(window, track, editor_state: TrackControlEditorState) 
     audio_slider = QSlider(Qt.Horizontal)
     audio_slider.setRange(0, 100)
     audio_slider.setValue(editor_int(audio_volume.get(track.name), 80, 0, 100))
-    audio_slider.setToolTip("Separated stem audio volume.")
+    audio_slider.setToolTip(_volume_tooltip("Separated stem audio volume", audio_slider.value()))
     audio_check.toggled.connect(lambda *_args: window.refresh_playback_mix())
     audio_check.toggled.connect(lambda *_args: window.save_editor_state())
     audio_check.toggled.connect(lambda *_args: window.refresh_timeline_track_summaries())
+    audio_check.toggled.connect(lambda *_args: refresh_track_master_toggles(window))
     audio_slider.valueChanged.connect(lambda *_args: window.refresh_playback_mix())
     audio_slider.valueChanged.connect(lambda *_args: window.save_editor_state())
     audio_slider.sliderReleased.connect(lambda *_args: window.refresh_timeline_track_summaries())
@@ -244,10 +269,11 @@ def add_track_control_row(window, track, editor_state: TrackControlEditorState) 
     midi_slider.setRange(0, 100)
     midi_slider.setValue(editor_int(midi_volume.get(track.name), 70, 0, 100))
     midi_slider.setEnabled(has_midi_notes)
-    midi_slider.setToolTip("MIDI preview volume.")
+    midi_slider.setToolTip(_volume_tooltip("MIDI preview volume", midi_slider.value()))
     midi_check.toggled.connect(
         lambda checked, stem_name=track.name: window.handle_midi_track_toggled(stem_name, checked)
     )
+    midi_check.toggled.connect(lambda *_args: refresh_track_master_toggles(window))
     midi_slider.valueChanged.connect(lambda *_args: window.refresh_playback_mix())
     midi_slider.valueChanged.connect(lambda *_args: window.save_editor_state())
     midi_slider.sliderReleased.connect(lambda *_args: window.refresh_timeline_track_summaries())
@@ -266,8 +292,22 @@ def add_track_control_row(window, track, editor_state: TrackControlEditorState) 
     audio_label.setMinimumWidth(42)
     audio_label.setStyleSheet("color: #64748b;")
     audio_label.setToolTip("Separated stem audio volume.")
+    audio_value = QLabel(volume_value_text(audio_slider.value()))
+    audio_value.setMinimumWidth(34)
+    audio_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+    audio_value.setStyleSheet("color: #475569; font-size: 10px;")
+    audio_value.setToolTip(audio_slider.toolTip())
+    audio_slider.valueChanged.connect(
+        lambda value, label=audio_value, slider=audio_slider: _set_volume_value(
+            label,
+            slider,
+            "Separated stem audio volume",
+            value,
+        )
+    )
     slider_row.addWidget(audio_label)
     slider_row.addWidget(audio_slider)
+    slider_row.addWidget(audio_value)
     audio_widget.setLayout(slider_row)
     track_layout.addWidget(audio_widget)
 
@@ -279,8 +319,22 @@ def add_track_control_row(window, track, editor_state: TrackControlEditorState) 
     midi_label.setMinimumWidth(42)
     midi_label.setStyleSheet("color: #64748b;")
     midi_label.setToolTip("Generated MIDI preview volume.")
+    midi_value = QLabel(volume_value_text(midi_slider.value()))
+    midi_value.setMinimumWidth(34)
+    midi_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+    midi_value.setStyleSheet("color: #475569; font-size: 10px;")
+    midi_value.setToolTip(midi_slider.toolTip())
+    midi_slider.valueChanged.connect(
+        lambda value, label=midi_value, slider=midi_slider: _set_volume_value(
+            label,
+            slider,
+            "MIDI preview volume",
+            value,
+        )
+    )
     midi_slider_row.addWidget(midi_label)
     midi_slider_row.addWidget(midi_slider)
+    midi_slider_row.addWidget(midi_value)
     midi_widget.setLayout(midi_slider_row)
     track_layout.addWidget(midi_widget)
     track_panel.setLayout(track_layout)
@@ -306,9 +360,14 @@ def sync_track_control_panel(window) -> None:
         if hidden_tracks:
             window.hidden_track_status.setText(f"Hidden: {len(hidden_tracks)}")
             window.hidden_track_status.setToolTip("Hidden timeline tracks: " + ", ".join(hidden_tracks))
+            window.hidden_track_status.setVisible(True)
         else:
-            window.hidden_track_status.setText("All tracks visible")
-            window.hidden_track_status.setToolTip("No timeline tracks are hidden.")
+            window.hidden_track_status.setText("")
+            window.hidden_track_status.setToolTip("")
+            window.hidden_track_status.setVisible(False)
+    show_all_button = getattr(window, "show_all_tracks_button", None)
+    if show_all_button is not None:
+        show_all_button.setVisible(bool(hidden_tracks))
     for track in window.editor_project.tracks:
         panel = window.track_control_panels.get(track.name)
         if panel is None:
@@ -330,3 +389,63 @@ def sync_track_control_panel(window) -> None:
         audio_widget.setVisible(visibility.audio_volume)
         midi_widget.setVisible(visibility.midi_volume)
     window.playback_controls_widget.adjustSize()
+    refresh_track_master_toggles(window)
+
+
+def set_track_group_checked(window, group: str, checked: bool) -> None:
+    if getattr(window, "updating_track_master_toggles", False):
+        return
+    controls = {
+        "view": window.track_visibility_checks,
+        "analysis": window.track_analysis_checks,
+        "audio": window.track_audio_checks,
+        "midi": window.track_midi_checks,
+    }.get(group, {})
+    window.updating_track_master_toggles = True
+    try:
+        for checkbox in controls.values():
+            if checkbox.isEnabled():
+                checkbox.setChecked(checked)
+    finally:
+        window.updating_track_master_toggles = False
+    refresh_track_master_toggles(window)
+
+
+def refresh_track_master_toggles(window) -> None:
+    if getattr(window, "updating_track_master_toggles", False):
+        return
+    master_checks = getattr(window, "track_master_checks", {})
+    if not master_checks:
+        return
+    groups = {
+        "view": window.track_visibility_checks,
+        "analysis": window.track_analysis_checks,
+        "audio": window.track_audio_checks,
+        "midi": window.track_midi_checks,
+    }
+    window.updating_track_master_toggles = True
+    try:
+        for group, master in master_checks.items():
+            controls = [checkbox for checkbox in groups.get(group, {}).values() if checkbox.isEnabled()]
+            master.setEnabled(bool(controls))
+            blocker = QSignalBlocker(master)
+            master.setChecked(bool(controls) and all(checkbox.isChecked() for checkbox in controls))
+            del blocker
+    finally:
+        window.updating_track_master_toggles = False
+
+
+def volume_value_text(value: int) -> str:
+    return f"{int(value)}%"
+
+
+def _volume_tooltip(label: str, value: int) -> str:
+    return f"{label}: {volume_value_text(value)}."
+
+
+def _set_volume_value(label: QLabel, slider: QSlider, tooltip_label: str, value: int) -> None:
+    text = volume_value_text(value)
+    tooltip = _volume_tooltip(tooltip_label, value)
+    label.setText(text)
+    label.setToolTip(tooltip)
+    slider.setToolTip(tooltip)

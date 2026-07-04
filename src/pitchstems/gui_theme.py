@@ -10,12 +10,30 @@ TRACK_COLORS: dict[str, str] = {
     "instrumental": "#14b8a6",
 }
 
+DEFAULT_UI_SCALE = 1.0
+MIN_UI_SCALE = 0.8
+MAX_UI_SCALE = 1.4
+UI_SCALE_STEP = 0.1
 
-def pitchstems_stylesheet() -> str:
-    return """
+
+def normalized_ui_scale(value: object) -> float:
+    try:
+        scale = float(value)
+    except (TypeError, ValueError):
+        scale = DEFAULT_UI_SCALE
+    return round(min(MAX_UI_SCALE, max(MIN_UI_SCALE, scale)), 2)
+
+
+def scale_px(value: int, ui_scale: float) -> int:
+    return max(1, int(round(value * normalized_ui_scale(ui_scale))))
+
+
+def pitchstems_stylesheet(ui_scale: float = DEFAULT_UI_SCALE) -> str:
+    scale = normalized_ui_scale(ui_scale)
+    stylesheet = """
     QWidget {
         color: #0f172a;
-        font-size: 12px;
+        font-size: __FONT_SIZE__px;
     }
 
     QMainWindow, QWidget#appShell {
@@ -46,7 +64,7 @@ def pitchstems_stylesheet() -> str:
 
     QLabel#brandTitle {
         color: #0f172a;
-        font-size: 15px;
+        font-size: __BRAND_SIZE__px;
         font-weight: 800;
     }
 
@@ -58,7 +76,7 @@ def pitchstems_stylesheet() -> str:
 
     QLabel#eyebrow {
         color: #64748b;
-        font-size: 9px;
+        font-size: __EYEBROW_SIZE__px;
         font-weight: 700;
         text-transform: uppercase;
     }
@@ -78,7 +96,7 @@ def pitchstems_stylesheet() -> str:
         border-radius: 5px;
         color: #172033;
         font-weight: 600;
-        min-height: 26px;
+        min-height: __CONTROL_HEIGHT__px;
         padding: 4px 12px;
     }
 
@@ -119,7 +137,7 @@ def pitchstems_stylesheet() -> str:
     }
 
     QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
-        min-height: 26px;
+        min-height: __CONTROL_HEIGHT__px;
         padding: 2px 7px;
     }
 
@@ -189,3 +207,9 @@ def pitchstems_stylesheet() -> str:
         color: #334155;
     }
     """
+    return (
+        stylesheet.replace("__FONT_SIZE__", str(scale_px(12, scale)))
+        .replace("__BRAND_SIZE__", str(scale_px(15, scale)))
+        .replace("__EYEBROW_SIZE__", str(scale_px(9, scale)))
+        .replace("__CONTROL_HEIGHT__", str(scale_px(26, scale)))
+    )

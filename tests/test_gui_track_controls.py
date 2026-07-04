@@ -6,6 +6,7 @@ from pitchstems.gui_track_controls import (
     reset_track_control_widgets,
     track_control_panel_height,
     track_control_visibility,
+    volume_value_text,
 )
 
 
@@ -74,6 +75,8 @@ def test_reset_track_control_widgets_clears_widget_registries() -> None:
         track_control_detail_rows={"bass": object()},
         track_control_top_spacer=object(),
         track_control_bottom_spacer=object(),
+        track_master_checks={"audio": object()},
+        show_all_tracks_button=object(),
         hidden_track_status=object(),
     )
 
@@ -89,4 +92,11 @@ def test_reset_track_control_widgets_clears_widget_registries() -> None:
     assert window.track_control_detail_rows == {}
     assert window.track_control_top_spacer is None
     assert window.track_control_bottom_spacer is None
+    assert window.track_master_checks == {}
+    assert window.show_all_tracks_button is None
     assert window.hidden_track_status is None
+
+
+def test_volume_value_text_uses_percentage_units() -> None:
+    assert volume_value_text(0) == "0%"
+    assert volume_value_text(80) == "80%"

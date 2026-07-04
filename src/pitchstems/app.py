@@ -58,7 +58,12 @@ from pitchstems import gui_project_flow
 from pitchstems import gui_shutdown
 from pitchstems import gui_transport_flow
 from pitchstems.gui_jobs import EditorLoadJobState, MidiPreviewJobState, WorkerJobState
-from pitchstems.gui_theme import pitchstems_stylesheet
+from pitchstems.gui_theme import (
+    DEFAULT_UI_SCALE,
+    UI_SCALE_STEP,
+    normalized_ui_scale,
+    pitchstems_stylesheet,
+)
 from pitchstems.gui_track_controls import rebuild_track_controls, sync_track_control_panel as sync_track_controls
 from pitchstems.theory import ChordGapAnalysis, TheoryAnalysis
 from pitchstems.time_format import format_time
@@ -75,7 +80,7 @@ def main() -> int:
     logger = app_logger()
     try:
         from PySide6.QtCore import QSettings, QTimer, Qt, QUrl
-        from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
+        from PySide6.QtGui import QAction, QFont, QIcon, QKeySequence, QShortcut
         from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
         from PySide6.QtWidgets import (
             QApplication,
@@ -157,6 +162,8 @@ def main() -> int:
             self.current_stems: list[StemResult] = []
             self.current_input_stem: str | None = None
             self.settings = QSettings("PitchStems", "PitchStems")
+            self.base_app_font = QApplication.font()
+            self.ui_scale = normalized_ui_scale(self.settings.value("ui_scale", DEFAULT_UI_SCALE))
             self.recent_projects_menu = None
             self.base_editor_project: EditorProject | None = None
             self.editor_project: EditorProject | None = None
@@ -423,6 +430,9 @@ def main() -> int:
             self.track_control_detail_rows: dict[str, tuple[QWidget, QWidget, QWidget]] = {}
             self.track_control_top_spacer: QWidget | None = None
             self.track_control_bottom_spacer: QWidget | None = None
+            self.track_master_checks: dict[str, QCheckBox] = {}
+            self.updating_track_master_toggles = False
+            self.show_all_tracks_button: QPushButton | None = None
             self.hidden_track_status: QLabel | None = None
             self.track_note_counts: dict[str, int] = {}
             self.editor_track_visibility: dict[str, bool] = {}
@@ -649,6 +659,7 @@ def main() -> int:
             self.editor_save_timer = QTimer(self)
             self.editor_save_timer.setSingleShot(True)
             self.editor_save_timer.timeout.connect(self.save_editor_state)
+            self.apply_ui_scale(self.ui_scale, persist=False)
 
         def closeEvent(self, event) -> None:
             if not gui_shutdown.request_window_close(self):
@@ -863,6 +874,10 @@ def main() -> int:
                 lambda: self.timeline.zoom_vertical(1 / 1.18),
             )
             self._add_action(view_menu, "Reset Timeline Zoom", "Ctrl+0", self.timeline.reset_zoom)
+            view_menu.addSeparator()
+            self._add_action(view_menu, "UI Zoom In", "Ctrl+Shift+=", lambda: self.change_ui_scale(UI_SCALE_STEP))
+            self._add_action(view_menu, "UI Zoom Out", "Ctrl+Shift+-", lambda: self.change_ui_scale(-UI_SCALE_STEP))
+            self._add_action(view_menu, "Reset UI Zoom", "Ctrl+Shift+0", self.reset_ui_scale)
             self._add_action(
                 view_menu,
                 "Fit Whole Song",
@@ -892,6 +907,31 @@ def main() -> int:
 
         # Thin slot adapters keep Qt connections and cross-module callbacks on MainWindow
         # while the behavior lives in focused gui_* modules.
+        def change_ui_scale(self, delta: float) -> None:
+            self.apply_ui_scale(self.ui_scale + delta)
+
+        def reset_ui_scale(self) -> None:
+            self.apply_ui_scale(DEFAULT_UI_SCALE)
+
+        def apply_ui_scale(self, scale: float, persist: bool = True) -> None:
+            self.ui_scale = normalized_ui_scale(scale)
+            app = QApplication.instance()
+            if app is not None:
+                font = self.base_app_font
+                scaled_font = QFont(font)
+                if font.pointSizeF() > 0:
+                    scaled_font.setPointSizeF(font.pointSizeF() * self.ui_scale)
+                elif font.pixelSize() > 0:
+                    scaled_font.setPixelSize(max(1, int(round(font.pixelSize() * self.ui_scale))))
+                app.setFont(scaled_font)
+                app.setStyleSheet(pitchstems_stylesheet(self.ui_scale))
+            if persist:
+                self.settings.setValue("ui_scale", self.ui_scale)
+                self.updateGeometry()
+                self.adjustSize()
+                self.sync_track_control_panel()
+                self.statusBar().showMessage(f"UI zoom: {self.ui_scale:.0%}", 2500)
+
         def show_timeline_controls(self) -> None:
             self.statusBar().showMessage(
                 "Timeline controls: Space plays/pauses; Play Review loops one selected range or chord; Prev/Next Chord or Alt+Left/Right steps through chords for review; Fit Song or Ctrl+Alt+0 shows the full song; Ctrl+Alt+F fits the selected review target; drag the chord lane or Shift+drag the timeline to select a chord-analysis range; Ctrl+drag adds another selected range; Esc clears selection; click/drag sets playhead; wheel scrolls vertically; Shift+wheel scrolls horizontally; Ctrl+wheel zooms time; Ctrl+Shift+wheel zooms pitch; middle/right drag pans.",

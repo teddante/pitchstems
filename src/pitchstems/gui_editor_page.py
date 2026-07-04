@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
+    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -22,7 +24,8 @@ def build_editor_page(window) -> QWidget:
     editor_body = QHBoxLayout()
     editor_body.setSpacing(10)
     editor_side_panel = QWidget()
-    editor_side_panel.setFixedWidth(policy.harmony_panel_width)
+    editor_side_panel.setMinimumWidth(policy.harmony_panel_min_width)
+    editor_side_panel.setMaximumWidth(policy.harmony_panel_width)
     editor_side_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
     editor_side = QVBoxLayout()
     editor_side.setContentsMargins(0, 0, 0, 0)
@@ -86,9 +89,17 @@ def build_editor_page(window) -> QWidget:
     editor_side.addLayout(gap_header)
     editor_side.addWidget(window.gap_suggestion_list, 1)
     editor_side_panel.setLayout(editor_side)
+    editor_side_scroll = QScrollArea()
+    editor_side_scroll.setWidgetResizable(True)
+    editor_side_scroll.setWidget(editor_side_panel)
+    editor_side_scroll.setMinimumWidth(policy.harmony_panel_min_width)
+    editor_side_scroll.setMaximumWidth(policy.harmony_panel_width + 18)
+    editor_side_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    editor_side_scroll.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
 
     track_mix_panel = QWidget()
-    track_mix_panel.setFixedWidth(policy.track_panel_width)
+    track_mix_panel.setMinimumWidth(policy.track_panel_min_width)
+    track_mix_panel.setMaximumWidth(policy.track_panel_width)
     track_mix_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
     track_mix_layout = QVBoxLayout()
     track_mix_layout.setContentsMargins(0, 0, 0, 0)
@@ -98,7 +109,7 @@ def build_editor_page(window) -> QWidget:
 
     editor_body.addWidget(track_mix_panel)
     editor_body.addWidget(window.timeline, 1)
-    editor_body.addWidget(editor_side_panel)
+    editor_body.addWidget(editor_side_scroll)
     editor_layout.addLayout(editor_body, 1)
     editor_page.setLayout(editor_layout)
     return editor_page
