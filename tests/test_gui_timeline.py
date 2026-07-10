@@ -8,6 +8,7 @@ pytest.importorskip("PySide6")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QPointF, Qt
+from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import QApplication
 
 from pitchstems.editor_project import ChordRegion, EditorProject, EditorTrack, NoteEvent
@@ -360,6 +361,28 @@ def test_edited_chord_marker_is_hidden_when_the_rect_is_too_narrow() -> None:
     assert view._edited_marker_for_width(120) == "Edited"
     assert view._edited_marker_for_width(30) == "E"
     assert view._edited_marker_for_width(12) == ""
+
+
+def test_edited_marker_uses_only_space_left_after_the_chord_name() -> None:
+    _app()
+    view = TimelineView()
+    metrics = QFontMetrics(QApplication.font())
+    label = "Bbmaj7"
+    label_width = metrics.horizontalAdvance(label)
+
+    shown, marker = view._chord_text_for_width(
+        label,
+        label_width + metrics.horizontalAdvance("E") + 18,
+        is_edited=True,
+    )
+
+    assert shown == label
+    assert marker == "E"
+
+    shown, marker = view._chord_text_for_width(label, label_width + 12, is_edited=True)
+
+    assert shown == label
+    assert marker == ""
 
 
 def test_chord_drag_preview_draws_lightweight_feedback(tmp_path: Path) -> None:

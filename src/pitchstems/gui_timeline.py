@@ -500,10 +500,12 @@ class TimelineView(QGraphicsView):
                 "Drag the middle to move, drag an edge to resize, Delete removes the selected chord."
             )
             label_width = max(8, int(width) - 8)
-            marker = self._edited_marker_for_width(label_width) if source_label == "Edited" else ""
+            shown_label, marker = self._chord_text_for_width(
+                display_label,
+                label_width,
+                is_edited=source_label == "Edited",
+            )
             marker_width = QFontMetrics(QApplication.font()).horizontalAdvance(marker) if marker else 0
-            text_width = label_width - marker_width - (8 if marker else 0)
-            shown_label = self._chord_label_for_width(display_label, text_width)
             if shown_label:
                 text = self.scene.addText(shown_label)
                 text.setDefaultTextColor(QColor("#4c1d95"))
@@ -540,6 +542,20 @@ class TimelineView(QGraphicsView):
         if metrics.horizontalAdvance(shown) <= label_width:
             return shown
         return compact if metrics.horizontalAdvance(compact) <= label_width else ""
+
+    def _chord_text_for_width(
+        self,
+        label: str,
+        label_width: int,
+        *,
+        is_edited: bool,
+    ) -> tuple[str, str]:
+        shown_label = self._chord_label_for_width(label, label_width)
+        if not is_edited:
+            return shown_label, ""
+        used_width = QFontMetrics(QApplication.font()).horizontalAdvance(shown_label)
+        marker = self._edited_marker_for_width(max(0, label_width - used_width))
+        return shown_label, marker
 
     def _edited_marker_for_width(self, label_width: int) -> str:
         metrics = QFontMetrics(QApplication.font())
