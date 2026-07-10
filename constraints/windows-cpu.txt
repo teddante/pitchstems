@@ -91,6 +91,6 @@ tomli==2.4.1
 tomli_w==1.2.0
 torch==2.12.1
 torchvision==0.27.1
-tqdm==4.67.3
+tqdm==4.68.4
 typing_extensions==4.15.0
 urllib3==2.7.0
