@@ -8,6 +8,7 @@ from pitchstems.model_catalog import DEFAULT_MODEL_KEY, model_choice
 from pitchstems.pipeline import process_audio_file
 from pitchstems.separation import download_model, model_key_for_profile, profile_keys
 from pitchstems.separation import SeparationOptions
+from pitchstems.setup_runtime import format_setup_result, run_setup
 from pitchstems.transcription import MidiOptions, midi_option_spec, optional_frequency_limit
 
 
@@ -122,6 +123,11 @@ def main() -> int:
         help=sonification_samplerate.help,
     )
     parser.add_argument("--no-zip", action="store_true", help="Leave outputs in a folder without ZIP export.")
+    parser.add_argument(
+        "--setup",
+        action="store_true",
+        help="Check runtime setup and repair PitchStems-owned assets such as local models.",
+    )
     parser.add_argument("--doctor", action="store_true", help="Check local runtime dependencies.")
     parser.add_argument(
         "--gpu",
@@ -135,13 +141,18 @@ def main() -> int:
         print(format_checks(checks))
         return 0 if all(check.ok for check in checks) else 1
 
+    if args.setup:
+        result = run_setup(log=print)
+        print(format_setup_result(result))
+        return 0 if result.ok else 1
+
     if args.download_model:
         model_dir = download_model(args.download_model, log=print)
         print(f"Cached in: {model_dir}")
         return 0
 
     if not args.audio_file:
-        parser.error("audio_file is required unless --doctor or --download-model is used")
+        parser.error("audio_file is required unless --doctor, --setup, or --download-model is used")
 
     separation_options = _separation_options(args)
     model_key = separation_options.model_key if separation_options else model_key_for_profile(args.quality)

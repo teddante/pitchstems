@@ -28,6 +28,16 @@ class _FakeProcess:
         self.join_timeouts.append(timeout)
 
 
+def test_thread_is_alive_handles_missing_and_live_workers() -> None:
+    assert gui_jobs.thread_is_alive(None) is False
+    assert gui_jobs.thread_is_alive(_LiveThread()) is True  # type: ignore[arg-type]
+
+
+class _LiveThread:
+    def is_alive(self) -> bool:
+        return True
+
+
 def test_process_worker_reports_alive_and_drains_messages() -> None:
     messages: queue.Queue[object] = queue.Queue()
     messages.put(("WORKER_LOG", 1, "hello"))

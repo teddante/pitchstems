@@ -69,6 +69,8 @@ def build_pipeline_page(window) -> QWidget:
     runtime_layout.setSpacing(8)
     runtime_layout.addWidget(window.bs_device)
     runtime_layout.addWidget(window.bs_device_help)
+    runtime_layout.addWidget(window.setup_status)
+    runtime_layout.addWidget(window.repair_setup)
     runtime_group.setLayout(runtime_layout)
 
     backend_group = QGroupBox("Native backend")

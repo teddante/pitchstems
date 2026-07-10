@@ -75,6 +75,10 @@ class ProcessWorker:
             self.cleanup_error = str(exc)
 
 
+def thread_is_alive(worker: threading.Thread | None) -> bool:
+    return bool(worker is not None and worker.is_alive())
+
+
 def create_process_worker(target: Any, args: tuple[object, ...]) -> ProcessWorker:
     context = multiprocessing.get_context("spawn")
     messages = context.Queue()

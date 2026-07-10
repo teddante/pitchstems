@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pitchstems.audio_clip import AudioClipRange
-from pitchstems.gui_jobs import ProcessWorker, create_process_worker
+from pitchstems.gui_jobs import ProcessWorker, create_process_worker, thread_is_alive
 from pitchstems.pipeline import (
     PipelineCancelledError,
     process_audio_file,
@@ -59,6 +59,9 @@ WORKER_COMPLETION_MESSAGES = {
 
 
 def start_full_processing(window) -> None:
+    if setup_repair_in_progress(window):
+        window.append_log("Wait for setup repair to finish before processing audio.")
+        return
     if window.worker and window.worker.is_alive():
         return
     if not window.drop_zone.path:
@@ -96,6 +99,9 @@ def start_full_processing(window) -> None:
 
 
 def start_midi_processing(window) -> None:
+    if setup_repair_in_progress(window):
+        window.append_log("Wait for setup repair to finish before processing audio.")
+        return
     if window.worker and window.worker.is_alive():
         return
     if not window.current_result or not window.current_stems or not window.current_input_stem:
@@ -180,6 +186,10 @@ def forward_process_messages(window, process_worker: ProcessWorker) -> None:
 
 def start_worker_token(window) -> int:
     return window.worker_jobs.start()
+
+
+def setup_repair_in_progress(window) -> bool:
+    return thread_is_alive(getattr(window, "setup_worker", None))
 
 
 def cancel_processing(window) -> bool:
@@ -311,6 +321,9 @@ def flush_messages(window) -> None:
             _kind, token, *status_parts = message
             status = str(status_parts[0]) if status_parts else "success"
             finish_worker_completion(window, int(token), status)
+        elif kind == "SETUP_COMPLETE":
+            _kind, detail = message
+            window.finish_setup_repair(str(detail))
         elif isinstance(message, str) and message.startswith("__OUTPUT_DIR__"):
             window.latest_output_dir = Path(message.removeprefix("__OUTPUT_DIR__"))
             if window.open_when_done.isChecked():

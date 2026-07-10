@@ -1,4 +1,4 @@
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from pitchstems.project_store import PROJECT_FILENAME
 from pitchstems.recent_projects import (
@@ -18,19 +18,19 @@ def test_normalize_recent_project_paths_accepts_single_string_and_deduplicates()
 
 
 def test_recent_project_label_uses_project_folder_for_standard_manifest() -> None:
-    manifest = Path(r"C:\Users\edwar\PitchStems Projects\song.pitchstems") / PROJECT_FILENAME
+    manifest = PureWindowsPath(r"C:\Users\edwar\PitchStems Projects\song.pitchstems") / PROJECT_FILENAME
 
     assert recent_project_label(manifest) == r"song.pitchstems  (C:\Users\edwar\PitchStems Projects)"
 
 
 def test_recent_project_label_handles_nonstandard_manifest_name() -> None:
-    manifest = Path(r"C:\Projects\song") / "custom.json"
+    manifest = PureWindowsPath(r"C:\Projects\song") / "custom.json"
 
     assert recent_project_label(manifest) == r"custom.json  (C:\Projects\song)"
 
 
 def test_short_path_elides_from_the_left() -> None:
-    assert short_path(Path(r"C:\a\very\long\folder\name"), max_length=12) == r"...lder\name"
+    assert short_path(PureWindowsPath(r"C:\a\very\long\folder\name"), max_length=12) == r"...lder\name"
 
 
 def test_remember_recent_project_moves_existing_manifest_to_front(tmp_path: Path) -> None:

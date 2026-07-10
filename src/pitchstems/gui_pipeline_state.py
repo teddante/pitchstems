@@ -5,8 +5,10 @@ from dataclasses import dataclass
 from pitchstems.acceleration import onnxruntime_status, torch_status
 from pitchstems.gui_helpers import blocked_signals, clear_layout
 from pitchstems.gui_import_clip import can_clear_import_clip_selection, can_play_import_clip_preview
+from pitchstems.gui_jobs import thread_is_alive
 from pitchstems.gui_options import default_midi_checked, device_label, optional_frequency
 from pitchstems.gui_pipeline_model import PipelinePageModel
+from pitchstems.model_assets import model_asset_statuses
 from pitchstems.model_catalog import DEFAULT_MODEL_KEY, model_choice
 from pitchstems.separation import SeparationOptions
 from pitchstems.transcription import MidiOptions
@@ -55,6 +57,9 @@ def set_processing_state(window, busy: bool) -> None:
     window.cancel_button.setEnabled(model.cancel_enabled)
     window.stem.setEnabled(model.settings_enabled)
     window.bs_device.setEnabled(model.settings_enabled)
+    if hasattr(window, "repair_setup"):
+        setup_worker = getattr(window, "setup_worker", None)
+        window.repair_setup.setEnabled(not busy and not thread_is_alive(setup_worker))
     window.generate_midi.setEnabled(model.settings_enabled)
     for checkbox in window.midi_stem_checks.values():
         checkbox.setEnabled(model.midi_stem_checks_enabled)
@@ -195,9 +200,15 @@ def refresh_model_details(window, *_args) -> None:
         f"Separation: {choice.source} on {device_label(window.bs_device.currentData(), torch.cuda_available)}. "
         f"MIDI: Spotify Basic Pitch ONNX on {'ONNX CUDA' if ort.has_cuda else 'ONNX CPU'}."
     )
+    asset_statuses = model_asset_statuses(DEFAULT_MODEL_KEY)
+    if asset_statuses and all(status.ok for status in asset_statuses):
+        window.setup_status.setText("Model files: present (size checked).")
+    else:
+        missing = ", ".join(status.filename for status in asset_statuses if not status.ok)
+        window.setup_status.setText(f"Model files: missing or incomplete: {missing}.")
     window.model_backend_detail.setText(
         f"BS-RoFormer: {choice.native_model_id}\n"
-        f"Weights: {choice.filename or 'provided by registry'}\n"
-        f"Config: {choice.config_filename or 'provided by registry'}\n"
+        f"Weights: {choice.filename}\n"
+        f"Config: {choice.config_filename}\n"
         f"Calls: bs_roformer.inference.proc_folder -> basic_pitch.inference.predict_and_save"
     )

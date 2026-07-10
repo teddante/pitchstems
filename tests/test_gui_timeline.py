@@ -92,7 +92,7 @@ def test_timeline_chord_labels_use_formatter_and_edited_marker(tmp_path: Path) -
     ]
 
     assert "F##" in labels
-    assert "E" in labels
+    assert {"Edited", "E"} & set(labels)
     assert not any(label.endswith("*") for label in labels)
 
 

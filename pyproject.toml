@@ -37,17 +37,20 @@ gui = [
 ]
 ml = [
   "bs-roformer-infer>=0.1.1,<0.2",
-  "basic-pitch>=0.4.0",
+  "basic-pitch[onnx]>=0.4.0",
+  "huggingface-hub[hf_xet]>=1.22,<2",
 ]
 win-gpu = [
   "bs-roformer-infer>=0.1.1,<0.2",
   "basic-pitch>=0.4.0",
+  "huggingface-hub[hf_xet]>=1.22,<2",
   "onnxruntime-gpu[cuda,cudnn]>=1.23.2,<1.24",
   "torch>=2.11,<2.12",
 ]
 cpu = [
   "bs-roformer-infer>=0.1.1,<0.2",
-  "basic-pitch>=0.4.0",
+  "basic-pitch[onnx]>=0.4.0",
+  "huggingface-hub[hf_xet]>=1.22,<2",
 ]
 dev = [
   "build>=1.2",

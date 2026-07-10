@@ -91,6 +91,25 @@ def test_set_processing_state_uses_worker_state_for_import_clear_button(monkeypa
     assert window.import_clip_clear.enabled is False
 
 
+def test_set_processing_state_disables_setup_repair_while_busy(monkeypatch) -> None:
+    monkeypatch.setattr("pitchstems.gui_pipeline_state.refresh_midi_stem_checks", lambda *_args: None)
+    window = _PipelineWindow()
+    monkeypatch.setattr(window, "stop_import_clip_preview", lambda: None)
+
+    set_processing_state(window, busy=True)
+
+    assert window.repair_setup.enabled is False
+
+    set_processing_state(window, busy=False)
+
+    assert window.repair_setup.enabled is True
+
+    window.setup_worker = _LiveWorker()
+    set_processing_state(window, busy=False)
+
+    assert window.repair_setup.enabled is False
+
+
 class _Control:
     def __init__(self, checked: bool = False) -> None:
         self.enabled = False
@@ -101,6 +120,11 @@ class _Control:
 
     def isChecked(self) -> bool:
         return self._checked
+
+
+class _LiveWorker:
+    def is_alive(self) -> bool:
+        return True
 
 
 class _ImportClipPicker(_Control):
@@ -130,6 +154,7 @@ class _PipelineWindow:
         self.cancel_button = _Control()
         self.stem = _Control()
         self.bs_device = _Control()
+        self.repair_setup = _Control()
         self.generate_midi = _Control(False)
         self.midi_stem_checks = {}
         self.onset_threshold = _Control()

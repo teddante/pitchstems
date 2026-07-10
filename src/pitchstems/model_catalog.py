@@ -16,11 +16,11 @@ class ModelChoice:
     speed_note: str
     gpu_note: str
     native_model_id: str
+    filename: str
+    config_filename: str
     source: str = "bs-roformer-infer"
     recommended: bool = False
     score_summary: str = "No directly comparable public SDR score is bundled for this exact method."
-    filename: str | None = None
-    config_filename: str | None = None
 
     @property
     def display_label(self) -> str:

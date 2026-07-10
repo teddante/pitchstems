@@ -57,7 +57,7 @@ from pitchstems import gui_editor_state
 from pitchstems import gui_project_flow
 from pitchstems import gui_shutdown
 from pitchstems import gui_transport_flow
-from pitchstems.gui_jobs import EditorLoadJobState, MidiPreviewJobState, WorkerJobState
+from pitchstems.gui_jobs import EditorLoadJobState, MidiPreviewJobState, WorkerJobState, thread_is_alive
 from pitchstems.gui_theme import (
     DEFAULT_UI_SCALE,
     UI_SCALE_STEP,
@@ -245,6 +245,10 @@ def main() -> int:
             self.audio_prep.setStyleSheet("color: #4b5563;")
             self.model_runtime = QLabel()
             self.model_runtime.setWordWrap(True)
+            self.setup_status = QLabel()
+            self.setup_status.setWordWrap(True)
+            self.setup_status.setStyleSheet("color: #4b5563;")
+            self.repair_setup = QPushButton("Repair Setup")
             self.model_backend_detail = QLabel()
             self.model_backend_detail.setWordWrap(True)
             self.model_backend_detail.setStyleSheet("color: #4b5563;")
@@ -602,6 +606,7 @@ def main() -> int:
 
             self.run_full.clicked.connect(self.start_full_processing)
             self.run_midi.clicked.connect(self.start_midi_processing)
+            self.repair_setup.clicked.connect(self.start_setup_repair)
             self.export_button.clicked.connect(lambda: gui_export.export_selected_files(self))
             self.cancel_button.clicked.connect(self.cancel_processing)
             self.play_button.clicked.connect(self.toggle_playback)
@@ -975,6 +980,33 @@ def main() -> int:
 
         def cancel_processing(self) -> bool:
             return gui_processing.cancel_processing(self)
+
+        def start_setup_repair(self) -> None:
+            if thread_is_alive(getattr(self, "setup_worker", None)):
+                return
+            if self.worker_jobs.active_token is not None:
+                self.append_log("Wait for the current processing job before repairing setup.")
+                return
+            self.repair_setup.setEnabled(False)
+            self.setup_status.setText("Setup repair is running...")
+            self.append_log("Repairing PitchStems setup...")
+
+            def run_repair() -> None:
+                from pitchstems.setup_runtime import format_setup_result, run_setup
+
+                try:
+                    result = run_setup(log=lambda message: self.messages.put(message))
+                    self.messages.put(("SETUP_COMPLETE", format_setup_result(result)))
+                except Exception as exc:
+                    self.messages.put(("SETUP_COMPLETE", f"Setup repair failed: {exc}"))
+
+            self.setup_worker = threading.Thread(target=run_repair, daemon=True)
+            self.setup_worker.start()
+
+        def finish_setup_repair(self, detail: str) -> None:
+            self.repair_setup.setEnabled(self.worker_jobs.active_token is None)
+            self.append_log(detail)
+            self.refresh_model_details()
 
         def start_worker_token(self) -> int:
             return gui_processing.start_worker_token(self)

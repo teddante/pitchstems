@@ -40,11 +40,22 @@ PitchStems is pre-1.0. The core local pipeline, CLI, and Qt GUI are working, but
 
 ## Recommended Python
 
-Use Python 3.10 for the full local AI stack. Basic Pitch currently depends on a TensorFlow version range that does not resolve cleanly on Python 3.11+ on Windows.
+Use Python 3.10 for the full local AI stack. PitchStems currently declares Python 3.10 as its supported runtime.
 
 ## Install
 
-CPU-oriented install:
+macOS CPU install:
+
+```bash
+brew install python@3.10 ffmpeg
+"$(brew --prefix python@3.10)/bin/python3.10" -m venv .venv
+.venv/bin/python -m pip install -U pip
+.venv/bin/python -m pip install -e ".[cpu,gui]"
+.venv/bin/pitchstems --setup
+.venv/bin/pitchstems-gui
+```
+
+Windows CPU install:
 
 ```powershell
 py -3.10 -m venv .venv
@@ -83,6 +94,7 @@ CLI:
 ```powershell
 pitchstems --doctor
 pitchstems --doctor --gpu
+pitchstems --setup
 pitchstems --download-model
 pitchstems "C:\path\to\song.mp3" --output-dir "C:\path\to\exports"
 pitchstems "C:\path\to\song.mp3" --midi-policy pitched
@@ -97,7 +109,7 @@ pitchstems-gui
 
 ## Model Downloads
 
-Separation models are downloaded by the native `bs-roformer-infer` backend. Large models can be hundreds of megabytes, so the first run may spend time downloading before GPU processing starts.
+Separation models are downloaded into a local PitchStems cache. Large models can be hundreds of megabytes, so the first setup or processing run may spend time downloading before separation starts.
 
 PitchStems stores downloaded models here on Windows:
 
@@ -105,13 +117,25 @@ PitchStems stores downloaded models here on Windows:
 %LOCALAPPDATA%\PitchStems\bs-roformer-models
 ```
 
+On macOS and Linux:
+
+```text
+~/.cache/pitchstems/bs-roformer-models
+```
+
 To download a model ahead of time:
 
 ```powershell
-pitchstems --download-model
+pitchstems --setup
 ```
 
-For `bs_roformer_sw`, PitchStems asks the native BS-RoFormer registry for `roformer-model-bs-roformer-sw-by-jarredou`. That registry downloads `BS-Rofo-SW-Fixed.ckpt` and `BS-Rofo-SW-Fixed.yaml`, currently from the model publisher's Hugging Face assets.
+For `bs_roformer_sw`, PitchStems caches `BS-Rofo-SW-Fixed.ckpt` and
+`BS-Rofo-SW-Fixed.yaml` under the native BS-RoFormer registry id
+`roformer-model-bs-roformer-sw-by-jarredou`. `pitchstems --setup` verifies the
+expected size and SHA-256 for those files, downloads through the official
+Hugging Face client, and can repair missing or corrupt cache entries. The GUI
+Runtime tab exposes the same repair path. Downloads use Hugging Face's normal
+cache so retries can reuse previously downloaded data.
 
 ## GUI Workflow
 

@@ -99,3 +99,23 @@ def test_cli_download_model_defaults_to_sw6(monkeypatch, tmp_path: Path, capsys)
 
     assert captured["model_key"] == DEFAULT_MODEL_KEY
     assert "Cached in:" in capsys.readouterr().out
+
+
+def test_cli_setup_repairs_runtime(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    class Result:
+        ok = True
+
+    def fake_run_setup(*, log):
+        captured["log"] = log
+        return Result()
+
+    monkeypatch.setattr(cli, "run_setup", fake_run_setup)
+    monkeypatch.setattr(cli, "format_setup_result", lambda _result: "setup ok")
+    monkeypatch.setattr(sys, "argv", ["pitchstems", "--setup"])
+
+    assert cli.main() == 0
+
+    assert captured["log"] is print
+    assert "setup ok" in capsys.readouterr().out

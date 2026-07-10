@@ -65,6 +65,18 @@ def test_start_full_processing_rejects_invalid_audio_path(tmp_path: Path) -> Non
     assert window.logs == ["Choose an audio file, not a folder."]
 
 
+def test_start_full_processing_waits_for_setup_repair(tmp_path: Path) -> None:
+    input_path = tmp_path / "song.wav"
+    input_path.write_bytes(b"RIFF")
+    window = _StartProcessingWindow(input_path, tmp_path / "out")
+    window.setup_worker = _LiveWorker()
+
+    gui_processing.start_full_processing(window)
+
+    assert window.logs == ["Wait for setup repair to finish before processing audio."]
+    assert window.worker_jobs.active_token is None
+
+
 class _Checked:
     def __init__(self, checked: bool) -> None:
         self._checked = checked

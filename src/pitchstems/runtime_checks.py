@@ -43,7 +43,7 @@ def command_check(name: str, command: str) -> RuntimeCheck:
 def python_check() -> RuntimeCheck:
     version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     ok = sys.version_info[:2] == (3, 10)
-    detail = f"{version} detected; Python 3.10 is recommended for Basic Pitch on Windows"
+    detail = f"{version} detected; PitchStems requires Python 3.10"
     return RuntimeCheck(name="Python", ok=ok, detail=detail)
 
 

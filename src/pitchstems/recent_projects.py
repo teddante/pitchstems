@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Iterable
 
 from pitchstems.project_store import PROJECT_FILENAME
@@ -25,14 +25,14 @@ def normalize_recent_project_paths(value: Iterable[object] | str | None) -> list
     return paths
 
 
-def recent_project_label(manifest_path: Path, max_parent_length: int = 46) -> str:
+def recent_project_label(manifest_path: PurePath, max_parent_length: int = 46) -> str:
     project_dir = manifest_path.parent
     if manifest_path.name == PROJECT_FILENAME:
         return f"{project_dir.name}  ({short_path(project_dir.parent, max_parent_length)})"
     return f"{manifest_path.name}  ({short_path(manifest_path.parent, max_parent_length)})"
 
 
-def short_path(path: Path, max_length: int = 46) -> str:
+def short_path(path: PurePath, max_length: int = 46) -> str:
     text = str(path)
     if len(text) <= max_length:
         return text

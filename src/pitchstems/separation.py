@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
 from pitchstems.filename_safety import safe_stem_key as safe_stem_key
+from pitchstems.model_assets import ensure_model_assets, model_asset_dir, model_cache_dir
 from pitchstems.model_catalog import DEFAULT_MODEL_KEY, ModelChoice, model_choice
 from pitchstems.pipeline_models import StemResult
 
@@ -56,24 +56,19 @@ def download_model(model_key: str, log: Callable[[str], None] | None = None) -> 
     """Download a curated native BS-RoFormer model without processing audio."""
     try:
         from bs_roformer import MODEL_REGISTRY
-        from bs_roformer.download import download_model_assets
     except ImportError as exc:
         raise SeparationDependencyError(
             "bs-roformer-infer is not installed. Install with `pip install -e .[win-gpu,gui]`."
         ) from exc
 
     choice = model_choice(model_key)
-    model_dir = _model_cache_dir()
-    model_dir.mkdir(parents=True, exist_ok=True)
-    native_model = _registry_model(MODEL_REGISTRY, choice)
+    _registry_model(MODEL_REGISTRY, choice)
     if log:
         log("Native backend: bs-roformer-infer")
         log(f"Model registry id: {choice.native_model_id}")
-        log(f"Model cache: {model_dir}")
-    ok = download_model_assets([native_model], model_dir)
-    if not ok:
-        raise RuntimeError(f"Failed to download {choice.label}")
-    return model_dir
+        log(f"Model cache: {model_cache_dir()}")
+    ensure_model_assets(model_key, log=log)
+    return model_asset_dir(model_key).parent
 
 
 def separate_stems(
@@ -168,13 +163,6 @@ def model_key_for_profile(profile: str) -> str:
 
 def profile_keys() -> list[str]:
     return list(PROFILE_MODEL_ALIASES)
-
-
-def _model_cache_dir() -> Path:
-    root = os.environ.get("LOCALAPPDATA")
-    if root:
-        return Path(root) / "PitchStems" / "bs-roformer-models"
-    return Path.home() / ".cache" / "pitchstems" / "bs-roformer-models"
 
 
 def _registry_model(registry, choice: ModelChoice):
