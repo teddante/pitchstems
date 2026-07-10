@@ -1,4 +1,4 @@
-# Windows NVIDIA GPU runtime pins used by scripts/setup-windows-gpu.ps1 and CI GPU resolve proof.
+# Windows NVIDIA GPU runtime pins used by scripts/setup-windows-gpu.ps1 and local GPU checks.
 torch==2.12.1
 torchvision==0.27.1
 onnxruntime>=1.23.2,<1.24

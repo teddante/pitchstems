@@ -41,7 +41,8 @@ PitchStems is pre-1.0. The core local pipeline, CLI, and Qt GUI are working, but
 ## Recommended Python
 
 PitchStems supports Python 3.10 and 3.11. Use Python 3.10 on Apple-silicon
-Macs for the current Basic Pitch 0.4.0 runtime; Windows CI resolves both versions.
+Macs for the current Basic Pitch 0.4.0 runtime. Validate the selected Python
+version locally before changing dependencies or publishing a release.
 
 ## Install
 

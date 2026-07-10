@@ -72,7 +72,7 @@ loading, run a short real-audio smoke through the CLI, reopen the generated
 `.pitchstems` project in the GUI, and confirm stems, MIDI, combined MIDI,
 manifest, timeline playback, and optional ZIP export are present.
 When dependency files change, run `python -m pip_audit` in the constrained dev
-environment or inspect the dependency-audit workflow result before merging.
+environment before merging.
 
 See [AGENTS.md](AGENTS.md) for the solo-development branch, commit, pull
 request, release, and approval workflow used by AI-assisted development.
