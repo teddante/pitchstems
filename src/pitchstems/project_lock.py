@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import os
 import importlib
+import os
+import sys
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -29,7 +30,7 @@ def project_mutation_lock(project_dir: Path) -> Iterator[None]:
 
 
 def _lock_file(file_descriptor: int) -> None:
-    if os.name == "nt":
+    if sys.platform == "win32":
         msvcrt = importlib.import_module("msvcrt")
         msvcrt.locking(file_descriptor, msvcrt.LK_NBLCK, 1)
         return
@@ -40,7 +41,7 @@ def _lock_file(file_descriptor: int) -> None:
 
 
 def _unlock_file(file_descriptor: int) -> None:
-    if os.name == "nt":
+    if sys.platform == "win32":
         msvcrt = importlib.import_module("msvcrt")
         os.lseek(file_descriptor, 0, os.SEEK_SET)
         msvcrt.locking(file_descriptor, msvcrt.LK_UNLCK, 1)

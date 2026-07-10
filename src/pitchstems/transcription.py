@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import math
 import warnings
 from dataclasses import dataclass
@@ -228,7 +229,7 @@ def transcribe_stem_to_midi(
 
     try:
         model, runtime = load_basic_pitch_runtime()
-        from basic_pitch.inference import predict_and_save  # type: ignore[import-untyped]
+        predict_and_save = importlib.import_module("basic_pitch.inference").predict_and_save
     except ImportError as exc:
         raise TranscriptionDependencyError(
             "basic-pitch is not installed. Install with `pip install -e .[cpu,gui]` "
@@ -278,9 +279,9 @@ def transcribe_stem_to_midi(
 
 @lru_cache(maxsize=1)
 def _load_basic_pitch_model(model_path: str) -> object:
-    from basic_pitch.inference import Model
+    model_class = importlib.import_module("basic_pitch.inference").Model
 
-    return Model(model_path)
+    return model_class(model_path)
 
 
 def load_basic_pitch_runtime() -> tuple[object, str]:
@@ -291,12 +292,9 @@ def load_basic_pitch_runtime() -> tuple[object, str]:
             category=UserWarning,
             module="resampy.filters",
         )
-        from basic_pitch import (  # type: ignore[import-untyped]
-            FilenameSuffix,
-            build_icassp_2022_model_path,
-        )
+        basic_pitch = importlib.import_module("basic_pitch")
 
-    model_path = build_icassp_2022_model_path(FilenameSuffix.onnx)
+    model_path = basic_pitch.build_icassp_2022_model_path(basic_pitch.FilenameSuffix.onnx)
     model = _load_basic_pitch_model(str(model_path))
     return model, _basic_pitch_provider_label(model)
 
