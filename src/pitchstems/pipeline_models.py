@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from pitchstems.audio_clip import AudioClipRange
 from pitchstems.filename_safety import safe_stem_key
@@ -15,7 +16,7 @@ class StemResult:
 
     @property
     def safe_key(self) -> str:
-        return self.stem_id or safe_stem_key(self.name)
+        return safe_stem_key(self.stem_id or self.name)
 
 
 @dataclass(frozen=True)
@@ -26,7 +27,7 @@ class MidiResult:
 
     @property
     def safe_key(self) -> str:
-        return self.stem_id or safe_stem_key(self.stem)
+        return safe_stem_key(self.stem_id or self.stem)
 
 
 @dataclass(frozen=True)
@@ -39,4 +40,4 @@ class PipelineResult:
     zip_path: Path | None
     source_audio: Path | None = None
     source_clip: AudioClipRange | None = None
-    original_source_audio: Path | None = None
+    settings: dict[str, Any] = field(default_factory=dict)

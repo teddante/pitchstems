@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import math
+import warnings
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Callable
 
-from pitchstems.acceleration import onnxruntime_status
 from pitchstems.pipeline_models import MidiResult
 
 PERCUSSIVE_STEMS = {"drums", "drum", "kick", "snare", "toms", "hh", "hats", "ride", "crash"}
@@ -24,6 +26,34 @@ class MidiOptions:
     save_model_outputs: bool = False
     sonify_midi: bool = False
     sonification_samplerate: int = 44100
+
+    def __post_init__(self) -> None:
+        for label, value in (
+            ("onset threshold", self.onset_threshold),
+            ("frame threshold", self.frame_threshold),
+        ):
+            if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+                raise ValueError(f"MIDI {label} must be between 0 and 1.")
+        if not math.isfinite(self.minimum_note_length) or self.minimum_note_length < 0:
+            raise ValueError("MIDI minimum note length must be zero or greater.")
+        if self.minimum_frequency is not None and (
+            not math.isfinite(self.minimum_frequency) or self.minimum_frequency <= 0
+        ):
+            raise ValueError("MIDI minimum frequency must be a positive finite value.")
+        if self.maximum_frequency is not None and (
+            not math.isfinite(self.maximum_frequency) or self.maximum_frequency <= 0
+        ):
+            raise ValueError("MIDI maximum frequency must be a positive finite value.")
+        if (
+            self.minimum_frequency is not None
+            and self.maximum_frequency is not None
+            and self.minimum_frequency > self.maximum_frequency
+        ):
+            raise ValueError("MIDI minimum frequency must not exceed maximum frequency.")
+        if not math.isfinite(self.midi_tempo) or self.midi_tempo <= 0:
+            raise ValueError("MIDI tempo must be a positive finite value.")
+        if self.sonification_samplerate <= 0:
+            raise ValueError("MIDI sonification sample rate must be positive.")
 
 
 DEFAULT_MIDI_OPTIONS = MidiOptions()
@@ -197,8 +227,8 @@ def transcribe_stem_to_midi(
         return None
 
     try:
-        from basic_pitch import FilenameSuffix, build_icassp_2022_model_path
-        from basic_pitch.inference import predict_and_save
+        model, runtime = load_basic_pitch_runtime()
+        from basic_pitch.inference import predict_and_save  # type: ignore[import-untyped]
     except ImportError as exc:
         raise TranscriptionDependencyError(
             "basic-pitch is not installed. Install with `pip install -e .[cpu,gui]` "
@@ -206,10 +236,7 @@ def transcribe_stem_to_midi(
         ) from exc
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    model_path = build_icassp_2022_model_path(FilenameSuffix.onnx)
-    ort_status = onnxruntime_status()
     if log:
-        runtime = "ONNX CUDA" if ort_status.has_cuda else "ONNX CPU"
         log(f"Transcribing {stem_name} with Basic Pitch ({runtime})...")
         log(
             "Basic Pitch settings: "
@@ -228,7 +255,7 @@ def transcribe_stem_to_midi(
         sonify_midi=options.sonify_midi,
         save_model_outputs=options.save_model_outputs,
         save_notes=options.save_notes,
-        model_or_model_path=model_path,
+        model_or_model_path=model,
         onset_threshold=options.onset_threshold,
         frame_threshold=options.frame_threshold,
         minimum_note_length=options.minimum_note_length,
@@ -247,6 +274,50 @@ def transcribe_stem_to_midi(
         raise RuntimeError(f"Basic Pitch did not create a MIDI file for {audio_path.name}.")
 
     return MidiResult(stem=stem_name, path=midi_candidates[-1])
+
+
+@lru_cache(maxsize=1)
+def _load_basic_pitch_model(model_path: str) -> object:
+    from basic_pitch.inference import Model
+
+    return Model(model_path)
+
+
+def load_basic_pitch_runtime() -> tuple[object, str]:
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="pkg_resources is deprecated as an API.*",
+            category=UserWarning,
+            module="resampy.filters",
+        )
+        from basic_pitch import (  # type: ignore[import-untyped]
+            FilenameSuffix,
+            build_icassp_2022_model_path,
+        )
+
+    model_path = build_icassp_2022_model_path(FilenameSuffix.onnx)
+    model = _load_basic_pitch_model(str(model_path))
+    return model, _basic_pitch_provider_label(model)
+
+
+def _basic_pitch_provider_label(model: object) -> str:
+    session = getattr(model, "model", None)
+    get_providers = getattr(session, "get_providers", None)
+    if not callable(get_providers):
+        return "ONNX provider unknown"
+    try:
+        providers = get_providers()
+    except Exception:
+        return "ONNX provider unknown"
+    if not providers:
+        return "ONNX provider unknown"
+    active = str(providers[0])
+    if active == "CUDAExecutionProvider":
+        return "ONNX CUDA"
+    if active == "CPUExecutionProvider":
+        return "ONNX CPU"
+    return f"ONNX {active.removesuffix('ExecutionProvider')}"
 
 
 def _format_frequency_range(options: MidiOptions) -> str:

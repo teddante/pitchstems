@@ -158,7 +158,10 @@ def _scale_registry() -> tuple[ScaleDefinition, ...]:
                 "Altered diminished",
             ),
             "harmonic minor mode",
-            aliases={"Dorian #4": ("Ukrainian Dorian",), "Phrygian dominant": ("Spanish gypsy",)},
+            aliases={
+                "Dorian #4": ("Ukrainian Dorian", "Romanian minor"),
+                "Phrygian dominant": ("Spanish gypsy",),
+            },
         ),
         *_modes(
             harmonic_major,
@@ -185,11 +188,16 @@ def _scale_registry() -> tuple[ScaleDefinition, ...]:
                 "Locrian bb3 bb7",
             ),
             "double harmonic mode",
+            aliases={"Double harmonic major": ("Raga Bhairav",)},
         ),
         _scale("Major pentatonic", (0, 2, 4, 7, 9), "pentatonic"),
         _scale("Minor pentatonic", (0, 3, 5, 7, 10), "pentatonic"),
-        _scale("Suspended pentatonic", (0, 2, 5, 7, 10), "pentatonic"),
-        _scale("Egyptian pentatonic", (0, 2, 5, 7, 10), "pentatonic"),
+        _scale(
+            "Suspended pentatonic",
+            (0, 2, 5, 7, 10),
+            "pentatonic",
+            aliases=("Egyptian pentatonic",),
+        ),
         _scale("Hirajoshi", (0, 2, 3, 7, 8), "pentatonic"),
         _scale("In-sen", (0, 1, 5, 7, 10), "pentatonic"),
         _scale("Iwato", (0, 1, 5, 6, 10), "pentatonic"),
@@ -215,11 +223,9 @@ def _scale_registry() -> tuple[ScaleDefinition, ...]:
         _scale("Neapolitan minor", (0, 1, 3, 5, 7, 8, 11), "world/common"),
         _scale("Neapolitan major", (0, 1, 3, 5, 7, 9, 11), "world/common"),
         _scale("Hungarian major", (0, 3, 4, 6, 7, 9, 10), "world/common"),
-        _scale("Romanian minor", (0, 2, 3, 6, 7, 9, 10), "world/common"),
         _scale("Persian", (0, 1, 4, 5, 6, 8, 11), "world/common"),
         _scale("Enigmatic", (0, 1, 4, 6, 8, 10, 11), "world/common"),
         _scale("Leading whole tone", (0, 2, 4, 6, 8, 10, 11), "world/common"),
-        _scale("Raga Bhairav", (0, 1, 4, 5, 7, 8, 11), "raga/common"),
         _scale("Raga Todi", (0, 1, 3, 6, 7, 8, 11), "raga/common"),
         _scale("Raga Marwa", (0, 1, 4, 6, 7, 9, 11), "raga/common"),
         _scale("Raga Purvi", (0, 1, 4, 6, 7, 8, 11), "raga/common"),
@@ -278,7 +284,12 @@ def analyze_theory_region(
             _add_pitch_weight(bass_totals, note.pitch % 12, weight)
     bass_totals = _constrained_totals(bass_totals, None, excluded_pitch_classes)
     active_chords = [
-        chord
+        ChordRegion(
+            start=max(chord.start, start),
+            end=min(chord.end, end),
+            label=chord.label,
+            confidence=chord.confidence,
+        )
         for chord in chords
         if max(0.0, min(chord.end, end) - max(chord.start, start)) > 0
     ]

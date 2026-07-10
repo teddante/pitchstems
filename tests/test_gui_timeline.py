@@ -321,6 +321,30 @@ def test_timeline_note_preview_does_not_swallow_scrub_click(tmp_path: Path) -> N
     assert event.accepted
 
 
+def test_chord_click_without_drag_does_not_emit_edit(tmp_path: Path) -> None:
+    _app()
+    view = TimelineView()
+    project = _project(tmp_path)
+    view.set_project(project)
+    chord = project.chords[0]
+    edits = []
+    point = QPointF(200.0, 20.0)
+    view._chord_drag = {
+        "chord": chord,
+        "mode": "move",
+        "press_seconds": 0.5,
+        "press_position": point,
+        "preview": chord,
+    }
+    view._dragged_chord_from_event = lambda _event: chord
+    view.on_chord_edited = lambda original, edited: edits.append((original, edited))
+
+    view._finish_chord_edit_from_event(_TimelineMouseEvent(point))
+
+    assert edits == []
+    assert view.selected_chord == chord
+
+
 def test_tiny_chord_labels_fall_back_to_root_name() -> None:
     _app()
     view = TimelineView()

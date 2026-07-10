@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+from types import ModuleType
 from pathlib import Path
 
 from pitchstems import model_assets
@@ -79,7 +81,9 @@ def test_hf_download_uses_the_persistent_huggingface_cache(monkeypatch, tmp_path
         captured.update(repo_id=repo_id, filename=filename)
         return str(downloaded)
 
-    monkeypatch.setattr("huggingface_hub.hf_hub_download", fake_hf_hub_download)
+    fake_huggingface_hub = ModuleType("huggingface_hub")
+    fake_huggingface_hub.hf_hub_download = fake_hf_hub_download  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_huggingface_hub)
     source = model_assets.HuggingFaceAssetSource("publisher/model", "model.bin", "publisher")
 
     assert model_assets._hf_download(source) == downloaded

@@ -24,6 +24,9 @@ def start_midi_preview_render(window, result, requested_stems: set[str] | None =
     window.rendering_midi_previews.update(missing)
     window.refresh_timeline_track_summaries()
     window.append_log(f"Rendering MIDI preview audio for {', '.join(missing)} in the background...")
+    window.midi_preview_jobs.activity_counts[token] = (
+        window.midi_preview_jobs.activity_counts.get(token, 0) + 1
+    )
     window.begin_activity("Rendering MIDI preview audio...")
 
     def worker() -> None:
@@ -39,11 +42,17 @@ def start_midi_preview_render(window, result, requested_stems: set[str] | None =
                 if preview:
                     previews[stem_name] = preview
             if window.midi_preview_jobs.closing or token != window.midi_preview_jobs.token:
+                window.messages.put(
+                    ("MIDI_PREVIEW_DISCARDED", token, result.project_dir, set(missing))
+                )
                 return
             window.messages.put(("MIDI_PREVIEWS", token, result.project_dir, set(missing), previews))
         except Exception as exc:
             window.logger.exception("MIDI preview render failed")
             if window.midi_preview_jobs.closing or token != window.midi_preview_jobs.token:
+                window.messages.put(
+                    ("MIDI_PREVIEW_DISCARDED", token, result.project_dir, set(missing))
+                )
                 return
             window.messages.put(
                 (
@@ -161,6 +170,15 @@ def stop_transport(window) -> None:
     window.transport_timer.stop()
     if window.editor_project is not None:
         window.set_editor_position_seconds(0.0, seek_players=False)
+
+
+def finish_transport_at_end(window) -> None:
+    window.play_button.setText("Play")
+    window.stop_button.setEnabled(False)
+    window.transport_timer.stop()
+    if window.editor_project is not None:
+        window.set_editor_position_seconds(0.0, save=False, seek_players=False)
+    window.save_editor_state()
 
 
 def update_transport_position(window) -> None:

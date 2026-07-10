@@ -99,28 +99,35 @@ def detect_chords(notes: list[NoteEvent], minimum_region: float = 0.18) -> list[
         starts.setdefault(round(note.start, 6), []).append(note)
         ends.setdefault(round(note.end, 6), []).append(note)
     times = sorted(set(starts) | set(ends))
-    regions: list[ChordRegion] = []
+    atomic_regions: list[ChordRegion] = []
     active: list[NoteEvent] = []
+    analysis_cache: dict[tuple[int, ...], ChordAnalysis] = {}
     for start, end in pairwise(times):
         for note in ends.get(start, []):
             with contextlib.suppress(ValueError):
                 active.remove(note)
         active.extend(starts.get(start, []))
-        if end - start < minimum_region:
-            continue
-        analysis = analyze_chord([note.pitch for note in active])
+        pitches = tuple(sorted(note.pitch for note in active))
+        analysis = analysis_cache.get(pitches)
+        if analysis is None:
+            analysis = analyze_chord(list(pitches))
+            analysis_cache[pitches] = analysis
         if not analysis.label:
             continue
-        if regions and regions[-1].label == analysis.label and abs(regions[-1].end - start) < 0.05:
-            previous = regions[-1]
-            regions[-1] = ChordRegion(
+        if (
+            atomic_regions
+            and atomic_regions[-1].label == analysis.label
+            and abs(atomic_regions[-1].end - start) < 0.05
+        ):
+            previous = atomic_regions[-1]
+            atomic_regions[-1] = ChordRegion(
                 start=previous.start,
                 end=end,
                 label=previous.label,
                 confidence=max(previous.confidence, analysis.confidence),
             )
         else:
-            regions.append(
+            atomic_regions.append(
                 ChordRegion(
                     start=start,
                     end=end,
@@ -128,7 +135,7 @@ def detect_chords(notes: list[NoteEvent], minimum_region: float = 0.18) -> list[
                     confidence=analysis.confidence,
                 )
             )
-    return regions
+    return [region for region in atomic_regions if region.duration >= minimum_region]
 
 
 def active_notes_at(notes: list[NoteEvent], seconds: float) -> list[NoteEvent]:

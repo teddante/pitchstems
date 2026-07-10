@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pitchstems.acceleration import onnxruntime_status, torch_status
+from pitchstems.acceleration import torch_status
 from pitchstems.gui_helpers import blocked_signals, clear_layout
 from pitchstems.gui_import_clip import can_clear_import_clip_selection, can_play_import_clip_preview
 from pitchstems.gui_jobs import thread_is_alive
@@ -65,6 +65,9 @@ def set_processing_state(window, busy: bool) -> None:
         checkbox.setEnabled(model.midi_stem_checks_enabled)
     for widget in pipeline_settings_widgets(window):
         widget.setEnabled(model.settings_enabled)
+    window.sonification_samplerate.setEnabled(
+        model.settings_enabled and window.sonify_midi.isChecked()
+    )
     if not busy:
         refresh_midi_stem_checks(window)
 
@@ -122,6 +125,73 @@ def selected_midi_stems(window) -> set[str]:
     }
 
 
+def restore_pipeline_settings(window, settings: dict) -> None:
+    if not settings:
+        return
+    separation = settings.get("separation")
+    if isinstance(separation, dict):
+        selected_stem = separation.get("selected_stem")
+        stem_index = window.stem.findData(selected_stem)
+        if stem_index >= 0:
+            with blocked_signals(window.stem):
+                window.stem.setCurrentIndex(stem_index)
+        device = separation.get("device")
+        device_index = window.bs_device.findData(device)
+        if device_index >= 0:
+            with blocked_signals(window.bs_device):
+                window.bs_device.setCurrentIndex(device_index)
+
+    generate_midi = settings.get("generate_midi")
+    midi_policy = settings.get("midi_policy")
+    if isinstance(generate_midi, bool) or midi_policy == "none":
+        with blocked_signals(window.generate_midi):
+            window.generate_midi.setChecked(bool(generate_midi) and midi_policy != "none")
+
+    midi = settings.get("midi")
+    if isinstance(midi, dict):
+        _restore_midi_widgets(window, midi)
+
+    refresh_midi_stem_checks(window)
+    midi_stems = settings.get("midi_stems")
+    if isinstance(midi_stems, list) and midi_stems:
+        selected = {stem.casefold() for stem in midi_stems if isinstance(stem, str)}
+        for stem_name, checkbox in window.midi_stem_checks.items():
+            with blocked_signals(checkbox):
+                checkbox.setChecked(stem_name.casefold() in selected)
+
+
+def _restore_midi_widgets(window, midi: dict) -> None:
+    numeric_widgets = {
+        "onset_threshold": window.onset_threshold,
+        "frame_threshold": window.frame_threshold,
+        "minimum_note_length": window.minimum_note_length,
+        "minimum_frequency": window.minimum_frequency,
+        "maximum_frequency": window.maximum_frequency,
+        "midi_tempo": window.midi_tempo,
+        "sonification_samplerate": window.sonification_samplerate,
+    }
+    for field, widget in numeric_widgets.items():
+        value = midi.get(field)
+        if value is None and field in {"minimum_frequency", "maximum_frequency"}:
+            value = 0
+        if isinstance(value, (int, float)):
+            with blocked_signals(widget):
+                widget.setValue(value)
+    boolean_widgets = {
+        "multiple_pitch_bends": window.multiple_pitch_bends,
+        "melodia_trick": window.melodia_trick,
+        "save_notes": window.save_notes,
+        "save_model_outputs": window.save_model_outputs,
+        "sonify_midi": window.sonify_midi,
+    }
+    for field, widget in boolean_widgets.items():
+        value = midi.get(field)
+        if isinstance(value, bool):
+            with blocked_signals(widget):
+                widget.setChecked(value)
+    window.sonification_samplerate.setEnabled(window.sonify_midi.isChecked())
+
+
 def refresh_midi_stem_checks(window, *_args) -> None:
     from PySide6.QtWidgets import QCheckBox
 
@@ -176,16 +246,19 @@ def midi_stem_checkbox_state(
 
 def refresh_model_details(window, *_args) -> None:
     choice = model_choice(DEFAULT_MODEL_KEY)
+    selected_stem = window.stem.currentData()
 
     with blocked_signals(window.stem):
         window.stem.clear()
         window.stem.addItem("All stems from this model", None)
         for stem_name in choice.stems:
             window.stem.addItem(stem_name, stem_name)
+        selected_index = window.stem.findData(selected_stem)
+        if selected_index >= 0:
+            window.stem.setCurrentIndex(selected_index)
     refresh_midi_stem_checks(window)
 
     torch = torch_status()
-    ort = onnxruntime_status()
     window.separation_card.setTitle(choice.label)
     window.model_summary.setText(choice.summary)
     window.model_facts.setText(
@@ -198,7 +271,7 @@ def refresh_model_details(window, *_args) -> None:
     )
     window.model_runtime.setText(
         f"Separation: {choice.source} on {device_label(window.bs_device.currentData(), torch.cuda_available)}. "
-        f"MIDI: Spotify Basic Pitch ONNX on {'ONNX CUDA' if ort.has_cuda else 'ONNX CPU'}."
+        "MIDI: Spotify Basic Pitch ONNX; the active session provider is reported when transcription starts."
     )
     asset_statuses = model_asset_statuses(DEFAULT_MODEL_KEY)
     if asset_statuses and all(status.ok for status in asset_statuses):

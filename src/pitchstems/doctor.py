@@ -10,6 +10,15 @@ from pitchstems.runtime_checks import (
     python_check,
     torch_cuda_check,
 )
+from pitchstems.transcription import load_basic_pitch_runtime
+
+
+def _basic_pitch_check() -> Check:
+    try:
+        _model, runtime = load_basic_pitch_runtime()
+        return Check("Basic Pitch", True, f"model loaded: {runtime}")
+    except Exception as exc:
+        return Check("Basic Pitch", False, str(exc))
 
 
 def run_checks(require_gpu: bool = False) -> list[Check]:
@@ -17,7 +26,7 @@ def run_checks(require_gpu: bool = False) -> list[Check]:
         python_check(),
         command_check("FFmpeg", "ffmpeg"),
         module_check("PySide6 GUI", "PySide6"),
-        module_check("Basic Pitch", "basic_pitch"),
+        _basic_pitch_check(),
         onnxruntime_check(onnxruntime_status()),
         module_check("BS-RoFormer native backend", "bs_roformer"),
         module_check("MIDI tools", "mido"),

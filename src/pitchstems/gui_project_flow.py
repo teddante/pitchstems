@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 from pitchstems.app_logging import logs_dir
 from pitchstems.file_opening import open_folder
 from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
 from pitchstems.gui_helpers import blocked_signals, clear_layout
+from pitchstems.gui_import_clip import waveform_preview_for_path
 from pitchstems.gui_track_controls import reset_track_control_widgets
 from pitchstems.input_validation import validate_audio_input
 from pitchstems.project_store import PROJECT_FILENAME, load_pipeline_result
@@ -171,9 +173,10 @@ def reset_stage_state(window, path: Path | None = None) -> None:
         window.stop_import_clip_preview()
     if hasattr(window, "import_clip_picker"):
         if path is None:
+            window.waveform_token = getattr(window, "waveform_token", 0) + 1
             window.import_clip_picker.reset_audio()
         else:
-            window.import_clip_picker.set_audio_file(path, log=window.append_log)
+            start_waveform_preview_load(window, path)
     window.stop_transport()
     window.invalidate_worker_token()
     window.editor_load_jobs.next()
@@ -186,6 +189,44 @@ def reset_stage_state(window, path: Path | None = None) -> None:
         window.notation_spelling.setCurrentIndex(0)
     _reset_track_control_state(window)
     _reset_project_view_state(window)
+
+
+def start_waveform_preview_load(window, path: Path) -> None:
+    window.waveform_token = getattr(window, "waveform_token", 0) + 1
+    token = window.waveform_token
+    window.import_clip_picker.begin_audio_file(path)
+    window.set_activity_message("Loading waveform preview...")
+
+    def worker() -> None:
+        try:
+            preview = waveform_preview_for_path(path)
+            window.messages.put(("WAVEFORM_PREVIEW", token, path, preview, None))
+        except Exception as exc:
+            window.messages.put(("WAVEFORM_PREVIEW", token, path, None, str(exc)))
+
+    window.waveform_worker = threading.Thread(
+        target=worker,
+        name="PitchStemsWaveformPreview",
+        daemon=True,
+    )
+    window.waveform_worker.start()
+
+
+def finish_waveform_preview(window, token: int, path: Path, preview, error: str | None) -> None:
+    if token != window.waveform_token or window.import_clip_picker.path != path:
+        window.logger.info("Ignored stale waveform preview for %s", path)
+        return
+    window.waveform_worker = None
+    window.import_clip_picker.apply_audio_preview(path, preview)
+    if error:
+        window.append_log(f"Waveform preview unavailable: {error}")
+        window.set_activity_message("Waveform preview unavailable")
+    else:
+        window.set_activity_message("Waveform preview ready")
+    if window.worker_jobs.active_token is None:
+        window.set_processing_state(False)
+    else:
+        window.import_clip_picker.setEnabled(False)
 
 
 def _reset_project_view_state(window) -> None:
@@ -203,6 +244,7 @@ def _reset_project_view_state(window) -> None:
     window.previous_chord_button.setEnabled(False)
     window.next_chord_button.setEnabled(False)
     window.delete_chord_button.setEnabled(False)
+    window.revert_chord_edits_button.setEnabled(False)
     window.inspect_chord_button.setEnabled(False)
     window.inspect_theory_button.setEnabled(False)
     window.use_gap_suggestion_button.setEnabled(False)

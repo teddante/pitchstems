@@ -83,7 +83,6 @@ def save_project_manifest(
                 midi_policy=midi_policy,
                 create_zip=create_zip,
                 source_clip=result.source_clip,
-                original_source_audio=result.original_source_audio,
             ),
             "editor": _editor_state_manifest(
                 editor,
@@ -151,7 +150,7 @@ def load_pipeline_result(path: Path) -> PipelineResult:
         zip_path=_optional_project_path(project_dir, manifest.get("zip_path")),
         source_audio=_optional_project_path(project_dir, manifest.get("source_audio")),
         source_clip=clip_range_from_manifest(settings.get("source_clip")),
-        original_source_audio=_original_source_audio_from_manifest(manifest),
+        settings=dict(settings),
     )
 
 
@@ -216,7 +215,6 @@ def _pipeline_settings_manifest(
     midi_policy: str | None,
     create_zip: bool | None,
     source_clip: AudioClipRange | None,
-    original_source_audio: Path | None,
 ) -> dict[str, Any]:
     manifest_settings = {
         "separation": _dataclass_dict(separation_options)
@@ -232,7 +230,7 @@ def _pipeline_settings_manifest(
         "midi_policy": midi_policy or existing_settings.get("midi_policy"),
         "create_zip": _manifest_field(create_zip, existing_settings, "create_zip", None),
     }
-    source_clip_manifest = _source_clip_manifest(source_clip, original_source_audio)
+    source_clip_manifest = _source_clip_manifest(source_clip)
     existing_source_clip = existing_settings.get("source_clip")
     if source_clip_manifest is not None or existing_source_clip is not None:
         manifest_settings["source_clip"] = (
@@ -271,7 +269,6 @@ def _editor_state_manifest(
         "playhead_seconds": _manifest_field(playhead_seconds, existing_editor, "playhead_seconds", 0.0),
         "chord_overrides": _manifest_field(chord_overrides, existing_editor, "chord_overrides", []),
         "chord_removals": _manifest_field(chord_removals, existing_editor, "chord_removals", []),
-        "note_edits": existing_editor.get("note_edits", []),
     }
 
 
@@ -358,6 +355,7 @@ def _validate_generated_asset_entries(
     entry_label: str,
     name_label: str,
 ) -> None:
+    seen_stem_ids: set[str] = set()
     for index, item in enumerate(entries):
         if (
             not isinstance(item, dict)
@@ -366,6 +364,23 @@ def _validate_generated_asset_entries(
         ):
             raise ValueError(f"{manifest_path} has an invalid {entry_label} entry at index {index}")
         _validate_safe_display_name(manifest_path, item[name_field], name_label)
+        stem_id = item.get("stem_id")
+        if stem_id is not None and not _non_empty_string(stem_id):
+            raise ValueError(
+                f"{manifest_path} has an invalid {entry_label} stem_id at index {index}"
+            )
+        resolved_stem_id = stem_id if isinstance(stem_id, str) else safe_stem_key(item[name_field])
+        if resolved_stem_id != safe_stem_key(resolved_stem_id):
+            raise ValueError(
+                f"{manifest_path} has an unsafe {entry_label} stem_id at index {index}: "
+                f"{resolved_stem_id}"
+            )
+        unique_key = resolved_stem_id.casefold()
+        if unique_key in seen_stem_ids:
+            raise ValueError(
+                f"{manifest_path} has a duplicate {entry_label} stem_id: {resolved_stem_id}"
+            )
+        seen_stem_ids.add(unique_key)
         _validate_project_path_value(
             manifest_path,
             project_dir,
@@ -480,7 +495,7 @@ def _migrate_legacy_to_v2(manifest: dict[str, Any]) -> dict[str, Any]:
     editor.setdefault("playhead_seconds", 0.0)
     editor.setdefault("chord_overrides", [])
     editor.setdefault("chord_removals", [])
-    editor.setdefault("note_edits", [])
+    editor.pop("note_edits", None)
     migrated["editor"] = editor
     migrated["format_version"] = PROJECT_FORMAT_VERSION
     return migrated
@@ -503,14 +518,10 @@ def _dataclass_dict(value: Any) -> dict[str, Any]:
 
 def _source_clip_manifest(
     source_clip: AudioClipRange | None,
-    original_source_audio: Path | None,
 ) -> dict[str, Any] | None:
     if source_clip is None:
         return None
-    data: dict[str, Any] = source_clip.to_manifest()
-    if original_source_audio is not None:
-        data["original_source_audio"] = str(original_source_audio)
-    return data
+    return source_clip.to_manifest()
 
 
 def _manifest_source_audio(
@@ -521,17 +532,6 @@ def _manifest_source_audio(
     if result.source_audio is not None:
         return result.source_audio
     return _optional_project_path(project_dir, existing.get("source_audio"))
-
-
-def _original_source_audio_from_manifest(manifest: dict[str, Any]) -> Path | None:
-    settings = manifest.get("settings", {})
-    if not isinstance(settings, dict):
-        return None
-    source_clip = settings.get("source_clip")
-    if not isinstance(source_clip, dict):
-        return None
-    original = source_clip.get("original_source_audio")
-    return Path(original) if isinstance(original, str) and original.strip() else None
 
 
 def _jsonable(value: Any) -> Any:

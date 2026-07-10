@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import shutil
 import sys
 from dataclasses import dataclass
@@ -42,14 +42,18 @@ def command_check(name: str, command: str) -> RuntimeCheck:
 
 def python_check() -> RuntimeCheck:
     version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-    ok = sys.version_info[:2] == (3, 10)
-    detail = f"{version} detected; PitchStems requires Python 3.10"
+    ok = (3, 10) <= sys.version_info[:2] < (3, 12)
+    detail = f"{version} detected; PitchStems supports Python 3.10 and 3.11"
     return RuntimeCheck(name="Python", ok=ok, detail=detail)
 
 
 def module_check(name: str, module_name: str) -> RuntimeCheck:
-    found = importlib.util.find_spec(module_name) is not None
-    return RuntimeCheck(name=name, ok=found, detail="installed" if found else f"`{module_name}` missing")
+    try:
+        importlib.import_module(module_name)
+    except Exception as exc:
+        detail = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
+        return RuntimeCheck(name=name, ok=False, detail=f"`{module_name}` import failed: {detail}")
+    return RuntimeCheck(name=name, ok=True, detail="imported successfully")
 
 
 def onnxruntime_check(status: OnnxRuntimeStatusLike) -> RuntimeCheck:

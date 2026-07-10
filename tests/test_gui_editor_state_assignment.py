@@ -101,3 +101,25 @@ def test_delete_selected_chord_uses_visible_selected_chord_target() -> None:
     assert window.removed_chord_ranges == [(1.0, 2.0)]
     assert window.refreshed_with is None
     assert window.status.messages == ["Deleted G."]
+
+
+def test_revert_all_chord_edits_clears_overrides_and_refreshes() -> None:
+    window = _Window()
+    window.manual_chords = [ChordRegion(1.0, 2.0, "C", 0.9)]
+    window.removed_chord_ranges = [(3.0, 4.0)]
+
+    gui_editor_state.revert_all_chord_edits(window)
+
+    assert window.manual_chords == []
+    assert window.removed_chord_ranges == []
+    assert window.refreshed_with is None
+    assert window.status.messages == ["Restored all detected chords."]
+
+
+def test_revert_all_chord_edits_reports_when_there_is_nothing_to_revert() -> None:
+    window = _Window()
+
+    gui_editor_state.revert_all_chord_edits(window)
+
+    assert window.refreshed_with is None
+    assert window.status.messages == ["There are no manual chord edits to revert."]

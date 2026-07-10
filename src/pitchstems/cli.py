@@ -41,9 +41,9 @@ def main() -> int:
     parser.add_argument("--no-midi", action="store_true", help="Only separate stems; do not run Basic Pitch.")
     parser.add_argument(
         "--midi-policy",
-        choices=["pitched", "all", "none"],
+        choices=["pitched", "all"],
         default="pitched",
-        help="Choose which stems get Basic Pitch MIDI.",
+        help="Choose which stems get Basic Pitch MIDI; use --no-midi to disable transcription.",
     )
     onset_threshold = midi_option_spec("onset_threshold")
     parser.add_argument(
@@ -122,7 +122,7 @@ def main() -> int:
         default=sonification_samplerate.default_value(),
         help=sonification_samplerate.help,
     )
-    parser.add_argument("--no-zip", action="store_true", help="Leave outputs in a folder without ZIP export.")
+    parser.add_argument("--zip", action="store_true", help="Also package generated stems and MIDI in a ZIP file.")
     parser.add_argument(
         "--setup",
         action="store_true",
@@ -142,9 +142,9 @@ def main() -> int:
         return 0 if all(check.ok for check in checks) else 1
 
     if args.setup:
-        result = run_setup(log=print)
-        print(format_setup_result(result))
-        return 0 if result.ok else 1
+        setup_result = run_setup(log=print)
+        print(format_setup_result(setup_result))
+        return 0 if setup_result.ok else 1
 
     if args.download_model:
         model_dir = download_model(args.download_model, log=print)
@@ -160,22 +160,25 @@ def main() -> int:
     selected_stem = args.stem
     if selected_stem and selected_stem.lower() not in {stem.lower() for stem in choice.stems}:
         parser.error(f"--stem {selected_stem!r} is not supported by --model {model_key}. Valid stems: {', '.join(choice.stems)}")
-    midi_options = MidiOptions(
-        onset_threshold=args.onset_threshold,
-        frame_threshold=args.frame_threshold,
-        minimum_note_length=args.minimum_note_length,
-        minimum_frequency=optional_frequency_limit(args.minimum_frequency),
-        maximum_frequency=optional_frequency_limit(args.maximum_frequency),
-        multiple_pitch_bends=args.multiple_pitch_bends,
-        melodia_trick=not args.no_melodia_trick,
-        midi_tempo=args.midi_tempo,
-        save_notes=not args.no_save_notes,
-        save_model_outputs=args.save_model_outputs,
-        sonify_midi=args.sonify_midi,
-        sonification_samplerate=args.sonification_samplerate,
-    )
+    try:
+        midi_options = MidiOptions(
+            onset_threshold=args.onset_threshold,
+            frame_threshold=args.frame_threshold,
+            minimum_note_length=args.minimum_note_length,
+            minimum_frequency=optional_frequency_limit(args.minimum_frequency),
+            maximum_frequency=optional_frequency_limit(args.maximum_frequency),
+            multiple_pitch_bends=args.multiple_pitch_bends,
+            melodia_trick=not args.no_melodia_trick,
+            midi_tempo=args.midi_tempo,
+            save_notes=not args.no_save_notes,
+            save_model_outputs=args.save_model_outputs,
+            sonify_midi=args.sonify_midi,
+            sonification_samplerate=args.sonification_samplerate,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
-    result = process_audio_file(
+    pipeline_result = process_audio_file(
         args.audio_file,
         args.output_dir,
         quality=args.quality,
@@ -183,10 +186,10 @@ def main() -> int:
         generate_midi=not args.no_midi,
         midi_policy="none" if args.no_midi else args.midi_policy,
         midi_options=midi_options,
-        create_zip=not args.no_zip,
+        create_zip=args.zip,
         log=print,
     )
-    print(result.zip_path or result.project_dir)
+    print(pipeline_result.zip_path or pipeline_result.project_dir)
     return 0
 
 

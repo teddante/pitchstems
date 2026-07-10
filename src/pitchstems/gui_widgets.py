@@ -85,8 +85,6 @@ class DropZone(QLabel):
             self.path = None
             self.setText(error)
             self.setToolTip(error)
-            if self.on_path_changed:
-                self.on_path_changed(None)
             return
         self.set_audio_file(path)
         if self.on_path_changed:

@@ -1,6 +1,12 @@
 name: Dependency Audit
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "pyproject.toml"
+      - "constraints/**"
+      - ".github/workflows/dependency-audit.yml"
   pull_request:
     branches: [main]
     paths:
@@ -21,17 +27,17 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.10"
           cache: pip
 
       - name: Install audited environment
         run: |
-          python -m pip install -U pip
+          python -m pip install -U pip setuptools
           python -m pip install -c constraints/windows-cpu.txt -e ".[cpu,dev]"
 
       - name: Run pip-audit

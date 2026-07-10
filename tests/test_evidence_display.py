@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from pitchstems.evidence_display import percent_bar, percent_text, percent_with_bar, visible_scale_candidates
+from pitchstems.evidence_display import percent_text, visible_scale_candidates
 
 
 @dataclass(frozen=True)
@@ -11,12 +11,6 @@ class _Scale:
 @dataclass(frozen=True)
 class _Candidate:
     scale: _Scale
-
-
-def test_percent_bar_clamps_and_preserves_percentage_text() -> None:
-    assert percent_with_bar(0.64, width=5) == "64% [###--]"
-    assert percent_bar(2.0, width=4) == "[####]"
-    assert percent_bar(-1.0, width=4) == "[----]"
 
 
 def test_percent_text_clamps_without_ascii_bar() -> None:

@@ -42,7 +42,6 @@ def test_save_and_load_project_manifest_round_trip(tmp_path: Path) -> None:
         zip_path=zip_path,
         source_audio=tmp_path / "source.mp3",
         source_clip=AudioClipRange(4.0, 12.25),
-        original_source_audio=tmp_path / "original.mp3",
     )
 
     manifest_path = save_project_manifest(
@@ -78,8 +77,7 @@ def test_save_and_load_project_manifest_round_trip(tmp_path: Path) -> None:
     assert loaded.zip_path == zip_path
     assert loaded.source_audio == tmp_path / "source.mp3"
     assert loaded.source_clip == AudioClipRange(4.0, 12.25)
-    assert loaded.original_source_audio == tmp_path / "original.mp3"
-    assert manifest["settings"]["source_clip"]["original_source_audio"] == str(tmp_path / "original.mp3")
+    assert "original_source_audio" not in manifest["settings"]["source_clip"]
     assert manifest["settings"]["source_clip"]["duration_seconds"] == 8.25
     assert manifest["stems"][0]["stem_id"] == "bass"
     assert manifest["midi_files"][0]["stem_id"] == "bass"
@@ -109,7 +107,7 @@ def test_midi_results_manifest_uses_project_relative_paths(tmp_path: Path) -> No
     ]
 
 
-def test_save_project_manifest_preserves_existing_note_edits(tmp_path: Path) -> None:
+def test_save_project_manifest_removes_unimplemented_note_edits(tmp_path: Path) -> None:
     project_dir = tmp_path / "song.pitchstems"
     normalized = project_dir / "work" / "song.wav"
     stem = project_dir / "stems" / "song_bass.wav"
@@ -134,7 +132,7 @@ def test_save_project_manifest_preserves_existing_note_edits(tmp_path: Path) -> 
 
     assert updated["editor"]["track_visibility"] == {"bass": False}
     assert updated["editor"]["notation_spelling"] == "sharp"
-    assert updated["editor"]["note_edits"] == [{"stem": "bass", "pitch": 48, "start": 1.25}]
+    assert "note_edits" not in updated["editor"]
 
 
 def test_save_project_manifest_writes_explicit_falsey_editor_values(tmp_path: Path) -> None:
@@ -179,7 +177,7 @@ def test_save_project_manifest_writes_explicit_falsey_editor_values(tmp_path: Pa
     assert updated["editor"]["track_audio_volume"] == {"bass": 0}
     assert updated["editor"]["playhead_seconds"] == 0.0
     assert updated["editor"]["chord_overrides"] == []
-    assert updated["editor"]["note_edits"] == [{"stem": "bass", "pitch": 48, "start": 1.25}]
+    assert "note_edits" not in updated["editor"]
 
 
 def test_manifest_source_audio_prefers_pipeline_result_source(tmp_path: Path) -> None:
@@ -257,6 +255,51 @@ def test_manifest_asset_result_helpers_resolve_project_paths(tmp_path: Path) -> 
         project_dir,
         [{"stem": "Bass", "stem_id": "bass", "path": "midi/bass/song.mid"}],
     ) == [MidiResult("Bass", project_dir / "midi" / "bass" / "song.mid", "bass")]
+
+
+@pytest.mark.parametrize(
+    "stem_id",
+    ["../../escaped", "/absolute", "Lead Vocal", "CON", "", 42],
+)
+def test_load_project_manifest_rejects_unsafe_stem_ids(tmp_path: Path, stem_id: object) -> None:
+    manifest_path = tmp_path / PROJECT_FILENAME
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "format": "pitchstems-project",
+                "format_version": 2,
+                "normalized_audio": "work/source.wav",
+                "stems": [{"name": "Bass", "stem_id": stem_id, "path": "stems/bass.wav"}],
+                "midi_files": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="stem_id"):
+        load_project_manifest(manifest_path)
+
+
+def test_load_project_manifest_rejects_duplicate_stem_ids(tmp_path: Path) -> None:
+    manifest_path = tmp_path / PROJECT_FILENAME
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "format": "pitchstems-project",
+                "format_version": 2,
+                "normalized_audio": "work/source.wav",
+                "stems": [
+                    {"name": "Bass", "stem_id": "bass", "path": "stems/bass.wav"},
+                    {"name": "Bass 2", "stem_id": "bass", "path": "stems/bass-2.wav"},
+                ],
+                "midi_files": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="duplicate stem stem_id"):
+        load_project_manifest(manifest_path)
 
 
 def test_load_pipeline_result_rejects_failed_manifest_with_last_error(tmp_path: Path) -> None:

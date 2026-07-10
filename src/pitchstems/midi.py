@@ -36,7 +36,12 @@ def _rescaled_messages(source_track: MidiTrack, source_ticks: int, target_ticks:
     if source_ticks == target_ticks:
         return [message.copy() for message in source_track]
     scale = target_ticks / source_ticks
-    return [
-        message.copy(time=max(0, round(message.time * scale)))
-        for message in source_track
-    ]
+    source_absolute = 0
+    target_absolute = 0
+    messages = []
+    for message in source_track:
+        source_absolute += max(0, message.time)
+        next_target_absolute = max(target_absolute, round(source_absolute * scale))
+        messages.append(message.copy(time=next_target_absolute - target_absolute))
+        target_absolute = next_target_absolute
+    return messages

@@ -46,6 +46,7 @@ class _EditorWindow:
         self.preview_chord_button = QPushButton("Play Chord")
         self.use_chord_button = QPushButton("Use for Selection")
         self.delete_chord_button = QPushButton("Delete Chord")
+        self.revert_chord_edits_button = QPushButton("Revert All Chord Edits")
         self.reset_note_filter_button = QPushButton("Reset Evidence")
         self.inspect_chord_button = QPushButton("Inspect")
         self.piano_chord_view = PianoChordWidget()
@@ -133,7 +134,7 @@ def test_editor_theory_preview_controls_use_two_row_grid() -> None:
     page = build_editor_page(window)
     side_scroll = page.layout().itemAt(0).layout().itemAt(2).widget()
     side_panel = side_scroll.widget()
-    grid = side_panel.layout().itemAt(13).layout()
+    grid = side_panel.layout().itemAt(16).layout()
 
     assert grid.itemAtPosition(0, 0).widget() is window.preview_scale_button
     assert grid.itemAtPosition(0, 1).widget() is window.preview_scale_pattern
@@ -147,7 +148,7 @@ def test_editor_chord_map_controls_use_two_row_grid() -> None:
     page = build_editor_page(window)
     side_scroll = page.layout().itemAt(0).layout().itemAt(2).widget()
     side_panel = side_scroll.widget()
-    grid = side_panel.layout().itemAt(6).layout()
+    grid = side_panel.layout().itemAt(9).layout()
 
     assert grid.itemAtPosition(0, 0).widget() is window.chord_view_mode
     assert grid.itemAtPosition(1, 0).widget() is window.chord_one_octave_button
@@ -160,7 +161,7 @@ def test_editor_theory_header_uses_wrapped_grid() -> None:
     page = build_editor_page(window)
     side_scroll = page.layout().itemAt(0).layout().itemAt(2).widget()
     side_panel = side_scroll.widget()
-    grid = side_panel.layout().itemAt(9).layout()
+    grid = side_panel.layout().itemAt(12).layout()
 
     assert grid.itemAtPosition(0, 1).widget() is window.show_chromatic_scales
     assert grid.itemAtPosition(1, 0).widget() is window.inspect_theory_button

@@ -2,7 +2,7 @@ from pitchstems.editor_models import NoteEvent
 from pitchstems.editor_query import NoteIndex
 
 
-def test_note_index_handles_dense_active_query_quickly() -> None:
+def test_note_index_returns_correct_dense_active_notes() -> None:
     notes = [
         NoteEvent(
             stem="piano",

@@ -31,6 +31,24 @@ def test_detect_chords_returns_shared_chord_region_type() -> None:
     assert isinstance(chords[0], ChordRegion)
 
 
+def test_detect_chords_merges_rearticulated_harmony_before_duration_filter() -> None:
+    notes = []
+    for index in range(10):
+        start = index / 10
+        end = (index + 1) / 10
+        notes.extend(
+            NoteEvent("piano", start, end, pitch, 100)
+            for pitch in (60, 64, 67)
+        )
+
+    chords = detect_chords(notes)
+
+    assert len(chords) == 1
+    assert chords[0].label == "C"
+    assert chords[0].start == 0.0
+    assert chords[0].end == 1.0
+
+
 def test_chord_naming_module_exposes_public_helpers() -> None:
     from pitchstems.chord_naming import (
         chord_pitch_classes_for_label,

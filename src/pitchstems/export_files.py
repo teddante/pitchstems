@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import os
 import shutil
+import threading
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from pitchstems.filename_safety import safe_file_stem
 from pitchstems.pipeline_models import PipelineResult
@@ -24,13 +27,13 @@ class ExportSummary:
     relative_paths: tuple[Path, ...]
 
 
+class ExportCancelledError(RuntimeError):
+    """Raised when a selected-files export is cancelled."""
+
+
 def build_export_items(result: PipelineResult) -> list[ExportItem]:
     items: list[ExportItem] = []
     seen: set[Path] = set()
-
-    manifest = result.project_dir / "pitchstems.project.json"
-    if manifest.is_file():
-        _append_item(items, seen, "Project manifest", "Project", manifest, Path(manifest.name))
 
     if result.source_audio and result.source_audio.is_file():
         _append_item(
@@ -68,22 +71,106 @@ def build_export_items(result: PipelineResult) -> list[ExportItem]:
     return items
 
 
-def copy_export_items(items: list[ExportItem], destination: Path) -> ExportSummary:
+def export_collisions(items: list[ExportItem], destination: Path) -> tuple[Path, ...]:
+    destination = destination.expanduser().resolve()
+    return tuple(
+        target
+        for item in items
+        if (target := _contained_export_target(destination, item.relative_path)).exists()
+    )
+
+
+def copy_export_items(
+    items: list[ExportItem],
+    destination: Path,
+    *,
+    overwrite: bool = False,
+    cancelled: Callable[[], bool] | None = None,
+    progress: Callable[[int, int, Path], None] | None = None,
+) -> ExportSummary:
     if not items:
         raise ValueError("Choose at least one file to export.")
 
     destination = destination.expanduser().resolve()
     relative_paths: list[Path] = []
+    seen_targets: set[str] = set()
+    targets: list[tuple[ExportItem, Path]] = []
     for item in items:
-        target = destination / item.relative_path
+        target = _contained_export_target(destination, item.relative_path)
+        target_key = str(target).casefold()
+        if target_key in seen_targets:
+            raise ValueError(f"Multiple export items target the same file: {item.relative_path}")
+        seen_targets.add(target_key)
+        if target.exists() and not overwrite:
+            raise FileExistsError(f"Export destination already exists: {target}")
+        targets.append((item, target))
+
+    total_bytes = sum(item.source_path.stat().st_size for item, _target in targets)
+    copied_bytes = 0
+    for item, target in targets:
+        if cancelled is not None and cancelled():
+            raise ExportCancelledError("Export cancelled.")
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(item.source_path, target)
+        _contained_export_target(destination, item.relative_path)
+        copied_bytes = _copy_file_atomic(
+            item.source_path,
+            target,
+            overwrite=overwrite,
+            cancelled=cancelled,
+            copied_bytes=copied_bytes,
+            total_bytes=total_bytes,
+            progress=progress,
+        )
         relative_paths.append(item.relative_path)
     return ExportSummary(
         destination=destination,
         file_count=len(items),
         relative_paths=tuple(relative_paths),
     )
+
+
+def _contained_export_target(destination: Path, relative_path: Path) -> Path:
+    if relative_path.is_absolute():
+        raise ValueError(f"Export path must be relative: {relative_path}")
+    target = (destination / relative_path).resolve()
+    try:
+        target.relative_to(destination)
+    except ValueError as exc:
+        raise ValueError(f"Export path must stay inside the destination: {relative_path}") from exc
+    if target == destination:
+        raise ValueError(f"Export path must name a file: {relative_path}")
+    return target
+
+
+def _copy_file_atomic(
+    source: Path,
+    target: Path,
+    *,
+    overwrite: bool,
+    cancelled: Callable[[], bool] | None,
+    copied_bytes: int,
+    total_bytes: int,
+    progress: Callable[[int, int, Path], None] | None,
+) -> int:
+    temporary = target.with_name(f".{target.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        with source.open("rb") as source_handle, temporary.open("xb") as target_handle:
+            while chunk := source_handle.read(1024 * 1024):
+                if cancelled is not None and cancelled():
+                    raise ExportCancelledError("Export cancelled.")
+                target_handle.write(chunk)
+                copied_bytes += len(chunk)
+                if progress is not None:
+                    progress(copied_bytes, total_bytes, target)
+            target_handle.flush()
+            os.fsync(target_handle.fileno())
+        shutil.copystat(source, temporary)
+        if target.exists() and not overwrite:
+            raise FileExistsError(f"Export destination already exists: {target}")
+        temporary.replace(target)
+        return copied_bytes
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _append_item(

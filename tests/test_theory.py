@@ -1,3 +1,6 @@
+import pytest
+
+import pitchstems.scale_analysis as scale_analysis
 from pitchstems.editor_project import ChordRegion, NoteEvent
 from pitchstems.chord_gap_analysis import analyze_chord_gap as analyze_gap_from_module
 from pitchstems.scale_analysis import analyze_theory_region as analyze_theory_from_module
@@ -31,7 +34,7 @@ def test_scale_registry_includes_common_modal_and_symmetrical_families() -> None
     assert "Diminished half-whole" in names
     assert "Chromatic" in names
     assert "Enigmatic" in names
-    assert "Raga Bhairav" in names
+    assert any("Raga Bhairav" in scale.aliases for scale in SCALE_REGISTRY)
 
 
 def test_extracted_theory_modules_expose_core_entry_points() -> None:
@@ -39,6 +42,25 @@ def test_extracted_theory_modules_expose_core_entry_points() -> None:
 
     assert analyze_theory_from_module(notes, [], 0.0, 1.0).candidates
     assert analyze_gap_from_module([], [], 0.0, 1.0).suggestions == []
+
+
+def test_theory_region_clips_chord_weights_to_selected_interval(monkeypatch) -> None:
+    captured: list[ChordRegion] = []
+
+    def capture(_totals, _bass_totals, chords, *_args):
+        captured.extend(chords)
+        return object()
+
+    monkeypatch.setattr(scale_analysis, "_analyze_evidence", capture)
+
+    scale_analysis.analyze_theory_region(
+        [NoteEvent("piano", 0.0, 20.0, 60, 100)],
+        [ChordRegion(0.0, 10.0, "C", 1.0), ChordRegion(10.0, 20.0, "G", 1.0)],
+        9.9,
+        10.1,
+    )
+
+    assert [chord.duration for chord in captured] == pytest.approx([0.1, 0.1])
 
 
 def test_generated_modes_keep_intervals_relative_to_each_mode_root() -> None:

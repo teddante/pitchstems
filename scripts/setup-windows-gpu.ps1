@@ -32,7 +32,7 @@ Invoke-Checked "Removing default CPU ML wheels..." {
 }
 
 Invoke-Checked "Installing Windows CUDA PyTorch wheels..." {
-    & .\.venv\Scripts\python -m pip install -c $gpuConstraints torch torchvision --index-url https://download.pytorch.org/whl/cu128
+    & .\.venv\Scripts\python -m pip install -c $gpuConstraints torch torchvision --index-url https://download.pytorch.org/whl/cu126
 }
 
 # Basic Pitch declares a dependency on the `onnxruntime` distribution. Keep that

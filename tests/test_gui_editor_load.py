@@ -64,6 +64,7 @@ def test_apply_loaded_editor_result_transfers_editor_state() -> None:
         editor_project=None,
         manual_chords=[],
         removed_chord_ranges=[],
+        revert_chord_edits_button=SimpleNamespace(setEnabled=lambda _enabled: None),
     )
 
     assert _apply_loaded_editor_result(window, loaded) == editor_state

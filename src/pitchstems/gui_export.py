@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
-from pitchstems.export_files import ExportItem, build_export_items, copy_export_items
+from pitchstems.export_files import (
+    ExportCancelledError,
+    ExportItem,
+    ExportSummary,
+    build_export_items,
+    copy_export_items,
+    export_collisions,
+)
+from pitchstems.gui_jobs import thread_is_alive
 
 
 def export_selected_files(window) -> None:
+    if thread_is_alive(getattr(window, "export_worker", None)):
+        window.statusBar().showMessage("An export is already running.", 4000)
+        return
     if window.current_result is None:
         window.append_log("Open or run a project before exporting files.")
         window.statusBar().showMessage("Open or run a project before exporting files.", 4000)
@@ -32,18 +44,88 @@ def export_selected_files(window) -> None:
         window.statusBar().showMessage("Choose at least one file to export.", 4000)
         return
 
-    try:
-        summary = copy_export_items(selected_items, destination)
-    except Exception as exc:
-        window.logger.exception("Could not export selected files")
-        window.append_log(f"Could not export selected files: {exc}")
-        window.statusBar().showMessage("Could not export selected files.", 5000)
-        return
+    collisions = export_collisions(selected_items, destination)
+    overwrite = False
+    if collisions:
+        from PySide6.QtWidgets import QMessageBox
 
+        shown = "\n".join(str(path) for path in collisions[:8])
+        if len(collisions) > 8:
+            shown += f"\n...and {len(collisions) - 8} more"
+        answer = QMessageBox.question(
+            window,
+            "Replace existing export files?",
+            f"{len(collisions)} selected destination file(s) already exist:\n\n{shown}\n\nReplace them?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        overwrite = True
+
+    cancel_event = threading.Event()
+    window.export_cancel_event = cancel_event
+    window.set_processing_state(True)
+    window.begin_activity("Exporting selected files...")
+    window.append_log(f"Exporting {len(selected_items)} files to {destination.expanduser()}...")
+
+    def progress(copied: int, total: int, target: Path) -> None:
+        window.messages.put(("EXPORT_PROGRESS", copied, total, target.name))
+
+    def run_export() -> None:
+        try:
+            summary = copy_export_items(
+                selected_items,
+                destination,
+                overwrite=overwrite,
+                cancelled=cancel_event.is_set,
+                progress=progress,
+            )
+            window.messages.put(("EXPORT_COMPLETE", summary, None))
+        except Exception as exc:
+            window.messages.put(("EXPORT_COMPLETE", None, exc))
+
+    window.export_worker = threading.Thread(target=run_export, daemon=True)
+    window.export_worker.start()
+
+
+def finish_export(window, summary: ExportSummary | None, error: Exception | None) -> None:
+    window.export_worker = None
+    window.export_cancel_event = None
+    window.set_processing_state(False)
+    if error is not None:
+        if isinstance(error, ExportCancelledError):
+            window.append_log("Export cancelled.")
+            window.end_activity("Export cancelled")
+            window.statusBar().showMessage("Export cancelled.", 4000)
+            _close_after_export_if_requested(window)
+            return
+        window.logger.error("Could not export selected files: %s", error)
+        window.append_log(f"Could not export selected files: {error}")
+        window.end_activity("Export failed")
+        window.statusBar().showMessage("Could not export selected files.", 5000)
+        _close_after_export_if_requested(window)
+        return
+    if summary is None:
+        window.end_activity("Export failed")
+        _close_after_export_if_requested(window)
+        return
     message = f"Exported {summary.file_count} files to {summary.destination}"
     window.latest_output_dir = summary.destination
     window.append_log(message)
+    window.end_activity("Export complete")
     window.statusBar().showMessage(message, 5000)
+    _close_after_export_if_requested(window)
+
+
+def _close_after_export_if_requested(window) -> None:
+    if not getattr(window, "close_after_export", False):
+        return
+    window.close_after_export = False
+    from pitchstems.gui_shutdown import begin_auxiliary_shutdown
+
+    begin_auxiliary_shutdown(window)
+    window.close()
 
 
 class ExportSelectedFilesDialog:

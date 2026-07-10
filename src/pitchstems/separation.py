@@ -136,11 +136,20 @@ def separate_stems(
             "Check the selected model, device, and native backend logs."
         )
     if options.selected_stem:
-        requested = options.selected_stem.lower()
-        stems = [stem for stem in stems if stem.name.lower() == requested]
-        if not stems:
-            raise RuntimeError(f"BS-RoFormer did not produce requested stem: {options.selected_stem}")
+        stems = _retain_selected_stem(stems, options.selected_stem)
     return stems
+
+
+def _retain_selected_stem(stems: list[StemResult], selected_stem: str) -> list[StemResult]:
+    requested = selected_stem.lower()
+    selected = [stem for stem in stems if stem.name.lower() == requested]
+    if not selected:
+        raise RuntimeError(f"BS-RoFormer did not produce requested stem: {selected_stem}")
+    selected_paths = {stem.path.resolve() for stem in selected}
+    for stem in stems:
+        if stem.path.resolve() not in selected_paths:
+            stem.path.unlink(missing_ok=True)
+    return selected
 
 
 def get_profile(profile: str) -> SeparationProfile:

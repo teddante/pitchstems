@@ -182,6 +182,7 @@ def test_reset_project_view_state_clears_visible_project_controls() -> None:
         previous_chord_button=_Control(),
         next_chord_button=_Control(),
         delete_chord_button=_Control(),
+        revert_chord_edits_button=_Control(),
         inspect_chord_button=_Control(),
         inspect_theory_button=_Control(),
         use_gap_suggestion_button=_Control(),

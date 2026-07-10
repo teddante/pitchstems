@@ -8,31 +8,6 @@ FLAT_PITCH_NAMES = ("C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", 
 DEFAULT_PITCH_NAMES = ("C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B")
 LETTERS = ("C", "D", "E", "F", "G", "A", "B")
 NATURAL_PITCH_CLASSES = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
-NOTE_NAME_TO_PITCH_CLASS = {
-    "C": 0,
-    "B#": 0,
-    "C#": 1,
-    "Db": 1,
-    "D": 2,
-    "D#": 3,
-    "Eb": 3,
-    "E": 4,
-    "Fb": 4,
-    "E#": 5,
-    "F": 5,
-    "F#": 6,
-    "Gb": 6,
-    "G": 7,
-    "G#": 8,
-    "Ab": 8,
-    "A": 9,
-    "A#": 10,
-    "Bb": 10,
-    "B": 11,
-    "Cb": 11,
-}
-
-
 @dataclass(frozen=True)
 class ChordLabelParts:
     root_name: str

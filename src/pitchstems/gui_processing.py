@@ -107,6 +107,11 @@ def start_midi_processing(window) -> None:
     if not window.current_result or not window.current_stems or not window.current_input_stem:
         window.append_log("Run separation first. Then MIDI can be rerun from those stems.")
         return
+    midi_stems = window.selected_midi_stems()
+    if not midi_stems:
+        window.append_log("Choose at least one saved stem before rerunning MIDI.")
+        window.statusBar().showMessage("Choose at least one saved stem before rerunning MIDI.", 4000)
+        return
     token = start_worker_token(window)
 
     start_processing_request(
@@ -119,7 +124,7 @@ def start_midi_processing(window) -> None:
             stems=list(window.current_stems),
             midi_policy="all",
             midi_options=window.selected_midi_options(),
-            midi_stems=window.selected_midi_stems(),
+            midi_stems=midi_stems,
             create_zip=False,
         ),
         activity_message="Rerunning MIDI...",
@@ -148,7 +153,15 @@ def start_process_job(window, token: int, target, process_request) -> None:
     if not window.worker_jobs.attach_process(token, process_worker):
         process_worker.terminate(timeout_seconds=0.5)
         return
-    process_worker.process.start()
+    try:
+        process_worker.start()
+    except Exception as exc:
+        window.logger.exception("Could not start worker process")
+        window.worker_jobs.finish(token)
+        window.set_processing_state(False)
+        window.end_activity("Could not start processing")
+        window.append_log(f"Could not start worker process: {exc}")
+        return
     window.worker = threading.Thread(
         target=supervise_process_job,
         args=(window, token, process_worker),
@@ -193,10 +206,22 @@ def setup_repair_in_progress(window) -> bool:
 
 
 def cancel_processing(window) -> bool:
-    if not window.worker_jobs.cancel():
+    export_cancel_event = getattr(window, "export_cancel_event", None)
+    if export_cancel_event is not None and thread_is_alive(getattr(window, "export_worker", None)):
+        export_cancel_event.set()
+        window.set_activity_message("Cancelling export...")
+        window.append_log("Export cancellation requested.")
+        return True
+    if window.worker_jobs.active_token is None:
         window.append_log("No active processing job to cancel.")
         return False
-    if window.worker_jobs.active_process is not None:
+    process_worker = window.worker_jobs.request_active_cancel()
+    if process_worker is not None:
+        threading.Thread(
+            target=process_worker.terminate,
+            name="PitchStemsWorkerCancellation",
+            daemon=True,
+        ).start()
         window.set_activity_message("Cancelling worker process...")
     else:
         window.set_activity_message(CANCELLING_AFTER_STAGE_MESSAGE)
@@ -205,7 +230,14 @@ def cancel_processing(window) -> bool:
 
 
 def invalidate_worker_token(window) -> None:
-    had_active_worker = window.worker_jobs.invalidate()
+    process_worker = window.worker_jobs.active_process
+    had_active_worker = window.worker_jobs.invalidate(terminate=False)
+    if process_worker is not None:
+        threading.Thread(
+            target=process_worker.terminate,
+            name="PitchStemsWorkerInvalidation",
+            daemon=True,
+        ).start()
     if had_active_worker:
         window.set_processing_state(False)
 
@@ -245,7 +277,6 @@ def run_midi_stage_process(token: int, request: MidiProcessRunRequest, messages)
             stems=request.stems,
             source_audio=request.result.source_audio,
             source_clip=request.result.source_clip,
-            original_source_audio=request.result.original_source_audio,
             midi_policy=request.midi_policy,
             midi_options=request.midi_options,
             midi_stems=request.midi_stems,
@@ -311,12 +342,20 @@ def flush_messages(window) -> None:
         elif kind == "EDITOR_LOAD_FAILED":
             _kind, token, project_dir, error = message
             window.finish_editor_project_load_failed(int(token), project_dir, error)
+        elif kind == "EDITOR_LOAD_DISCARDED":
+            _kind, token = message
+            window.finish_editor_load_activity(int(token), "Ready")
         elif kind == "MIDI_PREVIEWS":
             _kind, token, project_dir, requested_stems, previews = message
             finish_midi_preview_render(window, int(token), project_dir, requested_stems, previews)
         elif kind == "MIDI_PREVIEW_FAILED":
             _kind, token, project_dir, requested_stems, error = message
             finish_midi_preview_failure(window, int(token), project_dir, requested_stems, str(error))
+        elif kind == "MIDI_PREVIEW_DISCARDED":
+            _kind, token, project_dir, requested_stems = message
+            clear_midi_preview_workers(window, int(token), project_dir, requested_stems)
+            clear_rendering_midi_previews(window, requested_stems)
+            finish_midi_preview_activity(window, int(token), "Ready")
         elif kind == "ENABLE_PROCESS":
             _kind, token, *status_parts = message
             status = str(status_parts[0]) if status_parts else "success"
@@ -324,10 +363,20 @@ def flush_messages(window) -> None:
         elif kind == "SETUP_COMPLETE":
             _kind, detail = message
             window.finish_setup_repair(str(detail))
-        elif isinstance(message, str) and message.startswith("__OUTPUT_DIR__"):
-            window.latest_output_dir = Path(message.removeprefix("__OUTPUT_DIR__"))
-            if window.open_when_done.isChecked():
-                window.open_latest_output()
+        elif kind == "EXPORT_PROGRESS":
+            _kind, copied, total, filename = message
+            percent = int(int(copied) * 100 / max(1, int(total)))
+            window.set_activity_message(f"Exporting {filename}... {percent}%")
+        elif kind == "EXPORT_COMPLETE":
+            _kind, summary, error = message
+            from pitchstems.gui_export import finish_export
+
+            finish_export(window, summary, error)
+        elif kind == "WAVEFORM_PREVIEW":
+            _kind, token, path, preview, error = message
+            from pitchstems.gui_project_flow import finish_waveform_preview
+
+            finish_waveform_preview(window, int(token), path, preview, error)
         elif isinstance(message, str):
             append_worker_log_message(window, message)
         else:
@@ -371,10 +420,12 @@ def finish_midi_preview_render(
     clear_midi_preview_workers(window, token, project_dir, requested_stems)
     if not is_current_midi_preview_message(window, token, project_dir):
         window.logger.info("Ignored stale MIDI preview render for %s", project_dir)
+        finish_midi_preview_activity(window, token, "Ready")
         return
 
     clear_rendering_midi_previews(window, requested_stems)
-    window.attach_midi_preview_players(previews)
+    window.attach_midi_preview_players(previews, finish_activity=False)
+    finish_midi_preview_activity(window, token, "MIDI preview audio ready")
 
 
 def finish_midi_preview_failure(
@@ -387,12 +438,24 @@ def finish_midi_preview_failure(
     clear_midi_preview_workers(window, token, project_dir, requested_stems)
     if not is_current_midi_preview_message(window, token, project_dir):
         window.logger.info("Ignored stale MIDI preview failure for %s: %s", project_dir, error)
+        finish_midi_preview_activity(window, token, "Ready")
         return
 
     clear_rendering_midi_previews(window, requested_stems)
     window.refresh_timeline_track_summaries()
     window.append_log(error)
-    window.end_activity("MIDI preview audio failed")
+    finish_midi_preview_activity(window, token, "MIDI preview audio failed")
+
+
+def finish_midi_preview_activity(window, token: int, message: str) -> None:
+    count = window.midi_preview_jobs.activity_counts.get(token, 0)
+    if count <= 0:
+        return
+    if count == 1:
+        window.midi_preview_jobs.activity_counts.pop(token, None)
+    else:
+        window.midi_preview_jobs.activity_counts[token] = count - 1
+    window.end_activity(message)
 
 
 def clear_rendering_midi_previews(window, stem_names: set[str]) -> None:

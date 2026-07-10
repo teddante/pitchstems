@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -177,7 +178,9 @@ def _download_asset(
             _log(log, f"Could not download {asset.filename} from {source.label}: {exc}")
             continue
 
-        part = target.with_name(f"{target.name}.part")
+        part = target.with_name(
+            f".{target.name}.{os.getpid()}.{threading.get_ident()}.part"
+        )
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(downloaded, part)
@@ -186,6 +189,8 @@ def _download_asset(
             raise ModelAssetDownloadError(
                 f"Downloaded {asset.filename}, but could not cache it at {target}: {exc}"
             ) from exc
+        finally:
+            part.unlink(missing_ok=True)
         _log(log, f"Cached {asset.filename}: {target}")
         return ModelAssetStatus(asset.filename, target, True, "verified")
     joined = "\n".join(f"- {error}" for error in errors)

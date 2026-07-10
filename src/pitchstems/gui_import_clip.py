@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -19,7 +20,6 @@ class ImportClipPicker(QWidget):
         self.peaks: tuple[float, ...] = ()
         self.clip_range: AudioClipRange | None = None
         self.on_range_changed = None
-        self._cache: dict[Path, AudioWaveformPreview] = {}
         self._drag_anchor: float | None = None
         self.setMinimumHeight(84)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -28,25 +28,38 @@ class ImportClipPicker(QWidget):
         self.setToolTip("Drag across the waveform to process only that part of the audio.")
 
     def set_audio_file(self, path: Path, log=None) -> None:
+        self.begin_audio_file(path)
+        try:
+            self.apply_audio_preview(path, waveform_preview_for_path(path))
+        except Exception as exc:
+            self.apply_audio_preview(path, None)
+            if log is not None:
+                log(f"Waveform preview unavailable: {exc}")
+
+    def begin_audio_file(self, path: Path) -> None:
         self.path = path
+        self.duration_seconds = 0.0
+        self.peaks = ()
         self.clip_range = None
         self._drag_anchor = None
-        try:
-            preview = self._cache.get(path)
-            if preview is None:
-                preview = load_waveform_preview(path)
-                self._cache[path] = preview
+        self.setEnabled(False)
+        self._notify()
+        self.update()
+
+    def apply_audio_preview(self, path: Path, preview: AudioWaveformPreview | None) -> bool:
+        if self.path != path:
+            return False
+        if preview is not None:
             self.duration_seconds = preview.duration_seconds
             self.peaks = preview.peaks
             self.setEnabled(self.duration_seconds > 0)
-        except Exception as exc:
+        else:
             self.duration_seconds = 0.0
             self.peaks = ()
             self.setEnabled(False)
-            if log is not None:
-                log(f"Waveform preview unavailable: {exc}")
         self._notify()
         self.update()
+        return True
 
     def reset_audio(self) -> None:
         self.path = None
@@ -144,6 +157,21 @@ class ImportClipPicker(QWidget):
     def _notify(self) -> None:
         if self.on_range_changed:
             self.on_range_changed(self.clip_range, self.duration_seconds)
+
+
+def waveform_preview_for_path(path: Path) -> AudioWaveformPreview:
+    resolved = path.expanduser().resolve()
+    stat = resolved.stat()
+    return _cached_waveform_preview(str(resolved), stat.st_size, stat.st_mtime_ns)
+
+
+@lru_cache(maxsize=8)
+def _cached_waveform_preview(
+    resolved_path: str,
+    _size: int,
+    _mtime_ns: int,
+) -> AudioWaveformPreview:
+    return load_waveform_preview(Path(resolved_path))
 
 
 def clip_status_text(clip_range: AudioClipRange | None, duration_seconds: float) -> str:

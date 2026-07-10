@@ -143,6 +143,9 @@ class _CaptureProcessWorker:
     def is_alive(self) -> bool:
         return self.process.is_alive()
 
+    def start(self) -> None:
+        self.process.start()
+
     def drain_messages(self) -> list[object]:
         return []
 
@@ -382,7 +385,7 @@ def test_cancel_processing_requests_active_worker_and_updates_activity() -> None
     token = window.worker_jobs.start()
 
     assert gui_processing.cancel_processing(window) is True
-    assert window.worker_jobs.is_cancel_requested(token)
+    assert window.worker_jobs.is_active(token)
     assert window.activities[-1] == "Cancelling after the current model stage..."
     assert "Cancellation requested." in window.logs[-1]
 
@@ -396,7 +399,7 @@ def test_cancel_processing_terminates_active_process_worker() -> None:
 
     assert gui_processing.cancel_processing(window) is True
 
-    assert window.worker_jobs.is_cancel_requested(token)
+    assert window.worker_jobs.is_active(token)
     assert process_worker.terminated
     assert window.activities[-1] == "Cancelling worker process..."
 
@@ -478,7 +481,12 @@ class _FlushWindow:
     def clear_midi_preview_worker(self, project_dir: Path, stem_name: str, token: int) -> None:
         self.cleared_midi_preview_workers.append((project_dir, stem_name, token))
 
-    def attach_midi_preview_players(self, previews: dict[str, Path]) -> None:
+    def attach_midi_preview_players(
+        self,
+        previews: dict[str, Path],
+        finish_activity: bool = True,
+    ) -> None:
+        del finish_activity
         self.attached_midi_previews.append(previews)
 
     def refresh_timeline_track_summaries(self) -> None:
@@ -548,6 +556,7 @@ def test_finish_worker_completion_ignores_stale_token() -> None:
 
 def test_finish_midi_preview_render_attaches_current_preview() -> None:
     window = _FlushWindow()
+    window.midi_preview_jobs.activity_counts[11] = 1
     window.rendering_midi_previews.update({"piano", "bass"})
     preview = Path("song.pitchstems/editor/midi-preview/piano_midi_preview.wav")
 
@@ -585,6 +594,7 @@ def test_finish_midi_preview_render_ignores_stale_preview() -> None:
 
 def test_finish_midi_preview_failure_reports_current_error() -> None:
     window = _FlushWindow()
+    window.midi_preview_jobs.activity_counts[11] = 1
     window.rendering_midi_previews.update({"piano", "bass"})
 
     gui_processing.finish_midi_preview_failure(

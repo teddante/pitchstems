@@ -50,6 +50,9 @@ def _apply_current_result_state(window, result) -> None:
     window.manual_chords = []
     window.removed_chord_ranges = []
     window.rendering_midi_previews.clear()
+    from pitchstems.gui_pipeline_state import restore_pipeline_settings
+
+    restore_pipeline_settings(window, getattr(result, "settings", {}))
 
 
 def start_editor_project_load(window, result, token: int) -> None:
@@ -61,11 +64,13 @@ def start_editor_project_load(window, result, token: int) -> None:
         try:
             loaded = build_editor_load_result(result)
             if window.editor_load_jobs.closing or token != window.editor_load_jobs.token:
+                window.messages.put(("EDITOR_LOAD_DISCARDED", token))
                 return
             window.messages.put(("EDITOR_LOADED", token, loaded))
         except Exception as exc:
             window.logger.exception("Editor project load failed")
             if window.editor_load_jobs.closing or token != window.editor_load_jobs.token:
+                window.messages.put(("EDITOR_LOAD_DISCARDED", token))
                 return
             window.messages.put(("EDITOR_LOAD_FAILED", token, result.project_dir, f"{exc}"))
 
@@ -118,6 +123,13 @@ def finish_editor_project_load(window, token: int, loaded) -> None:
     refresh_editor_lists(window, track_visibility)
     window.refresh_playback_controls(editor_state)
     window.clear_transport_players()
+    checked_midi_stems = {
+        stem_name
+        for stem_name, checkbox in window.track_midi_checks.items()
+        if checkbox.isChecked()
+    }
+    if checked_midi_stems:
+        window.start_midi_preview_render(window.current_result, checked_midi_stems)
     window.logger.info("Drawing editor timeline")
     window.set_activity_message("Drawing editor timeline...")
     with window.timeline.deferred_redraw():
@@ -137,6 +149,9 @@ def _apply_loaded_editor_result(window, loaded) -> dict:
     window.editor_project = loaded.editor_project
     window.manual_chords = loaded.manual_chords
     window.removed_chord_ranges = loaded.removed_chord_ranges
+    window.revert_chord_edits_button.setEnabled(
+        bool(window.manual_chords or window.removed_chord_ranges)
+    )
     return loaded.editor_state
 
 

@@ -19,6 +19,16 @@ def apply_manual_chords(window) -> None:
     )
 
 
+def revert_all_chord_edits(window) -> None:
+    if not window.manual_chords and not window.removed_chord_ranges:
+        window.statusBar().showMessage("There are no manual chord edits to revert.", 3000)
+        return
+    window.manual_chords = []
+    window.removed_chord_ranges = []
+    window.refresh_editor_project_from_chord_edits(None)
+    window.statusBar().showMessage("Restored all detected chords.", 4000)
+
+
 def refresh_editor_project_from_chord_edits(
     window,
     selected_chord: ChordRegion | None = None,
@@ -42,6 +52,9 @@ def refresh_editor_project_from_chord_edits(
     window.timeline.selection_end = selection_end
     window.timeline.selected_chord = selected_chord
     window.timeline.set_manual_chords(window.manual_chords)
+    window.revert_chord_edits_button.setEnabled(
+        bool(window.manual_chords or window.removed_chord_ranges)
+    )
     window.refresh_detected_chord_list()
     window.refresh_current_harmony(window.timeline.position, force=True)
     window.save_editor_state()
@@ -104,6 +117,8 @@ def insert_manual_chord(window, chord: ChordRegion) -> None:
 
 
 def edit_timeline_chord(window, original: ChordRegion, edited: ChordRegion) -> None:
+    if edited == original:
+        return
     window.removed_chord_ranges = merge_chord_ranges(
         [*window.removed_chord_ranges, (original.start, original.end), (edited.start, edited.end)]
     )

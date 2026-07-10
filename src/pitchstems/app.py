@@ -179,6 +179,11 @@ def main() -> int:
                 track_midi_sliders=self.track_midi_sliders,
             )
             self.rendering_midi_previews: set[str] = set()
+            self.export_worker: threading.Thread | None = None
+            self.export_cancel_event: threading.Event | None = None
+            self.close_after_export = False
+            self.waveform_token = 0
+            self.waveform_worker: threading.Thread | None = None
             self.activity_depth = 0
             self.manual_chords: list[ChordRegion] = []
             self.removed_chord_ranges: list[tuple[float, float]] = []
@@ -190,13 +195,14 @@ def main() -> int:
             self.current_chord_base_weights: dict[int, float] = {}
             self.current_harmony_context: HarmonyContext | None = None
             self.harmony_refresh_gate = gui_harmony_flow.HarmonyRefreshGate()
+            self.pending_harmony_seconds: float | None = None
             self.current_theory_analysis: TheoryAnalysis | None = None
             self.current_chord_gap_analysis: ChordGapAnalysis | None = None
             self.current_gap_empty_message = "No chord-track gap selected or under the playhead."
             self.updating_chord_note_filter = False
 
             self.drop_zone = DropZone()
-            self.drop_zone.on_path_changed = self.reset_stage_state
+            self.drop_zone.on_path_changed = self.set_audio_path
             self.import_clip_player = QMediaPlayer(self)
             self.import_clip_audio = QAudioOutput(self)
             self.import_clip_player.setAudioOutput(self.import_clip_audio)
@@ -383,6 +389,11 @@ def main() -> int:
             self.note_filter_help.setStyleSheet("color: #64748b;")
             self.reset_note_filter_button = QPushButton("Reset Notes")
             self.reset_note_filter_button.setToolTip("Clear forced include/exclude note choices for the current chord analysis.")
+            self.revert_chord_edits_button = QPushButton("Revert All Chord Edits")
+            self.revert_chord_edits_button.setEnabled(False)
+            self.revert_chord_edits_button.setToolTip(
+                "Discard manual chord moves, assignments, and deletions and restore detected chords."
+            )
             self.chord_detector_help = QLabel(
                 "Harmony comes from the selected Chord tracks: MIDI note energy feeds chord detection, then the chord track feeds key, scale, mode, and gap suggestions."
             )
@@ -626,6 +637,7 @@ def main() -> int:
             self.use_chord_button.clicked.connect(self.assign_selected_chord_to_selection)
             self.delete_chord_button.clicked.connect(self.delete_selected_chord)
             self.reset_note_filter_button.clicked.connect(self.reset_chord_note_filter)
+            self.revert_chord_edits_button.clicked.connect(self.revert_all_chord_edits)
             self.inspect_chord_button.clicked.connect(self.inspect_current_chord_analysis)
             self.inspect_theory_button.clicked.connect(self.inspect_current_theory_analysis)
             self.preview_scale_button.clicked.connect(self.preview_selected_scale)
@@ -667,6 +679,9 @@ def main() -> int:
 
             self.transport_timer = QTimer(self)
             self.transport_timer.timeout.connect(self.update_transport_position)
+            self.harmony_refresh_timer = QTimer(self)
+            self.harmony_refresh_timer.setSingleShot(True)
+            self.harmony_refresh_timer.timeout.connect(self.flush_deferred_harmony_refresh)
             self.editor_save_timer = QTimer(self)
             self.editor_save_timer.setSingleShot(True)
             self.editor_save_timer.timeout.connect(self.save_editor_state)
@@ -1042,6 +1057,9 @@ def main() -> int:
         def apply_manual_chords(self) -> None:
             gui_editor_state.apply_manual_chords(self)
 
+        def revert_all_chord_edits(self) -> None:
+            gui_editor_state.revert_all_chord_edits(self)
+
         def refresh_editor_project_from_chord_edits(self, selected_chord: ChordRegion | None = None) -> None:
             gui_editor_state.refresh_editor_project_from_chord_edits(self, selected_chord)
 
@@ -1123,6 +1141,9 @@ def main() -> int:
 
         def stop_transport(self) -> None:
             gui_transport_flow.stop_transport(self)
+
+        def handle_transport_end(self) -> None:
+            gui_transport_flow.finish_transport_at_end(self)
 
         def seek_audio_players(self, seconds: float) -> None:
             self.transport.seek(seconds)
@@ -1441,7 +1462,21 @@ def main() -> int:
 
         def refresh_current_harmony(self, seconds: float, force: bool = False) -> None:
             if self.harmony_refresh_gate.should_refresh(time.monotonic(), force=force):
+                self.pending_harmony_seconds = None
+                self.harmony_refresh_timer.stop()
                 gui_harmony_flow.refresh_current_harmony(self, seconds)
+                return
+            self.pending_harmony_seconds = seconds
+            self.harmony_refresh_timer.start(
+                max(1, int(self.harmony_refresh_gate.min_interval_seconds * 1000))
+            )
+
+        def flush_deferred_harmony_refresh(self) -> None:
+            if self.pending_harmony_seconds is None:
+                return
+            seconds = self.pending_harmony_seconds
+            self.pending_harmony_seconds = None
+            self.refresh_current_harmony(seconds, force=True)
 
         def update_harmony_context(self, mode: str) -> None:
             self.current_harmony_context = HarmonyContext(

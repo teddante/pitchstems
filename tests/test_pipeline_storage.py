@@ -63,7 +63,7 @@ def test_prepare_source_audio_input_copies_whole_file_import(tmp_path: Path) -> 
     workspace = _ProjectWorkspace.from_input(tmp_path / "out", input_path)
     workspace.create_directories()
 
-    project_source_audio, original_source_audio, normalize_input = _prepare_source_audio_input(
+    project_source_audio, normalize_input = _prepare_source_audio_input(
         input_path,
         workspace,
         None,
@@ -71,7 +71,6 @@ def test_prepare_source_audio_input_copies_whole_file_import(tmp_path: Path) -> 
 
     assert project_source_audio == workspace.audio_dir / "Song.mp3"
     assert project_source_audio.read_bytes() == b"audio"
-    assert original_source_audio is None
     assert normalize_input == project_source_audio
 
 
@@ -81,7 +80,7 @@ def test_prepare_source_audio_input_uses_original_for_clip_import(tmp_path: Path
     workspace.create_directories()
     source_clip = AudioClipRange(1.0, 4.0)
 
-    project_source_audio, original_source_audio, normalize_input = _prepare_source_audio_input(
+    project_source_audio, normalize_input = _prepare_source_audio_input(
         input_path,
         workspace,
         source_clip,
@@ -89,7 +88,6 @@ def test_prepare_source_audio_input_uses_original_for_clip_import(tmp_path: Path
 
     assert project_source_audio == workspace.audio_dir / "Song_clip.wav"
     assert not project_source_audio.exists()
-    assert original_source_audio == input_path
     assert normalize_input == input_path
 
 
@@ -152,7 +150,6 @@ def test_zip_project_outputs_packages_canonical_assets_without_export_copies(tmp
         assert sorted(archive.namelist()) == [
             "midi/bass.mid",
             "midi/song_combined.mid",
-            "pitchstems.project.json",
             "stems/bass.wav",
         ]
 
@@ -269,7 +266,8 @@ def test_midi_rerun_zip_includes_current_manifest(tmp_path: Path, monkeypatch) -
 
     assert result.zip_path is not None
     with ZipFile(result.zip_path) as archive:
-        manifest = archive.read("pitchstems.project.json").decode("utf-8")
+        assert "pitchstems.project.json" not in archive.namelist()
+    manifest = (project_dir / "pitchstems.project.json").read_text(encoding="utf-8")
     assert '"source_audio": "audio/source.mp3"' in manifest
     assert '"zip_path": "source_pitchstems.zip"' in manifest
 
@@ -311,11 +309,10 @@ def test_midi_rerun_result_preserves_existing_source_audio(tmp_path: Path, monke
 def test_midi_rerun_result_preserves_existing_source_clip_metadata(tmp_path: Path, monkeypatch) -> None:
     project_dir = tmp_path / "song.pitchstems"
     source_path = project_dir / "audio" / "source_clip.wav"
-    original_path = tmp_path / "source.mp3"
     normalized_path = project_dir / "work" / "source.wav"
     stem_path = project_dir / "stems" / "song_bass.wav"
     clip = AudioClipRange(2.0, 8.5)
-    for path in [source_path, original_path, normalized_path, stem_path]:
+    for path in [source_path, normalized_path, stem_path]:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"placeholder")
     save_project_manifest(
@@ -328,7 +325,6 @@ def test_midi_rerun_result_preserves_existing_source_clip_metadata(tmp_path: Pat
             zip_path=None,
             source_audio=source_path,
             source_clip=clip,
-            original_source_audio=original_path,
         )
     )
 
@@ -345,7 +341,6 @@ def test_midi_rerun_result_preserves_existing_source_clip_metadata(tmp_path: Pat
 
     assert result.source_audio == source_path
     assert result.source_clip == clip
-    assert result.original_source_audio == original_path
 
 
 def test_save_pipeline_manifest_passes_pipeline_options(monkeypatch, tmp_path: Path) -> None:
@@ -767,7 +762,8 @@ def test_full_pipeline_packages_once_after_final_manifest(tmp_path: Path, monkey
     assert zip_calls == 1
     assert result.zip_path is not None
     with ZipFile(result.zip_path) as archive:
-        manifest = archive.read("pitchstems.project.json").decode("utf-8")
+        assert "pitchstems.project.json" not in archive.namelist()
+    manifest = (result.project_dir / "pitchstems.project.json").read_text(encoding="utf-8")
     assert '"source_audio": "audio/source.mp3"' in manifest
     assert '"zip_path": "source_pitchstems.zip"' in manifest
 
@@ -923,10 +919,10 @@ def test_full_pipeline_clip_processes_small_wav_and_records_provenance(
     assert normalize_calls == [(input_path.resolve(), result.normalized_audio, clip)]
     assert result.source_audio == result.project_dir / "audio" / "source_clip.wav"
     assert result.source_audio.read_bytes() == b"clipped wav"
+    assert result.source_audio.samefile(result.normalized_audio)
     assert result.source_clip == clip
-    assert result.original_source_audio == input_path.resolve()
     assert manifest["source_audio"] == "audio/source_clip.wav"
-    assert manifest["settings"]["source_clip"]["original_source_audio"] == str(input_path.resolve())
+    assert "original_source_audio" not in manifest["settings"]["source_clip"]
     assert manifest["settings"]["source_clip"]["start_seconds"] == 12.0
     assert manifest["settings"]["source_clip"]["end_seconds"] == 24.5
 
@@ -993,6 +989,18 @@ def test_project_workspace_names_and_creates_pipeline_directories(tmp_path: Path
     )
 
 
+def test_project_workspace_atomically_reserves_distinct_directories(tmp_path: Path) -> None:
+    audio_path = tmp_path / "song.mp3"
+    audio_path.write_bytes(b"audio")
+
+    first = _ProjectWorkspace.from_input(tmp_path / "out", audio_path)
+    second = _ProjectWorkspace.from_input(tmp_path / "out", audio_path)
+
+    assert first.project_dir != second.project_dir
+    assert first.project_dir.is_dir()
+    assert second.project_dir.is_dir()
+
+
 def test_midi_workspace_names_rerun_directories(tmp_path: Path) -> None:
     project_dir = tmp_path / "song.pitchstems"
 
@@ -1006,8 +1014,48 @@ def test_midi_workspace_names_rerun_directories(tmp_path: Path) -> None:
     assert workspace.staged_export_dir == project_dir / "export.tmp"
     assert workspace.backup_midi_dir == project_dir / "midi.backup.tmp"
     assert workspace.backup_export_dir == project_dir / "export.backup.tmp"
+    assert workspace.transaction_path == project_dir / ".midi-transaction.json"
     assert workspace.normalized_audio == project_dir / "work" / "Song_Title.wav"
     assert workspace.zip_path == project_dir / "Song_Title_pitchstems.zip"
+
+
+def test_midi_transaction_recovery_restores_backups_and_removes_new_outputs(
+    tmp_path: Path,
+) -> None:
+    workspace = _MidiWorkspace.from_project(tmp_path / "song.pitchstems", "song")
+    old_midi = _write_file(workspace.backup_midi_dir / "bass" / "old.mid", b"old-midi")
+    _write_file(workspace.midi_dir / "bass" / "new.mid", b"new-midi")
+    _write_file(workspace.backup_export_dir / "bass.mid", b"old-export")
+    _write_file(workspace.export_dir / "bass.mid", b"new-export")
+    new_only = _write_file(workspace.export_dir / "song_combined.mid", b"new-combined")
+    pipeline._write_midi_transaction(
+        workspace,
+        "installed",
+        {"bass.mid", "song_combined.mid"},
+        True,
+    )
+
+    pipeline._recover_midi_transaction(workspace)
+
+    assert (workspace.midi_dir / "bass" / old_midi.name).read_bytes() == b"old-midi"
+    assert (workspace.export_dir / "bass.mid").read_bytes() == b"old-export"
+    assert not new_only.exists()
+    assert not workspace.transaction_path.exists()
+    assert not workspace.backup_midi_dir.exists()
+    assert not workspace.backup_export_dir.exists()
+
+
+def test_committed_midi_transaction_recovery_keeps_new_outputs(tmp_path: Path) -> None:
+    workspace = _MidiWorkspace.from_project(tmp_path / "song.pitchstems", "song")
+    new_midi = _write_file(workspace.midi_dir / "bass" / "new.mid", b"new")
+    _write_file(workspace.backup_midi_dir / "bass" / "old.mid", b"old")
+    pipeline._write_midi_transaction(workspace, "committed", {"bass.mid"}, True)
+
+    pipeline._recover_midi_transaction(workspace)
+
+    assert new_midi.read_bytes() == b"new"
+    assert not workspace.backup_midi_dir.exists()
+    assert not workspace.transaction_path.exists()
 
 
 def test_pipeline_uses_bounded_safe_names_for_long_audio_files(tmp_path: Path, monkeypatch) -> None:

@@ -3,7 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from pitchstems.gui_pipeline_state import midi_stem_checkbox_state, pipeline_settings_widgets, set_processing_state
+from pitchstems.gui_pipeline_state import (
+    midi_stem_checkbox_state,
+    pipeline_settings_widgets,
+    restore_pipeline_settings,
+    set_processing_state,
+)
 
 
 def test_pipeline_settings_widgets_lists_controls_in_stable_order() -> None:
@@ -110,16 +115,85 @@ def test_set_processing_state_disables_setup_repair_while_busy(monkeypatch) -> N
     assert window.repair_setup.enabled is False
 
 
+def test_restore_pipeline_settings_rehydrates_saved_processing_choices(monkeypatch) -> None:
+    window = _PipelineWindow()
+    window.stem = _Combo([None, "bass"])
+    window.bs_device = _Combo([None, "cpu", "cuda"])
+
+    def rebuild_midi_checks(target) -> None:
+        target.midi_stem_checks = {"bass": _Control(), "drums": _Control()}
+
+    monkeypatch.setattr("pitchstems.gui_pipeline_state.refresh_midi_stem_checks", rebuild_midi_checks)
+
+    restore_pipeline_settings(
+        window,
+        {
+            "separation": {"selected_stem": "bass", "device": "cpu"},
+            "generate_midi": True,
+            "midi_policy": "all",
+            "midi_stems": ["bass"],
+            "midi": {
+                "onset_threshold": 0.42,
+                "minimum_frequency": 55.0,
+                "sonify_midi": True,
+                "sonification_samplerate": 48000,
+            },
+        },
+    )
+
+    assert window.stem.currentData() == "bass"
+    assert window.bs_device.currentData() == "cpu"
+    assert window.generate_midi.isChecked()
+    assert window.onset_threshold.value() == 0.42
+    assert window.minimum_frequency.value() == 55.0
+    assert window.sonify_midi.isChecked()
+    assert window.sonification_samplerate.value() == 48000
+    assert window.midi_stem_checks["bass"].isChecked()
+    assert not window.midi_stem_checks["drums"].isChecked()
+
+
 class _Control:
     def __init__(self, checked: bool = False) -> None:
         self.enabled = False
         self._checked = checked
+        self._value = 0
 
     def setEnabled(self, enabled: bool) -> None:
         self.enabled = enabled
 
     def isChecked(self) -> bool:
         return self._checked
+
+    def setChecked(self, checked: bool) -> None:
+        self._checked = checked
+
+    def setValue(self, value) -> None:
+        self._value = value
+
+    def value(self):
+        return self._value
+
+    def blockSignals(self, _blocked: bool) -> bool:
+        return False
+
+
+class _Combo(_Control):
+    def __init__(self, values: list[object]) -> None:
+        super().__init__()
+        self.values = values
+        self.index = 0
+
+    def findData(self, value: object) -> int:
+        try:
+            return self.values.index(value)
+        except ValueError:
+            return -1
+
+    def setCurrentIndex(self, index: int) -> None:
+        self.index = index
+
+    def currentData(self):
+        return self.values[self.index]
 
 
 class _LiveWorker:

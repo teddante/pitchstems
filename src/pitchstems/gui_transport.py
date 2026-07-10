@@ -59,6 +59,10 @@ class TransportController:
             player.setSource(QUrl.fromLocalFile(str(stem.path)))
             self.track_players[stem.name] = player
             self.track_audio_outputs[stem.name] = output
+        master = self.master_player()
+        media_status_changed = getattr(master, "mediaStatusChanged", None)
+        if media_status_changed is not None:
+            media_status_changed.connect(self._handle_master_media_status)
         self.refresh_mix()
         self._prepared_result_key = result_key
 
@@ -234,6 +238,14 @@ class TransportController:
     def _track_players_match(self, result: PipelineResult) -> bool:
         stem_names = {stem.name for stem in result.stems}
         return stem_names == set(self.track_players) and stem_names == set(self.track_audio_outputs)
+
+    def _handle_master_media_status(self, status) -> None:
+        if status != QMediaPlayer.EndOfMedia or not self.is_playing:
+            return
+        self.is_playing = False
+        callback = getattr(self.parent, "handle_transport_end", None)
+        if callable(callback):
+            callback()
 
     def resync(self, master: QMediaPlayer | None = None, drift_ms: int = 120) -> None:
         if not self.is_playing:

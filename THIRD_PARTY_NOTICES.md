@@ -13,6 +13,7 @@ exact dependency and model versions you ship.
 | --- | --- | --- |
 | Basic Pitch | Audio-to-MIDI transcription | Apache-2.0 notices are present in the installed package. The upstream project is by Spotify AB. |
 | bs-roformer-infer | Native BS-RoFormer inference and model registry | MIT license according to installed package metadata. |
+| Hugging Face Hub / hf-xet | Verified model-asset download and transfer | Apache-2.0 according to installed package metadata. |
 | PySide6 / Qt for Python | Desktop GUI | LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only according to installed package metadata. Dynamic linking/install-time dependency is intentional. |
 | PyTorch | CUDA/CPU tensor runtime for separation | BSD-3-Clause according to installed package metadata. |
 | ONNX Runtime GPU | ONNX inference runtime for Basic Pitch | MIT according to installed package metadata. |
@@ -21,15 +22,19 @@ exact dependency and model versions you ship.
 
 ## Model Assets
 
-PitchStems downloads model weights and configs through the upstream
-`bs-roformer-infer` registry. The current default model is:
+PitchStems resolves the expected model identity through `bs-roformer-infer`,
+then downloads checksum-pinned files through Hugging Face Hub. The current
+primary and fallback repositories are recorded in `model_assets.py`. The
+current default model is:
 
 - `roformer-model-bs-roformer-sw-by-jarredou`
 - checkpoint: `BS-Rofo-SW-Fixed.ckpt`
 - config: `BS-Rofo-SW-Fixed.yaml`
 
 Model weights can have licensing or usage terms separate from the inference
-code. PitchStems does not commit those weights to this repository.
+code. PitchStems does not commit those weights to this repository. The fallback
+repository must have its model-license provenance verified before distributing
+the model or a bundle that contains it.
 
 ## User Audio
 

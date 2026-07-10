@@ -15,7 +15,6 @@ from pitchstems.gui_track_controls import TRACK_CONTROL_MIN_HEIGHT
 from pitchstems.timeline_chord_geometry import (
     TimelineLayoutGeometry,
     TimelineTrackGeometry,
-    build_track_geometries,
     build_timeline_layout,
     chord_drag_mode,
     compact_chord_label,
@@ -851,18 +850,6 @@ class TimelineView(QGraphicsView):
         self.selection_start, self.selection_end = selection
         self._clear_selected_chord()
 
-    def _build_track_geometries(self) -> dict[str, TimelineTrackGeometry]:
-        if self.project is None:
-            return {}
-        return build_track_geometries(
-            tracks=self.project.tracks,
-            visible_tracks=self.visible_tracks,
-            pitch_ranges=self.pitch_ranges,
-            chord_height=self.chord_height,
-            minimum_track_height=self.minimum_track_height,
-            vertical_zoom=self.vertical_zoom,
-        )
-
     def _build_layout_geometry(self, duration: float) -> TimelineLayoutGeometry:
         if self.project is None:
             return TimelineLayoutGeometry(
@@ -1124,6 +1111,7 @@ class TimelineView(QGraphicsView):
             "chord": chord,
             "mode": mode,
             "press_seconds": seconds,
+            "press_position": event.pos(),
             "preview": chord,
         }
         self.setCursor(Qt.SizeHorCursor if mode != "move" else Qt.ClosedHandCursor)
@@ -1188,10 +1176,18 @@ class TimelineView(QGraphicsView):
         if not self._chord_drag:
             return
         original = self._chord_drag["chord"]
+        press_position = self._chord_drag.get("press_position")
         edited = self._dragged_chord_from_event(event)
         self._chord_drag = None
         self._clear_chord_drag_preview()
         self.unsetCursor()
+        if (
+            edited == original
+            or press_position is not None
+            and (event.pos() - press_position).manhattanLength() < 4
+        ):
+            self.selected_chord = original
+            return
         self.selected_chord = edited
         if self.on_chord_edited:
             self.on_chord_edited(original, edited)

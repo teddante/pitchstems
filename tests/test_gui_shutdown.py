@@ -47,7 +47,7 @@ def test_request_window_close_cancels_active_worker_and_defers_close() -> None:
     window = _Window(alive=True)
 
     assert request_window_close(window) is False
-    assert window.worker_jobs.is_cancel_requested(1)
+    assert window.worker_jobs.is_active(1)
     assert window.close_after_worker
     assert window.activities[-1] == "Cancelling after the current model stage..."
 

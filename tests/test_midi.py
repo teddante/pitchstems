@@ -2,7 +2,7 @@ from pathlib import Path
 
 from mido import Message, MidiFile, MidiTrack
 
-from pitchstems.midi import combine_midi_tracks
+from pitchstems.midi import _rescaled_messages, combine_midi_tracks
 from pitchstems.pipeline_models import MidiResult
 
 
@@ -48,3 +48,16 @@ def test_combine_midi_tracks_rescales_different_ticks_per_beat(tmp_path: Path) -
     combined = MidiFile(output)
     assert combined.ticks_per_beat == 480
     assert combined.tracks[1][2].time == 480
+
+
+def test_rescaled_messages_preserve_cumulative_fractional_ticks() -> None:
+    track = MidiTrack(
+        [
+            Message("note_on", note=60, velocity=64, time=1),
+            Message("note_off", note=60, velocity=0, time=1),
+        ]
+    )
+
+    result = _rescaled_messages(track, source_ticks=960, target_ticks=480)
+
+    assert sum(message.time for message in result) == 1

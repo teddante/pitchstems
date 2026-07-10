@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import contextlib
+import json
+import os
 import shutil
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
+from typing import Callable, TypedDict
 
 from pitchstems.audio import normalize_to_wav
 from pitchstems.audio_clip import AudioClipRange
@@ -14,6 +16,7 @@ from pitchstems.filename_safety import safe_file_stem
 from pitchstems.midi import combine_midi_tracks
 from pitchstems.pipeline_models import MidiResult, PipelineResult, StemResult
 from pitchstems.preflight import run_preflight
+from pitchstems.project_lock import project_mutation_lock
 from pitchstems.project_store import (
     PROJECT_FILENAME,
     load_pipeline_result,
@@ -31,6 +34,12 @@ class PipelineCancelledError(RuntimeError):
     """Raised when a user-requested cancellation stops pipeline orchestration."""
 
 
+class _MidiTransaction(TypedDict):
+    phase: str
+    generated_export_midi: list[str]
+    had_midi_dir: bool
+
+
 @dataclass(frozen=True)
 class _ProjectWorkspace:
     project_dir: Path
@@ -43,7 +52,7 @@ class _ProjectWorkspace:
 
     @classmethod
     def from_input(cls, output_root: Path, input_path: Path) -> "_ProjectWorkspace":
-        project_dir = _project_dir(output_root, input_path)
+        project_dir = _reserve_project_dir(output_root, input_path)
         input_stem = _safe_stem(input_path.stem)
         return cls(
             project_dir=project_dir,
@@ -84,6 +93,7 @@ class _MidiWorkspace:
     staged_export_dir: Path
     backup_midi_dir: Path
     backup_export_dir: Path
+    transaction_path: Path
 
     @classmethod
     def from_project(cls, project_dir: Path, input_stem: str) -> "_MidiWorkspace":
@@ -97,6 +107,7 @@ class _MidiWorkspace:
             staged_export_dir=project_dir / "export.tmp",
             backup_midi_dir=project_dir / "midi.backup.tmp",
             backup_export_dir=project_dir / "export.backup.tmp",
+            transaction_path=project_dir / ".midi-transaction.json",
         )
 
     @property
@@ -131,6 +142,7 @@ def process_audio_file(
 
     report = run_preflight(
         require_ml=True,
+        require_transcription=generate_midi and midi_policy != "none",
         requested_device=separation_options.device if separation_options else None,
         output_root=output_root,
         model_key=separation_options.model_key if separation_options else None,
@@ -144,11 +156,10 @@ def process_audio_file(
         project_created(workspace.project_dir)
 
     project_source_audio: Path | None = None
-    original_source_audio: Path | None = None
     normalized_audio = workspace.normalized_audio
     project_manifest_written = False
     try:
-        project_source_audio, original_source_audio, normalize_input = _prepare_source_audio_input(
+        project_source_audio, normalize_input = _prepare_source_audio_input(
             input_path,
             workspace,
             source_clip,
@@ -167,7 +178,10 @@ def process_audio_file(
                 log("Cancellation will take effect between native model stages.")
         normalized_audio = normalize_to_wav(normalize_input, normalized_audio, clip_range=source_clip)
         if source_clip is not None:
-            shutil.copy2(normalized_audio, project_source_audio)
+            try:
+                project_source_audio.hardlink_to(normalized_audio)
+            except OSError:
+                shutil.copy2(normalized_audio, project_source_audio)
         _raise_if_cancelled(cancelled)
 
         stems = separate_stems(
@@ -190,7 +204,6 @@ def process_audio_file(
                 stems=stems,
                 source_audio=project_source_audio,
                 source_clip=source_clip,
-                original_source_audio=original_source_audio,
                 midi_policy=midi_policy,
                 midi_options=midi_options,
                 midi_stems=midi_stems,
@@ -215,7 +228,6 @@ def process_audio_file(
             zip_path=zip_path,
             source_audio=project_source_audio,
             source_clip=source_clip,
-            original_source_audio=original_source_audio,
         )
         _save_pipeline_manifest(
             result,
@@ -252,7 +264,6 @@ def process_midi_from_stems(
     stems: list[StemResult],
     source_audio: Path | None = None,
     source_clip: AudioClipRange | None = None,
-    original_source_audio: Path | None = None,
     midi_policy: str = "pitched",
     midi_options: MidiOptions | None = None,
     midi_stems: set[str] | None = None,
@@ -262,19 +273,48 @@ def process_midi_from_stems(
 ) -> PipelineResult:
     """Run or rerun Basic Pitch from already separated stems."""
     project_dir = project_dir.expanduser().resolve()
-    existing_source_audio, existing_source_clip, existing_original_source_audio = _existing_source_metadata(project_dir)
+    with project_mutation_lock(project_dir):
+        return _process_midi_from_stems_unlocked(
+            project_dir=project_dir,
+            input_stem=input_stem,
+            normalized_audio=normalized_audio,
+            stems=stems,
+            source_audio=source_audio,
+            source_clip=source_clip,
+            midi_policy=midi_policy,
+            midi_options=midi_options,
+            midi_stems=midi_stems,
+            create_zip=create_zip,
+            log=log,
+            cancelled=cancelled,
+        )
+
+
+def _process_midi_from_stems_unlocked(
+    project_dir: Path,
+    input_stem: str,
+    normalized_audio: Path | None,
+    stems: list[StemResult],
+    source_audio: Path | None = None,
+    source_clip: AudioClipRange | None = None,
+    midi_policy: str = "pitched",
+    midi_options: MidiOptions | None = None,
+    midi_stems: set[str] | None = None,
+    create_zip: bool = True,
+    log: Callable[[str], None] | None = None,
+    cancelled: CancelCheck | None = None,
+) -> PipelineResult:
+    existing_source_audio, existing_source_clip = _existing_source_metadata(project_dir)
     source_audio = source_audio or existing_source_audio
     source_clip = source_clip or existing_source_clip
-    original_source_audio = original_source_audio or existing_original_source_audio
     workspace = _MidiWorkspace.from_project(project_dir, input_stem)
     selected_midi_stems = _selected_midi_stem_keys(midi_stems)
     workspace.midi_dir.mkdir(parents=True, exist_ok=True)
     workspace.export_dir.mkdir(parents=True, exist_ok=True)
 
+    _recover_midi_transaction(workspace)
     _reset_staging_dir(workspace.staged_midi_dir, workspace.project_dir)
     _reset_staging_dir(workspace.staged_export_dir, workspace.project_dir)
-    _remove_staging_dir(workspace.backup_midi_dir, workspace.project_dir)
-    _remove_staging_dir(workspace.backup_export_dir, workspace.project_dir)
 
     midi_files: list[MidiResult] = []
     skip_percussion = midi_policy != "all" and selected_midi_stems is None
@@ -289,10 +329,12 @@ def process_midi_from_stems(
                 if log:
                     log(f"Skipping MIDI for {stem.name}: not selected for Basic Pitch analysis.")
                 continue
+            stem_output_dir = workspace.staged_midi_dir / stem.safe_key
+            _assert_project_child(workspace.project_dir, stem_output_dir, "stem MIDI output")
             midi = transcribe_stem_to_midi(
                 stem.name,
                 stem.path,
-                workspace.staged_midi_dir / stem.safe_key,
+                stem_output_dir,
                 skip_percussion=skip_percussion,
                 options=midi_options,
                 log=log,
@@ -327,22 +369,15 @@ def process_midi_from_stems(
         }
         _raise_if_cancelled(cancelled)
         _replace_midi_outputs(
-            workspace.midi_dir,
-            workspace.staged_midi_dir,
-            workspace.export_dir,
+            workspace,
             staged_export_paths,
             generated_export_midi,
-            workspace.backup_midi_dir,
-            workspace.backup_export_dir,
         )
         _remove_midi_preview_cache(workspace.project_dir)
         _remove_export_stem_copies(workspace.export_dir, stems)
         midi_files = final_midi_files
     except Exception:
-        _remove_staging_dir(workspace.staged_midi_dir, workspace.project_dir)
-        _remove_staging_dir(workspace.staged_export_dir, workspace.project_dir)
-        _remove_staging_dir(workspace.backup_midi_dir, workspace.project_dir)
-        _remove_staging_dir(workspace.backup_export_dir, workspace.project_dir)
+        _recover_midi_transaction(workspace)
         raise
 
     zip_path = workspace.zip_path if create_zip else None
@@ -358,17 +393,21 @@ def process_midi_from_stems(
         zip_path=zip_path,
         source_audio=source_audio,
         source_clip=source_clip,
-        original_source_audio=original_source_audio,
     )
-    _save_pipeline_manifest(
-        result,
-        midi_options=midi_options,
-        midi_stems=midi_stems,
-        generate_midi=True,
-        midi_policy=midi_policy,
-        create_zip=create_zip,
-    )
-    _package_pipeline_outputs(result)
+    try:
+        _save_pipeline_manifest(
+            result,
+            midi_options=midi_options,
+            midi_stems=midi_stems,
+            generate_midi=True,
+            midi_policy=midi_policy,
+            create_zip=create_zip,
+        )
+        _commit_midi_transaction(workspace)
+        _package_pipeline_outputs(result)
+    except Exception:
+        _recover_midi_transaction(workspace)
+        raise
     return result
 
 
@@ -419,6 +458,17 @@ def _project_dir(output_root: Path, input_path: Path) -> Path:
         index += 1
 
 
+def _reserve_project_dir(output_root: Path, input_path: Path) -> Path:
+    output_root.mkdir(parents=True, exist_ok=True)
+    while True:
+        candidate = _project_dir(output_root, input_path)
+        try:
+            candidate.mkdir(exist_ok=False)
+        except FileExistsError:
+            continue
+        return candidate
+
+
 def _raise_if_cancelled(cancelled: CancelCheck | None) -> None:
     if cancelled is not None and cancelled():
         raise PipelineCancelledError("Processing cancelled.")
@@ -443,19 +493,19 @@ def _prepare_source_audio_input(
     input_path: Path,
     workspace: _ProjectWorkspace,
     source_clip: AudioClipRange | None,
-) -> tuple[Path, Path | None, Path]:
+) -> tuple[Path, Path]:
     if source_clip is None:
         project_source_audio = _copy_source_audio(input_path, workspace.audio_dir)
-        return project_source_audio, None, project_source_audio
+        return project_source_audio, project_source_audio
     project_source_audio = workspace.audio_dir / f"{workspace.input_stem}_clip.wav"
-    return project_source_audio, input_path, input_path
+    return project_source_audio, input_path
 
 
-def _existing_source_metadata(project_dir: Path) -> tuple[Path | None, AudioClipRange | None, Path | None]:
+def _existing_source_metadata(project_dir: Path) -> tuple[Path | None, AudioClipRange | None]:
     with contextlib.suppress(Exception):
         result = load_pipeline_result(project_dir / PROJECT_FILENAME)
-        return result.source_audio, result.source_clip, result.original_source_audio
-    return None, None, None
+        return result.source_audio, result.source_clip
+    return None, None
 
 
 def _safe_stem(stem: str, max_length: int = 80) -> str:
@@ -472,64 +522,175 @@ def _zip_project_outputs(
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
         for stem in stems:
             if stem.path.is_file():
-                archive.write(stem.path, Path("stems") / f"{stem.safe_key}{stem.path.suffix.lower() or '.wav'}")
+                archive.write(
+                    stem.path,
+                    _safe_archive_path(
+                        Path("stems") / f"{stem.safe_key}{stem.path.suffix.lower() or '.wav'}"
+                    ),
+                )
         for midi in midi_files:
             if midi.path.is_file():
-                archive.write(midi.path, Path("midi") / f"{midi.safe_key}.mid")
+                archive.write(midi.path, _safe_archive_path(Path("midi") / f"{midi.safe_key}.mid"))
         if combined_midi and combined_midi.is_file():
             archive.write(combined_midi, Path("midi") / combined_midi.name)
-        manifest = project_dir / "pitchstems.project.json"
-        if manifest.is_file():
-            archive.write(manifest, manifest.name)
     return zip_path
 
 
+def _safe_archive_path(path: Path) -> str:
+    if path.is_absolute() or not path.parts or any(part in {"", ".", ".."} for part in path.parts):
+        raise ValueError(f"Archive path must be a safe relative path: {path}")
+    return path.as_posix()
+
+
 def _replace_midi_outputs(
-    midi_dir: Path,
-    staged_midi_dir: Path,
-    export_dir: Path,
+    workspace: _MidiWorkspace,
     staged_export_paths: list[Path],
     generated_export_midi: set[str],
-    backup_midi_dir: Path,
-    backup_export_dir: Path,
 ) -> None:
-    project_dir = midi_dir.parent
+    project_dir = workspace.project_dir
     for label, path in [
-        ("MIDI output", midi_dir),
-        ("staged MIDI output", staged_midi_dir),
-        ("export output", export_dir),
-        ("MIDI backup", backup_midi_dir),
-        ("export backup", backup_export_dir),
+        ("MIDI output", workspace.midi_dir),
+        ("staged MIDI output", workspace.staged_midi_dir),
+        ("export output", workspace.export_dir),
+        ("MIDI backup", workspace.backup_midi_dir),
+        ("export backup", workspace.backup_export_dir),
+        ("MIDI transaction", workspace.transaction_path),
     ]:
         _assert_project_child(project_dir, path, label)
     generated_names = {name.lower() for name in generated_export_midi}
+    had_midi_dir = workspace.midi_dir.exists()
+    _write_midi_transaction(workspace, "prepared", generated_names, had_midi_dir)
     try:
-        if midi_dir.exists():
-            shutil.move(str(midi_dir), str(backup_midi_dir))
-        backup_export_dir.mkdir(parents=True, exist_ok=True)
-        for path in list(export_dir.iterdir()):
+        if workspace.midi_dir.exists():
+            shutil.move(str(workspace.midi_dir), str(workspace.backup_midi_dir))
+        workspace.backup_export_dir.mkdir(parents=True, exist_ok=True)
+        for path in list(workspace.export_dir.iterdir()):
             if path.is_file() and path.name.lower() in generated_names:
-                shutil.move(str(path), str(backup_export_dir / path.name))
+                shutil.move(str(path), str(workspace.backup_export_dir / path.name))
 
-        shutil.move(str(staged_midi_dir), str(midi_dir))
+        _write_midi_transaction(workspace, "backed_up", generated_names, had_midi_dir)
+        shutil.move(str(workspace.staged_midi_dir), str(workspace.midi_dir))
         for staged_path in staged_export_paths:
             _assert_project_child(project_dir, staged_path, "staged export output")
-            shutil.move(str(staged_path), str(export_dir / staged_path.name))
-        _remove_staging_dir(staged_midi_dir, project_dir)
-        _remove_staging_dir(backup_midi_dir, project_dir)
-        _remove_staging_dir(backup_export_dir, project_dir)
+            shutil.move(str(staged_path), str(workspace.export_dir / staged_path.name))
+        _write_midi_transaction(workspace, "installed", generated_names, had_midi_dir)
     except Exception:
-        if midi_dir.exists():
-            _remove_project_dir(midi_dir, project_dir, "partial MIDI output")
-        if backup_midi_dir.exists():
-            shutil.move(str(backup_midi_dir), str(midi_dir))
-        if backup_export_dir.exists():
-            for backup_path in backup_export_dir.iterdir():
-                destination = export_dir / backup_path.name
-                if destination.exists():
-                    destination.unlink()
-                shutil.move(str(backup_path), str(destination))
+        _recover_midi_transaction(workspace)
         raise
+
+
+def _write_midi_transaction(
+    workspace: _MidiWorkspace,
+    phase: str,
+    generated_export_midi: set[str],
+    had_midi_dir: bool,
+) -> None:
+    payload = {
+        "phase": phase,
+        "generated_export_midi": sorted(generated_export_midi),
+        "had_midi_dir": had_midi_dir,
+    }
+    temporary = workspace.transaction_path.with_name(
+        f".{workspace.transaction_path.name}.{os.getpid()}.tmp"
+    )
+    with temporary.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    temporary.replace(workspace.transaction_path)
+
+
+def _commit_midi_transaction(workspace: _MidiWorkspace) -> None:
+    if not workspace.transaction_path.exists():
+        return
+    transaction = _read_midi_transaction(workspace)
+    _write_midi_transaction(
+        workspace,
+        "committed",
+        set(transaction["generated_export_midi"]),
+        transaction["had_midi_dir"],
+    )
+    _cleanup_midi_transaction(workspace)
+
+
+def _recover_midi_transaction(workspace: _MidiWorkspace) -> None:
+    transaction = _read_midi_transaction(workspace) if workspace.transaction_path.exists() else None
+    if transaction is not None and transaction["phase"] == "committed":
+        _cleanup_midi_transaction(workspace)
+        return
+
+    phase = transaction["phase"] if transaction is not None else "legacy"
+    generated_names = set(transaction["generated_export_midi"]) if transaction is not None else set()
+    had_midi_dir = transaction["had_midi_dir"] if transaction is not None else None
+
+    if phase in {"backed_up", "installed"}:
+        if had_midi_dir and not workspace.backup_midi_dir.exists():
+            raise RuntimeError("Cannot recover interrupted MIDI update: the MIDI backup is missing.")
+        if workspace.midi_dir.exists():
+            _remove_project_dir(workspace.midi_dir, workspace.project_dir, "partial MIDI output")
+        if workspace.backup_midi_dir.exists():
+            shutil.move(str(workspace.backup_midi_dir), str(workspace.midi_dir))
+        for name in generated_names:
+            destination = workspace.export_dir / name
+            _assert_project_child(workspace.project_dir, destination, "generated MIDI export")
+            if destination.is_file() or destination.is_symlink():
+                destination.unlink()
+    elif workspace.backup_midi_dir.exists():
+        if workspace.midi_dir.exists():
+            _remove_project_dir(workspace.midi_dir, workspace.project_dir, "partial MIDI output")
+        shutil.move(str(workspace.backup_midi_dir), str(workspace.midi_dir))
+
+    if workspace.backup_export_dir.exists():
+        if workspace.backup_export_dir.is_symlink():
+            raise ValueError(f"MIDI export backup must not be a symlink: {workspace.backup_export_dir}")
+        workspace.export_dir.mkdir(parents=True, exist_ok=True)
+        for backup_path in workspace.backup_export_dir.iterdir():
+            destination = workspace.export_dir / backup_path.name
+            _assert_project_child(workspace.project_dir, destination, "restored MIDI export")
+            if destination.exists() or destination.is_symlink():
+                if destination.is_dir() and not destination.is_symlink():
+                    _remove_project_dir(destination, workspace.project_dir, "partial MIDI export")
+                else:
+                    destination.unlink()
+            shutil.move(str(backup_path), str(destination))
+
+    _cleanup_midi_transaction(workspace)
+
+
+def _read_midi_transaction(workspace: _MidiWorkspace) -> _MidiTransaction:
+    try:
+        payload = json.loads(workspace.transaction_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Cannot read interrupted MIDI transaction: {workspace.transaction_path}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"Invalid MIDI transaction marker: {workspace.transaction_path}")
+    phase = payload.get("phase")
+    generated = payload.get("generated_export_midi")
+    had_midi_dir = payload.get("had_midi_dir")
+    if (
+        phase not in {"prepared", "backed_up", "installed", "committed"}
+        or not isinstance(generated, list)
+        or not all(isinstance(name, str) and Path(name).name == name for name in generated)
+        or not isinstance(had_midi_dir, bool)
+    ):
+        raise RuntimeError(f"Invalid MIDI transaction marker: {workspace.transaction_path}")
+    return {
+        "phase": phase,
+        "generated_export_midi": generated,
+        "had_midi_dir": had_midi_dir,
+    }
+
+
+def _cleanup_midi_transaction(workspace: _MidiWorkspace) -> None:
+    for path in (
+        workspace.staged_midi_dir,
+        workspace.staged_export_dir,
+        workspace.backup_midi_dir,
+        workspace.backup_export_dir,
+    ):
+        _remove_staging_dir(path, workspace.project_dir)
+    workspace.transaction_path.unlink(missing_ok=True)
 
 
 def _reset_staging_dir(path: Path, project_dir: Path | None = None) -> None:

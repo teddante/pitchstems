@@ -22,10 +22,6 @@ class ReviewTarget:
         return single_review_range(list(self.ranges))
 
     @property
-    def is_range_based(self) -> bool:
-        return bool(self.ranges)
-
-    @property
     def heading(self) -> str:
         return {
             "playhead": "Playhead",

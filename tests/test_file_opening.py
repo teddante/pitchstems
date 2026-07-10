@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import pytest
-
 from pitchstems.file_opening import open_folder
 
 
@@ -16,8 +14,10 @@ def test_open_folder_creates_target_and_calls_opener(tmp_path: Path) -> None:
     assert opened == [str(target)]
 
 
-def test_open_folder_reports_unsupported_platform(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delattr("pitchstems.file_opening.os.startfile", raising=False)
+def test_open_folder_uses_cross_platform_qt_opener(tmp_path: Path, monkeypatch) -> None:
+    opened = []
+    monkeypatch.setattr("pitchstems.file_opening._qt_open_folder", lambda path: opened.append(path) or True)
 
-    with pytest.raises(RuntimeError, match="not supported"):
-        open_folder(tmp_path / "folder")
+    target = tmp_path / "folder"
+    assert open_folder(target) == target
+    assert opened == [target]

@@ -6,16 +6,6 @@ from typing import Iterable, TypeVar
 T = TypeVar("T")
 
 
-def percent_bar(value: float, width: int = 10) -> str:
-    value = max(0.0, min(1.0, value))
-    filled = round(value * width)
-    return "[" + ("#" * filled) + ("-" * (width - filled)) + "]"
-
-
-def percent_with_bar(value: float, width: int = 10) -> str:
-    return f"{value:.0%} {percent_bar(value, width)}"
-
-
 def percent_text(value: float) -> str:
     return f"{max(0.0, min(1.0, value)):.0%}"
 

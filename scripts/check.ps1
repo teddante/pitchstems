@@ -91,7 +91,7 @@ Invoke-Checked "Running Vulture..." { & $python @pythonArgs -m vulture src tests
 
 Invoke-Checked "Running mypy..." { & $python @pythonArgs -m mypy }
 
-Invoke-Checked "Running tests..." {
+Invoke-Checked "Running tests with focused core coverage..." {
     & $python @pythonArgs -m pytest `
         --cov=pitchstems.editor_models `
         --cov=pitchstems.export_files `

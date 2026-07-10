@@ -26,7 +26,7 @@ def safe_file_stem(value: str, fallback: str, max_length: int = 80) -> str:
     return safe
 
 
-def safe_stem_key(value: str) -> str:
+def safe_stem_key(value: str, max_length: int = 80) -> str:
     cleaned = []
     previous_dash = False
     for character in value.strip().lower():
@@ -36,5 +36,9 @@ def safe_stem_key(value: str) -> str:
         elif not previous_dash:
             cleaned.append("-")
             previous_dash = True
-    key = "".join(cleaned).strip("-")
-    return key or "stem"
+    key = "".join(cleaned).strip("-")[:max_length].rstrip("-")
+    if not key:
+        key = "stem"
+    if is_windows_reserved_name(key):
+        key = f"stem-{key}"
+    return key

@@ -138,57 +138,29 @@ def test_create_process_worker_uses_spawn_context(monkeypatch) -> None:
 
     assert calls == [("target", (1, "request", "messages"))]
     assert worker.messages == "messages"
+    assert not worker.started
 
 
-def test_worker_job_state_starts_cancels_and_rejects_stale_tokens() -> None:
+def test_unstarted_process_worker_terminate_does_not_join() -> None:
+    process = _FakeProcess(alive=False)
+    worker = ProcessWorker(process, queue.Queue(), started=False)
+
+    assert worker.terminate() is False
+    assert process.join_timeouts == []
+
+
+def test_worker_job_state_starts_and_invalidates_tokens() -> None:
     state = WorkerJobState()
 
     first = state.start()
     assert state.is_active(first)
 
-    assert state.cancel()
-    assert state.is_active(first)
-    assert state.is_cancel_requested(first)
     assert state.invalidate()
     assert not state.is_active(first)
-    assert not state.is_cancel_requested(first)
 
     second = state.start()
     assert second != first
     assert state.is_active(second)
-
-
-def test_worker_job_state_reports_no_active_cancel() -> None:
-    state = WorkerJobState()
-
-    assert not state.cancel()
-    assert state.active_token is None
-
-
-def test_worker_job_state_tracks_cancel_request_without_clearing_active_token() -> None:
-    state = WorkerJobState()
-    token = state.start()
-
-    assert state.request_cancel(token) is True
-    assert state.active_token == token
-    assert state.is_cancel_requested(token)
-
-    state.finish(token)
-
-    assert state.active_token is None
-    assert not state.is_cancel_requested(token)
-
-
-def test_worker_job_state_cancels_attached_process() -> None:
-    state = WorkerJobState()
-    token = state.start()
-    worker = ProcessWorker(_FakeProcess(alive=True), queue.Queue())
-
-    assert state.attach_process(token, worker)
-    assert state.cancel()
-
-    assert state.is_cancel_requested(token)
-    assert worker.terminated
 
 
 def test_worker_job_state_rejects_stale_process_and_clears_active_process() -> None:

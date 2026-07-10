@@ -6,7 +6,7 @@ PitchStems is a local-first desktop and CLI app for turning ordinary audio files
 - separated stems
 - per-stem MIDI files
 - one combined multitrack MIDI file
-- optional CLI ZIP packaging for compatibility
+- optional CLI ZIP asset-bundle packaging
 
 The intended pipeline is:
 
@@ -40,7 +40,8 @@ PitchStems is pre-1.0. The core local pipeline, CLI, and Qt GUI are working, but
 
 ## Recommended Python
 
-Use Python 3.10 for the full local AI stack. PitchStems currently declares Python 3.10 as its supported runtime.
+PitchStems supports Python 3.10 and 3.11. Use Python 3.10 on Apple-silicon
+Macs for the current Basic Pitch 0.4.0 runtime; Windows CI resolves both versions.
 
 ## Install
 
@@ -75,17 +76,23 @@ FFmpeg must be available on `PATH`. On Windows, a full build from Gyan.dev works
 The Windows GPU path uses:
 
 - PyTorch CUDA for supported separation models
-- ONNX Runtime GPU for ONNX-backed models
-- Basic Pitch forced to its ONNX model so it can use ONNX Runtime's `CUDAExecutionProvider`
+- ONNX Runtime GPU for ONNX-backed models that select its CUDA provider
+- Basic Pitch's ONNX model; PitchStems reports the provider selected by the actual model session
 
-The setup script replaces default CPU wheels with PyTorch CUDA 12.8 wheels and installs ONNX Runtime GPU with CUDA/cuDNN runtime DLLs. This avoids the common Windows issue where `pip install torch` silently installs a CPU-only wheel. The supported Windows GPU package pins live in `constraints/windows-gpu.txt`; keep that file and `scripts/setup-windows-gpu.ps1` aligned when changing the runtime stack.
+The setup script replaces default CPU wheels with PyTorch CUDA 12.6 wheels and installs ONNX Runtime GPU with CUDA/cuDNN runtime DLLs. This avoids the common Windows issue where `pip install torch` silently installs a CPU-only wheel. The supported Windows GPU package pins live in `constraints/windows-gpu.txt`; keep that file and `scripts/setup-windows-gpu.ps1` aligned when changing the runtime stack.
 
 The GPU setup keeps both `onnxruntime` package metadata and `onnxruntime-gpu`
 installed. Basic Pitch declares `onnxruntime`, while PitchStems imports ONNX
 Runtime from the GPU wheel so CUDA providers remain available. `pip check` is
 part of the project check and should pass after setup.
 
-If `pitchstems --doctor --gpu` does not show `OK` for both ONNX Runtime CUDA and PyTorch CUDA, the app may still run but it is not truly using the GPU path.
+The currently published Basic Pitch 0.4.0 model selects ONNX CPU even when the
+CUDA provider is installed. BS-RoFormer separation still uses PyTorch CUDA.
+PitchStems reports the provider selected by the actual Basic Pitch session when
+transcription starts and will use an upstream CUDA-capable Basic Pitch release
+after that behavior is officially published and validated.
+
+If `pitchstems --doctor --gpu` does not show `OK` for both ONNX Runtime CUDA and PyTorch CUDA, GPU-capable components may still run on CPU.
 
 ## Run
 
@@ -166,8 +173,9 @@ audio in sync, with per-track mute and volume controls saved in the project.
 
 Each full GUI or CLI run creates a project folder ending in `.pitchstems`. The folder keeps
 one canonical copy of the project audio assets: the copied source audio, normalized work
-audio, generated stems, MIDI, and a `pitchstems.project.json` manifest. ZIP packages are
-kept for CLI and backward-compatible packaging, while the GUI exports selected loose files.
+audio, generated stems, MIDI, and a `pitchstems.project.json` manifest. Optional CLI ZIP
+packages contain generated stems and MIDI only; use the project folder itself for reopening.
+The GUI exports selected loose assets and never presents its manifest as a portable project.
 Stem WAVs are not duplicated into `export`.
 Use **Open Project** in the GUI to reopen that manifest without rerunning the expensive
 separation step.
@@ -175,8 +183,8 @@ separation step.
 GUI cancellation runs the expensive full-pipeline and MIDI-rerun jobs in a child
 process so Cancel can stop native BS-RoFormer or Basic Pitch work without waiting
 for the model call to return. CLI cancellation remains cooperative inside one
-process. For the technical boundary and cleanup rules, see
-`docs/architecture/native-job-cancellation.md`.
+process. Project mutations use an OS-level project lock, and interrupted MIDI
+replacement is recovered from a durable transaction marker before another rerun.
 
 The curated model catalog lives in `src/pitchstems/model_catalog.py`; the native BS-RoFormer runtime bridge lives in `src/pitchstems/separation.py`.
 
@@ -207,13 +215,15 @@ Validation tiers:
 - Dependency security audit: `python -m pip_audit`
 - Manual real-audio smoke when changing separation/transcription or editor review/export behavior:
 
-See `docs/architecture/quality-gate-roadmap.md` for the current typed/coverage surface and known gaps.
+The configured coverage percentage is a focused core-module gate. It is not a
+whole-package coverage claim; risk-heavy modules are added as focused tests
+stabilise.
 
 ```powershell
 .\scripts\real_audio_smoke.ps1 -AudioPath "C:\path\to\short-audio.mp3"
 ```
 
-Use a short local audio fixture, not a committed song or generated stem output. The smoke script runs the real CLI pipeline, reopens the generated `.pitchstems` project in the offscreen GUI, checks timeline review/playback, and copies selected export files to prove the import audio -> separate -> MIDI -> reopen project -> play/review -> export selected files path. A passing run prints the generated project folder and a `selected-export` folder containing the project manifest, selected stems, and MIDI; source audio stays unchecked by default.
+Use a short local audio fixture, not a committed song or generated stem output. The smoke script runs the real CLI pipeline, reopens the generated `.pitchstems` project in the offscreen GUI, checks timeline review/playback, and copies selected export files to prove the import audio -> separate -> MIDI -> reopen project -> play/review -> export selected files path. A passing run prints the generated project folder and a `selected-export` folder containing selected stems and MIDI; source audio stays unchecked by default.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution notes.
 
@@ -228,7 +238,9 @@ Audio import is prepared for the two model stages:
 
 BS-RoFormer separation uses `bs_roformer.inference.proc_folder` from `bs-roformer-infer`. The user-facing knobs are the model registry id and the Torch device. Model architecture, chunking, overlap, and instruments come from the downloaded model YAML because those are the publisher's intended settings for the checkpoint.
 
-Basic Pitch MIDI uses `basic_pitch.inference.predict_and_save` with the ICASSP 2022 ONNX model. The exposed defaults match Basic Pitch:
+Basic Pitch MIDI reuses one loaded ICASSP 2022 ONNX model across all selected
+stems and calls `basic_pitch.inference.predict_and_save`. The exposed defaults
+match Basic Pitch:
 
 - onset threshold: `0.5`
 - frame threshold: `0.3`

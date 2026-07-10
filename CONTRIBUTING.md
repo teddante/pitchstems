@@ -4,7 +4,8 @@ Thanks for helping improve PitchStems.
 
 ## Development Setup
 
-Use Python 3.10.
+Use Python 3.10 or 3.11. Apple-silicon Macs should continue using Python 3.10
+for the current Basic Pitch 0.4.0 runtime.
 
 ```powershell
 py -3.10 -m venv .venv
@@ -42,7 +43,16 @@ for the working tree, staged changes, and branch diff when `main` is available.
 When adding a module to mypy or coverage gates, keep the change small: add
 focused tests first, add the module to the gate, then run `.\scripts\check.ps1`.
 Do not lower coverage thresholds to make unrelated work pass.
-See `docs/architecture/quality-gate-roadmap.md` for the current typed/coverage surface and known gaps.
+The coverage command is a focused core gate, not a whole-package percentage.
+Add risk-heavy modules incrementally after their focused tests are stable.
+
+Regenerate Windows constraints from a clean Windows environment after changing
+dependencies:
+
+```powershell
+py -3.10 scripts\refresh_constraints.py dev
+py -3.10 scripts\refresh_constraints.py cpu
+```
 
 For a focused branch whitespace check, run:
 
