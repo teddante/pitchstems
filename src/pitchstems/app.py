@@ -1073,8 +1073,7 @@ def main() -> int:
             rebuild_track_controls(self, editor_state)
 
         def handle_midi_track_toggled(self, stem_name: str, checked: bool) -> None:
-            if checked and self.current_result is not None and stem_name not in self.transport.midi_preview_paths:
-                self.start_midi_preview_render(self.current_result, {stem_name})
+            del stem_name, checked
             self.refresh_playback_mix()
             self.refresh_timeline_track_summaries()
             self.save_editor_state()

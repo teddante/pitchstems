@@ -136,7 +136,7 @@ def rebuild_track_controls(window, editor_state: dict) -> None:
         ("view", "View", "Show or hide all timeline track lanes."),
         ("analysis", "Chord", "Include or exclude all MIDI tracks from chord analysis."),
         ("audio", "Audio", "Enable or mute all separated stem audio tracks."),
-        ("midi", "MIDI", "Enable or mute all generated MIDI preview tracks."),
+        ("midi", "MIDI", "Enable or mute all live MIDI preview tracks."),
     ):
         master = QCheckBox(label)
         _apply_checkbox_fit(master)
@@ -271,7 +271,7 @@ def add_track_control_row(window, track, editor_state: TrackControlEditorState) 
     _apply_checkbox_fit(midi_check)
     midi_check.setChecked(has_midi_notes and editor_bool(midi_enabled.get(track.name), False))
     midi_check.setEnabled(has_midi_notes)
-    midi_check.setToolTip("Play this stem's generated MIDI preview audio. Missing previews render only when this MIDI track is turned on.")
+    midi_check.setToolTip("Play this stem's MIDI notes through the live preview synth. Does not affect chord detection.")
     midi_slider = QSlider(Qt.Horizontal)
     midi_slider.setRange(0, 100)
     midi_slider.setValue(editor_int(midi_volume.get(track.name), 70, 0, 100))
@@ -325,7 +325,7 @@ def add_track_control_row(window, track, editor_state: TrackControlEditorState) 
     midi_label = QLabel("MIDI")
     midi_label.setMinimumWidth(42)
     midi_label.setStyleSheet("color: #64748b;")
-    midi_label.setToolTip("Generated MIDI preview volume.")
+    midi_label.setToolTip("Live MIDI preview volume.")
     midi_value = QLabel(volume_value_text(midi_slider.value()))
     midi_value.setMinimumWidth(34)
     midi_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)

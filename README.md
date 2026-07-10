@@ -169,7 +169,7 @@ The app also exposes:
 After a successful GUI run, the Editor tab builds a first-pass timeline from the generated
 MIDI files. It shows stem lanes, note events, inferred chord regions, a scrubber/playhead,
 and per-track checkboxes for hiding or showing MIDI notes while reviewing the transcription.
-The editor transport can play separated stem audio and lightweight generated MIDI preview
+The editor transport can play separated stem audio and live synthesized MIDI preview
 audio in sync, with per-track mute and volume controls saved in the project.
 
 Each full GUI or CLI run creates a project folder ending in `.pitchstems`. The folder keeps

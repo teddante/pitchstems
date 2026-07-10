@@ -10,7 +10,8 @@ def prepare_transport_players(window, result) -> None:
     window.set_activity_message("Preparing audio players...")
     window.pause_transport()
     window.transport.prepare_players(result)
-    window.attach_midi_preview_players(dict(window.transport.midi_preview_paths), finish_activity=False)
+    if window.editor_project is not None:
+        window.transport.prepare_midi_synth(window.editor_project.notes, window.editor_project.duration)
     window.refresh_playback_mix()
 
 

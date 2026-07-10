@@ -6,6 +6,8 @@ from pathlib import Path
 from PySide6.QtCore import QUrl
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 
+from pitchstems.editor_project import NoteEvent
+from pitchstems.gui_midi_synth import RealtimeMidiPreview
 from pitchstems.midi_preview import midi_preview_path, valid_preview_wav
 from pitchstems.pipeline_models import PipelineResult
 
@@ -41,17 +43,16 @@ class TransportController:
         self.midi_players: dict[str, QMediaPlayer] = {}
         self.midi_audio_outputs: dict[str, QAudioOutput] = {}
         self.midi_preview_paths: dict[str, Path] = {}
+        self.midi_synth = RealtimeMidiPreview(parent, logger)
         self._prepared_result_key: tuple[Path, tuple[tuple[str, Path], ...]] | None = None
 
     def prepare_players(self, result: PipelineResult) -> None:
         result_key = transport_result_key(result)
         if self._prepared_result_key == result_key and self._track_players_match(result):
-            self.midi_preview_paths = find_existing_midi_previews(result)
             self.refresh_mix()
             return
         self.pause()
         self.clear_players()
-        self.midi_preview_paths = find_existing_midi_previews(result)
         for stem in result.stems:
             player = QMediaPlayer(self.parent)
             output = QAudioOutput(self.parent)
@@ -65,6 +66,10 @@ class TransportController:
             media_status_changed.connect(self._handle_master_media_status)
         self.refresh_mix()
         self._prepared_result_key = result_key
+
+    def prepare_midi_synth(self, notes: list[NoteEvent], duration: float) -> None:
+        self.midi_synth.set_notes(notes, duration)
+        self.refresh_mix()
 
     def clear_players(self) -> None:
         for player in self.players():
@@ -84,6 +89,7 @@ class TransportController:
         self.midi_players.clear()
         self.midi_audio_outputs.clear()
         self.midi_preview_paths.clear()
+        self.midi_synth.clear()
         self._prepared_result_key = None
         self.is_playing = False
 
@@ -157,6 +163,16 @@ class TransportController:
                     volume if enabled else 0.0
                 ),
             )
+        self.midi_synth.set_track_volumes(self.midi_track_volumes())
+
+    def midi_track_volumes(self) -> dict[str, float]:
+        volumes = {}
+        for stem_name, checkbox in self.track_midi_checks.items():
+            if not checkbox.isEnabled() or not checkbox.isChecked():
+                continue
+            slider = self.track_midi_sliders.get(stem_name)
+            volumes[stem_name] = slider.value() / 100 if slider else 0.7
+        return volumes
 
     def midi_track_enabled(self, stem_name: str) -> bool:
         checkbox = self.track_midi_checks.get(stem_name)
@@ -165,6 +181,8 @@ class TransportController:
     def apply_midi_transport_state(self, position_seconds: float) -> None:
         if not self.is_playing:
             return
+        if self.midi_synth.device is not None and not self.midi_synth.is_playing:
+            self.midi_synth.play(position_seconds)
         position_ms = int(position_seconds * 1000)
         for stem_name, player in self.midi_players.items():
             try:
@@ -199,6 +217,7 @@ class TransportController:
                     lambda player=player: pause_player_at(player, position_ms),
                 )
         self.is_playing = True
+        self.midi_synth.play(start_position)
 
     def pause(self) -> bool:
         if not self.is_playing:
@@ -209,6 +228,7 @@ class TransportController:
                 "Transport pause failed",
                 lambda player=player: player.pause(),
             )
+        self.midi_synth.pause()
         self.is_playing = False
         return True
 
@@ -220,6 +240,7 @@ class TransportController:
                 "Transport stop failed",
                 lambda player=player: stop_player_at_start(player),
             )
+        self.midi_synth.stop()
 
     def seek(self, seconds: float) -> None:
         if not self.track_players:
@@ -231,6 +252,7 @@ class TransportController:
                 "Transport seek failed",
                 lambda player=player: player.setPosition(position_ms),
             )
+        self.midi_synth.seek(seconds)
 
     def master_player(self) -> QMediaPlayer | None:
         return next(iter(self.track_players.values()), None)
@@ -268,6 +290,7 @@ class TransportController:
                     player.setPosition(master_position)
             except RuntimeError:
                 self.logger.exception("Transport resync failed")
+        self.midi_synth.resync(master_position / 1000, drift_ms / 1000)
 
 
 def find_existing_midi_previews(result: PipelineResult) -> dict[str, Path]:

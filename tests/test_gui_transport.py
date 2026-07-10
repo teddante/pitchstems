@@ -183,7 +183,8 @@ def test_prepare_transport_players_does_not_render_missing_midi_previews(tmp_pat
     gui_transport_flow.prepare_transport_players(window, result)
 
     assert window.transport.prepared_results == [result]
-    assert window.attached_previews == [{}]
+    assert window.transport.prepared_midi_synths == [(window.editor_project.notes, window.editor_project.duration)]
+    assert window.attached_previews == []
     assert window.started_midi_renders == []
     assert window.refreshed_mix
 
@@ -341,14 +342,19 @@ class _PrepareTransport:
     def __init__(self) -> None:
         self.midi_preview_paths: dict[str, Path] = {}
         self.prepared_results: list[PipelineResult] = []
+        self.prepared_midi_synths: list[tuple[list[object], float]] = []
 
     def prepare_players(self, result: PipelineResult) -> None:
         self.prepared_results.append(result)
+
+    def prepare_midi_synth(self, notes: list[object], duration: float) -> None:
+        self.prepared_midi_synths.append((notes, duration))
 
 
 class _PrepareTransportWindow:
     def __init__(self) -> None:
         self.transport = _PrepareTransport()
+        self.editor_project = SimpleNamespace(notes=[SimpleNamespace(stem="bass")], duration=12.0)
         self.track_midi_checks = {"bass": _FakeCheck(True, True)}
         self.activity_messages: list[str] = []
         self.attached_previews: list[dict[str, Path]] = []
