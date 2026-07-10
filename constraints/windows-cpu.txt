@@ -74,7 +74,7 @@ pytest==9.0.3
 pytest-cov==7.1.0
 PyYAML==6.0.3
 requests==2.34.2
-resampy==0.4.2
+resampy==0.4.3
 rich==15.0.0
 rotary-embedding-torch==0.8.9
 ruff==0.15.14
