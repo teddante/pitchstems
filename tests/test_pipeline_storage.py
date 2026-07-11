@@ -369,6 +369,7 @@ def test_save_pipeline_manifest_passes_pipeline_options(monkeypatch, tmp_path: P
         generate_midi=False,
         midi_policy="none",
         create_zip=False,
+        generate_chord_suggestions=False,
     )
 
     assert calls == [
@@ -380,6 +381,7 @@ def test_save_pipeline_manifest_passes_pipeline_options(monkeypatch, tmp_path: P
                 "midi_stems": {"bass"},
                 "generate_midi": False,
                 "midi_policy": "none",
+                "generate_chord_suggestions": False,
                 "create_zip": False,
             },
         )

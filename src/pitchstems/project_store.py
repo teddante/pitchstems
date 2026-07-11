@@ -43,6 +43,7 @@ def save_project_manifest(
     midi_stems: set[str] | None = None,
     generate_midi: bool | None = None,
     midi_policy: str | None = None,
+    generate_chord_suggestions: bool | None = None,
     create_zip: bool | None = None,
     track_visibility: dict[str, bool] | None = None,
     track_analysis_enabled: dict[str, bool] | None = None,
@@ -81,6 +82,7 @@ def save_project_manifest(
                 midi_stems=midi_stems,
                 generate_midi=generate_midi,
                 midi_policy=midi_policy,
+                generate_chord_suggestions=generate_chord_suggestions,
                 create_zip=create_zip,
                 source_clip=result.source_clip,
             ),
@@ -213,6 +215,7 @@ def _pipeline_settings_manifest(
     midi_stems: set[str] | None,
     generate_midi: bool | None,
     midi_policy: str | None,
+    generate_chord_suggestions: bool | None,
     create_zip: bool | None,
     source_clip: AudioClipRange | None,
 ) -> dict[str, Any]:
@@ -228,6 +231,12 @@ def _pipeline_settings_manifest(
         ),
         "generate_midi": _manifest_field(generate_midi, existing_settings, "generate_midi", None),
         "midi_policy": midi_policy or existing_settings.get("midi_policy"),
+        "generate_chord_suggestions": _manifest_field(
+            generate_chord_suggestions,
+            existing_settings,
+            "generate_chord_suggestions",
+            True,
+        ),
         "create_zip": _manifest_field(create_zip, existing_settings, "create_zip", None),
     }
     source_clip_manifest = _source_clip_manifest(source_clip)

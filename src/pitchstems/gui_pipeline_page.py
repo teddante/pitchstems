@@ -91,6 +91,7 @@ def build_pipeline_page(window) -> QWidget:
     midi_layout.setSpacing(8)
     midi_layout.setContentsMargins(10, 8, 10, 8)
     midi_layout.addWidget(window.generate_midi)
+    midi_layout.addWidget(window.generate_chord_suggestions)
     midi_layout.addLayout(window.midi_stems_layout)
     midi_layout.addWidget(window.midi_help)
     midi_group.setLayout(midi_layout)

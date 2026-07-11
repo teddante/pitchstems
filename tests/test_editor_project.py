@@ -66,6 +66,31 @@ def test_build_editor_project_uses_audio_duration_when_midi_is_empty(tmp_path: P
     assert project.notes == []
 
 
+def test_build_editor_project_can_start_without_chord_suggestions(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import pitchstems.editor_project as editor_project_module
+
+    monkeypatch.setattr(
+        editor_project_module,
+        "detect_chords",
+        lambda _notes: pytest.fail("chord detection should be skipped"),
+    )
+    result = PipelineResult(
+        project_dir=tmp_path,
+        normalized_audio=tmp_path / "work" / "song.wav",
+        stems=[],
+        midi_files=[],
+        combined_midi=None,
+        zip_path=None,
+    )
+
+    project = build_editor_project(result, generate_chord_suggestions=False)
+
+    assert project.chords == []
+
+
 def test_editor_project_exposes_query_indexes(tmp_path: Path) -> None:
     note = NoteEvent("piano", 0.0, 1.0, 60, 90)
     chords = [

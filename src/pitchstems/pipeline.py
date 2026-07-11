@@ -133,6 +133,7 @@ def process_audio_file(
     cancelled: CancelCheck | None = None,
     project_created: Callable[[Path], None] | None = None,
     source_clip: AudioClipRange | None = None,
+    generate_chord_suggestions: bool = True,
 ) -> PipelineResult:
     """Run the complete local stem-to-MIDI pipeline."""
     input_path = input_path.expanduser().resolve()
@@ -237,6 +238,7 @@ def process_audio_file(
             generate_midi=generate_midi,
             midi_policy=midi_policy,
             create_zip=create_zip,
+            generate_chord_suggestions=generate_chord_suggestions,
         )
         project_manifest_written = True
         _package_pipeline_outputs(result)
@@ -420,6 +422,7 @@ def _save_pipeline_manifest(
     generate_midi: bool,
     midi_policy: str,
     create_zip: bool,
+    generate_chord_suggestions: bool | None = None,
 ) -> None:
     save_project_manifest(
         result,
@@ -428,6 +431,7 @@ def _save_pipeline_manifest(
         midi_stems=midi_stems,
         generate_midi=generate_midi,
         midi_policy=midi_policy,
+        generate_chord_suggestions=generate_chord_suggestions,
         create_zip=create_zip,
     )
 

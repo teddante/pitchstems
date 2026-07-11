@@ -97,7 +97,11 @@ class EditorProject:
         return ChordIndex(self.chords, self.duration)
 
 
-def build_editor_project(result: PipelineResult) -> EditorProject:
+def build_editor_project(
+    result: PipelineResult,
+    *,
+    generate_chord_suggestions: bool = True,
+) -> EditorProject:
     """Build the first editable timeline model from a completed pipeline result."""
     tracks = [EditorTrack(name=stem.name, audio_path=stem.path) for stem in result.stems]
     notes: list[NoteEvent] = []
@@ -109,7 +113,7 @@ def build_editor_project(result: PipelineResult) -> EditorProject:
         + [_audio_duration_seconds(track.audio_path) for track in tracks]
         + [_audio_duration_seconds(result.normalized_audio), 0.0]
     )
-    chords = detect_chords(notes)
+    chords = detect_chords(notes) if generate_chord_suggestions else []
     return EditorProject(
         project_dir=result.project_dir,
         source_audio=result.normalized_audio,

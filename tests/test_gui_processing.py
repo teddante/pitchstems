@@ -183,6 +183,7 @@ class _StartProcessingWindow:
         self.output_dir = _Text(str(output_root))
         self.import_clip_picker = _ClipPicker()
         self.generate_midi = _Checked(True)
+        self.generate_chord_suggestions = _Checked(True)
         self.current_result = None
         self.current_stems: list[StemResult] = []
         self.current_input_stem = None
@@ -234,6 +235,7 @@ def test_start_full_processing_requests_no_zip_from_gui(monkeypatch, tmp_path: P
     assert process_workers[0].target is gui_processing.run_full_pipeline_process
     assert request.cleanup_root == tmp_path / "out"
     assert request.create_zip is False
+    assert request.generate_chord_suggestions is True
     assert request.midi_policy == "all"
     assert request.source_clip is None
     assert window.worker.started is True
@@ -243,6 +245,7 @@ def test_start_full_processing_passes_import_clip_to_worker(monkeypatch, tmp_pat
     input_path = tmp_path / "song.wav"
     input_path.write_bytes(b"RIFF")
     window = _StartProcessingWindow(input_path, tmp_path / "out")
+    window.generate_chord_suggestions = _Checked(False)
     window.import_clip_picker = _ClipPicker(AudioClipRange(2.0, 8.0))
     process_workers: list[_CaptureProcessWorker] = []
 
@@ -257,6 +260,7 @@ def test_start_full_processing_passes_import_clip_to_worker(monkeypatch, tmp_pat
     gui_processing.start_full_processing(window)
 
     request = process_workers[0].args[1]
+    assert request.generate_chord_suggestions is False
     assert request.source_clip == AudioClipRange(2.0, 8.0)
 
 
@@ -334,6 +338,7 @@ def test_run_full_pipeline_process_uses_request_midi_policy(monkeypatch, tmp_pat
     )
 
     assert calls[0]["midi_policy"] == "pitched"
+    assert calls[0]["generate_chord_suggestions"] is True
     assert messages.get_nowait() == ("RESULT", 4, result)
 
 

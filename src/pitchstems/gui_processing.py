@@ -30,6 +30,7 @@ class FullProcessRunRequest:
     midi_options: MidiOptions
     midi_stems: set[str]
     create_zip: bool
+    generate_chord_suggestions: bool = True
     source_clip: AudioClipRange | None = None
 
     @property
@@ -87,6 +88,7 @@ def start_full_processing(window) -> None:
             midi_options=window.selected_midi_options(),
             midi_stems=midi_stems,
             create_zip=False,
+            generate_chord_suggestions=window.generate_chord_suggestions.isChecked(),
             source_clip=(
                 window.import_clip_picker.selected_clip_range()
                 if hasattr(window, "import_clip_picker")
@@ -257,6 +259,7 @@ def run_full_pipeline_process(token: int, request: FullProcessRunRequest, messag
             cancelled=None,
             project_created=lambda project_dir: put_project_dir_message(messages, token, project_dir),
             source_clip=request.source_clip,
+            generate_chord_suggestions=request.generate_chord_suggestions,
         )
         put_worker_result(messages, token, result)
         put_worker_log(messages, token, f"Project ready: {result.project_dir}")

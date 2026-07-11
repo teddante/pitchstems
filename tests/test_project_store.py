@@ -164,6 +164,7 @@ def test_save_project_manifest_writes_explicit_falsey_editor_values(tmp_path: Pa
 
     save_project_manifest(
         result,
+        generate_chord_suggestions=False,
         track_visibility={},
         track_audio_enabled={"bass": False},
         track_audio_volume={"bass": 0},
@@ -172,6 +173,7 @@ def test_save_project_manifest_writes_explicit_falsey_editor_values(tmp_path: Pa
     )
     updated = load_project_manifest(manifest_path)
 
+    assert updated["settings"]["generate_chord_suggestions"] is False
     assert updated["editor"]["track_visibility"] == {}
     assert updated["editor"]["track_audio_enabled"] == {"bass": False}
     assert updated["editor"]["track_audio_volume"] == {"bass": 0}
@@ -385,6 +387,7 @@ def test_save_project_manifest_ignores_non_pitchstems_existing_json_object(tmp_p
     assert manifest["created_at"] != "not ours"
     assert manifest["settings"] == {
         "create_zip": None,
+        "generate_chord_suggestions": True,
         "generate_midi": None,
         "midi": {},
         "midi_policy": None,

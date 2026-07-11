@@ -72,6 +72,7 @@ def test_build_editor_load_result_applies_manifest_editor_state(tmp_path: Path) 
     )
     save_project_manifest(
         result,
+        generate_chord_suggestions=False,
         chord_overrides=[{"start": 0.0, "end": 1.0, "label": "C", "confidence": 0.9}],
         track_visibility={"piano": False},
         playhead_seconds=0.25,
@@ -83,7 +84,7 @@ def test_build_editor_load_result_applies_manifest_editor_state(tmp_path: Path) 
     assert loaded.editor_state["track_visibility"] == {"piano": False}
     assert loaded.manual_chords == [ChordRegion(0.0, 1.0, "C", 0.9)]
     assert loaded.editor_project.chords == [ChordRegion(0.0, 1.0, "C", 0.9)]
-    assert loaded.base_project.chords != loaded.editor_project.chords
+    assert loaded.base_project.chords == []
 
 
 def _write_midi(path: Path) -> None:

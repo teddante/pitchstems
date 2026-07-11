@@ -130,6 +130,7 @@ def test_restore_pipeline_settings_rehydrates_saved_processing_choices(monkeypat
         {
             "separation": {"selected_stem": "bass", "device": "cpu"},
             "generate_midi": True,
+            "generate_chord_suggestions": False,
             "midi_policy": "all",
             "midi_stems": ["bass"],
             "midi": {
@@ -144,6 +145,7 @@ def test_restore_pipeline_settings_rehydrates_saved_processing_choices(monkeypat
     assert window.stem.currentData() == "bass"
     assert window.bs_device.currentData() == "cpu"
     assert window.generate_midi.isChecked()
+    assert not window.generate_chord_suggestions.isChecked()
     assert window.onset_threshold.value() == 0.42
     assert window.minimum_frequency.value() == 55.0
     assert window.sonify_midi.isChecked()
@@ -230,6 +232,7 @@ class _PipelineWindow:
         self.bs_device = _Control()
         self.repair_setup = _Control()
         self.generate_midi = _Control(False)
+        self.generate_chord_suggestions = _Control(True)
         self.midi_stem_checks = {}
         self.onset_threshold = _Control()
         self.frame_threshold = _Control()

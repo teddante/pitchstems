@@ -46,6 +46,7 @@ class _EditorWindow:
         self.preview_chord_button = QPushButton("Play Chord")
         self.use_chord_button = QPushButton("Use for Selection")
         self.delete_chord_button = QPushButton("Delete Chord")
+        self.detect_chords_button = QPushButton("Detect Chords")
         self.revert_chord_edits_button = QPushButton("Revert All Chord Edits")
         self.reset_note_filter_button = QPushButton("Reset Evidence")
         self.inspect_chord_button = QPushButton("Inspect")

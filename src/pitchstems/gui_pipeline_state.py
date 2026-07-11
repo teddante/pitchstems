@@ -61,6 +61,9 @@ def set_processing_state(window, busy: bool) -> None:
         setup_worker = getattr(window, "setup_worker", None)
         window.repair_setup.setEnabled(not busy and not thread_is_alive(setup_worker))
     window.generate_midi.setEnabled(model.settings_enabled)
+    window.generate_chord_suggestions.setEnabled(
+        model.settings_enabled and window.generate_midi.isChecked()
+    )
     for checkbox in window.midi_stem_checks.values():
         checkbox.setEnabled(model.midi_stem_checks_enabled)
     for widget in pipeline_settings_widgets(window):
@@ -146,6 +149,11 @@ def restore_pipeline_settings(window, settings: dict) -> None:
     if isinstance(generate_midi, bool) or midi_policy == "none":
         with blocked_signals(window.generate_midi):
             window.generate_midi.setChecked(bool(generate_midi) and midi_policy != "none")
+    generate_chord_suggestions = settings.get("generate_chord_suggestions")
+    if isinstance(generate_chord_suggestions, bool):
+        with blocked_signals(window.generate_chord_suggestions):
+            window.generate_chord_suggestions.setChecked(generate_chord_suggestions)
+    window.generate_chord_suggestions.setEnabled(window.generate_midi.isChecked())
 
     midi = settings.get("midi")
     if isinstance(midi, dict):

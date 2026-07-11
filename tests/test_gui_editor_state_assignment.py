@@ -1,3 +1,6 @@
+from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
 
 
@@ -5,7 +8,7 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtCore import Qt
 
-from pitchstems.editor_project import ChordRegion
+from pitchstems.editor_project import ChordRegion, EditorProject
 from pitchstems import gui_editor_state
 
 
@@ -123,3 +126,53 @@ def test_revert_all_chord_edits_reports_when_there_is_nothing_to_revert() -> Non
 
     assert window.refreshed_with is None
     assert window.status.messages == ["There are no manual chord edits to revert."]
+
+
+def test_generate_detected_chords_populates_blank_base_project(monkeypatch) -> None:
+    chord = ChordRegion(0.0, 1.0, "C", 0.8)
+    project = EditorProject(
+        project_dir=Path("project"),
+        source_audio=Path("song.wav"),
+        tracks=[],
+        notes=[],
+        chords=[],
+        duration=1.0,
+    )
+    saved: list[tuple[object, bool]] = []
+    monkeypatch.setattr(gui_editor_state, "detect_chords", lambda _notes: [chord])
+    monkeypatch.setattr(
+        gui_editor_state,
+        "save_project_manifest",
+        lambda result, *, generate_chord_suggestions: saved.append(
+            (result, generate_chord_suggestions)
+        ),
+    )
+    button = SimpleNamespace(enabled=False, setEnabled=lambda enabled: setattr(button, "enabled", enabled))
+    window = SimpleNamespace(
+        current_result=object(),
+        base_editor_project=project,
+        editor_project=project,
+        previous_chord_button=button,
+        next_chord_button=SimpleNamespace(setEnabled=lambda _enabled: None),
+        logger=SimpleNamespace(exception=lambda *_args: None),
+        generate_chord_suggestions=SimpleNamespace(
+            blockSignals=lambda _blocked: False,
+            setChecked=lambda checked: setattr(window, "suggestions_checked", checked),
+        ),
+        status=_StatusBar(),
+        suggestions_checked=False,
+    )
+    window.statusBar = lambda: window.status
+
+    def refresh(_selected) -> None:
+        window.editor_project = window.base_editor_project
+
+    window.refresh_editor_project_from_chord_edits = refresh
+
+    gui_editor_state.generate_detected_chords(window)
+
+    assert window.base_editor_project.chords == [chord]
+    assert saved == [(window.current_result, True)]
+    assert window.suggestions_checked is True
+    assert button.enabled is True
+    assert window.status.messages == ["Generated 1 chord suggestions."]

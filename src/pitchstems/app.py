@@ -273,6 +273,11 @@ def main() -> int:
             self.stem.currentIndexChanged.connect(self.refresh_midi_stem_checks)
             self.generate_midi = QCheckBox("Generate MIDI with Basic Pitch")
             self.generate_midi.setChecked(True)
+            self.generate_chord_suggestions = QCheckBox("Generate initial chord suggestions")
+            self.generate_chord_suggestions.setChecked(True)
+            self.generate_chord_suggestions.setToolTip(
+                "Populate the initial chord track from generated MIDI. Turn this off to start with an empty chord track and assign chords manually."
+            )
             self.midi_stem_checks: dict[str, QCheckBox] = {}
             self.midi_stems_layout = QGridLayout()
             self.midi_stems_layout.setHorizontalSpacing(12)
@@ -393,6 +398,11 @@ def main() -> int:
             self.revert_chord_edits_button.setEnabled(False)
             self.revert_chord_edits_button.setToolTip(
                 "Discard manual chord moves, assignments, and deletions and restore detected chords."
+            )
+            self.detect_chords_button = QPushButton("Detect Chords")
+            self.detect_chords_button.setEnabled(False)
+            self.detect_chords_button.setToolTip(
+                "Generate automatic chord suggestions from the project's MIDI notes. Manual chord edits remain in place."
             )
             self.chord_detector_help = QLabel(
                 "Harmony comes from the selected Chord tracks: MIDI note energy feeds chord detection, then the chord track feeds key, scale, mode, and gap suggestions."
@@ -638,6 +648,7 @@ def main() -> int:
             self.delete_chord_button.clicked.connect(self.delete_selected_chord)
             self.reset_note_filter_button.clicked.connect(self.reset_chord_note_filter)
             self.revert_chord_edits_button.clicked.connect(self.revert_all_chord_edits)
+            self.detect_chords_button.clicked.connect(self.generate_detected_chords)
             self.inspect_chord_button.clicked.connect(self.inspect_current_chord_analysis)
             self.inspect_theory_button.clicked.connect(self.inspect_current_theory_analysis)
             self.preview_scale_button.clicked.connect(self.preview_selected_scale)
@@ -668,6 +679,7 @@ def main() -> int:
             self.playback_scroll.verticalScrollBar().valueChanged.connect(self.sync_timeline_scroll)
             self.bs_device.currentIndexChanged.connect(self.refresh_model_details)
             self.generate_midi.toggled.connect(self.refresh_midi_stem_checks)
+            self.generate_midi.toggled.connect(self.generate_chord_suggestions.setEnabled)
             self.sonify_midi.toggled.connect(self.sonification_samplerate.setEnabled)
 
             self.refresh_model_details()
@@ -1059,6 +1071,9 @@ def main() -> int:
 
         def revert_all_chord_edits(self) -> None:
             gui_editor_state.revert_all_chord_edits(self)
+
+        def generate_detected_chords(self) -> None:
+            gui_editor_state.generate_detected_chords(self)
 
         def refresh_editor_project_from_chord_edits(self, selected_chord: ChordRegion | None = None) -> None:
             gui_editor_state.refresh_editor_project_from_chord_edits(self, selected_chord)

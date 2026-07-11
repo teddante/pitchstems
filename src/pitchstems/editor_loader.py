@@ -6,6 +6,7 @@ from typing import Any
 from pitchstems.editor_project import ChordRegion, EditorProject, build_editor_project
 from pitchstems.editor_state import load_editor_state, parse_chord_overrides, parse_chord_removals
 from pitchstems.pipeline_models import PipelineResult
+from pitchstems.project_store import load_project_manifest
 
 
 @dataclass(frozen=True)
@@ -19,7 +20,15 @@ class EditorLoadResult:
 
 
 def build_editor_load_result(result: PipelineResult) -> EditorLoadResult:
-    base_project = build_editor_project(result)
+    manifest = load_project_manifest(result.project_dir)
+    settings = manifest.get("settings", {})
+    generate_chord_suggestions = not (
+        isinstance(settings, dict) and settings.get("generate_chord_suggestions") is False
+    )
+    base_project = build_editor_project(
+        result,
+        generate_chord_suggestions=generate_chord_suggestions,
+    )
     editor_state = load_editor_state(result.project_dir)
     manual_chords = parse_chord_overrides(editor_state)
     removed_chord_ranges = parse_chord_removals(editor_state)

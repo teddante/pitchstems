@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from pitchstems.chord_regions import merge_chord_ranges
 from pitchstems.editor_chord_assignment import chord_assignment_ranges, chord_assignment_target_text
 from pitchstems.editor_loader import apply_chord_edits
-from pitchstems.editor_project import ChordRegion
+from pitchstems.editor_project import ChordRegion, detect_chords
 from pitchstems.editor_state import build_editor_state_snapshot, save_editor_state_snapshot
 from pitchstems.gui_helpers import blocked_signals
+from pitchstems.project_store import save_project_manifest
 from pitchstems.time_format import format_time
 
 
@@ -27,6 +30,29 @@ def revert_all_chord_edits(window) -> None:
     window.removed_chord_ranges = []
     window.refresh_editor_project_from_chord_edits(None)
     window.statusBar().showMessage("Restored all detected chords.", 4000)
+
+
+def generate_detected_chords(window) -> None:
+    if window.current_result is None or window.base_editor_project is None:
+        return
+    chords = detect_chords(window.base_editor_project.notes)
+    try:
+        save_project_manifest(
+            window.current_result,
+            generate_chord_suggestions=True,
+        )
+    except Exception as exc:
+        window.logger.exception("Could not save chord suggestion setting")
+        window.statusBar().showMessage(f"Could not generate chord suggestions: {exc}", 6000)
+        return
+    with blocked_signals(window.generate_chord_suggestions):
+        window.generate_chord_suggestions.setChecked(True)
+    window.base_editor_project = replace(window.base_editor_project, chords=chords)
+    window.refresh_editor_project_from_chord_edits(None)
+    has_chords = bool(window.editor_project.chords)
+    window.previous_chord_button.setEnabled(has_chords)
+    window.next_chord_button.setEnabled(has_chords)
+    window.statusBar().showMessage(f"Generated {len(chords)} chord suggestions.", 5000)
 
 
 def refresh_editor_project_from_chord_edits(
