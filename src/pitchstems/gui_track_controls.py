@@ -55,7 +55,7 @@ class TrackControlEditorState:
 def track_control_panel_height(timeline_track_height: float | int | None) -> int:
     if timeline_track_height is None:
         return TRACK_CONTROL_MIN_HEIGHT
-    return max(TRACK_CONTROL_MIN_HEIGHT, int(round(timeline_track_height)))
+    return max(TRACK_CONTROL_MIN_HEIGHT, round(timeline_track_height))
 
 
 def track_control_visibility(height: float | int) -> TrackControlVisibility:

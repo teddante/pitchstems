@@ -1,4 +1,5 @@
-from pitchstems.gui_options import default_midi_checked, device_label, optional_frequency
+from pitchstems.gui_pipeline_state import default_midi_checked, device_label
+from pitchstems.transcription import optional_frequency_limit as optional_frequency
 
 
 def test_optional_frequency_treats_zero_as_unbounded() -> None:

@@ -4,7 +4,7 @@ from PySide6.QtWidgets import QDialog, QHBoxLayout, QPushButton, QTextEdit, QVBo
 
 from pitchstems.chord_gap_analysis import chord_gap_report
 from pitchstems.harmony_report import current_chord_analysis_report
-from pitchstems.theory import theory_analysis_report
+from pitchstems.scale_analysis import theory_analysis_report
 
 
 def show_report_dialog(parent, title: str, report: str) -> None:

@@ -224,7 +224,7 @@ class _NoteMapWidget(QWidget):
 
 
 class PianoChordWidget(_NoteMapWidget):
-    black_pitch_classes = {1, 3, 6, 8, 10}
+    black_pitch_classes = frozenset({1, 3, 6, 8, 10})
     black_key_offsets = {1: 0.72, 3: 0.72, 6: 0.72, 8: 0.72, 10: 0.72}
 
     def __init__(self) -> None:
@@ -520,7 +520,7 @@ class PianoChordWidget(_NoteMapWidget):
         right = self._range_rect.right()
         width = max(1.0, right - left)
         ratio = min(1.0, max(0.0, (x - left) / width))
-        return int(round(36 + ratio * (84 - 36)))
+        return round(36 + ratio * (84 - 36))
 
 
 def _normalized_preview_range(low_pitch: int, high_pitch: int) -> tuple[int, int]:
@@ -635,12 +635,11 @@ class FretboardNoteMapWidget(_NoteMapWidget):
 
     def mousePressEvent(self, event) -> None:
         hit = self._hit_note(event.position())
-        if event.button() == Qt.RightButton:
-            if hit is not None:
-                pitch, name = hit
-                self._show_note_constraint_menu(event.globalPosition().toPoint(), pitch % 12, name)
-                event.accept()
-                return
+        if event.button() == Qt.RightButton and hit is not None:
+            pitch, name = hit
+            self._show_note_constraint_menu(event.globalPosition().toPoint(), pitch % 12, name)
+            event.accept()
+            return
         if event.button() != Qt.LeftButton:
             super().mousePressEvent(event)
             return

@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from pitchstems.gui_helpers import section_label
-from pitchstems.gui_layout_policy import EditorLayoutPolicy
+from pitchstems.gui_editor_state import EditorLayoutPolicy
 
 
 def build_editor_page(window) -> QWidget:

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from pitchstems.app_logging import logs_dir
 from pitchstems.file_opening import open_folder
-from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
+from pitchstems.gui_editor_state import EMPTY_EDITOR_SUMMARY
 from pitchstems.gui_helpers import blocked_signals, clear_layout
 from pitchstems.gui_import_clip import waveform_preview_for_path
 from pitchstems.gui_track_controls import reset_track_control_widgets

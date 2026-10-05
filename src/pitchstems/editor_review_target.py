@@ -81,3 +81,23 @@ def review_ranges_brief_text(ranges: list[tuple[float, float]]) -> str:
 def review_ranges_detail_text(ranges: list[tuple[float, float]]) -> str:
     shown_ranges = ", ".join(review_range_text(review_range) for review_range in ranges)
     return f"{len(ranges)} ranges ({review_ranges_total_seconds(ranges):.3f} sec total): {shown_ranges}"
+
+
+def review_playback_loop_range(
+    selection_ranges: list[tuple[float, float]],
+    selected_chord: ChordRegion | None,
+) -> tuple[float, float] | None:
+    return single_review_range(review_ranges(selection_ranges, selected_chord))
+
+
+def chord_assignment_target_text(
+    ranges: list[tuple[float, float]],
+    selected_chord: ChordRegion | None,
+) -> str:
+    if not ranges:
+        return "no selection"
+    if selected_chord is not None and ranges == [(selected_chord.start, selected_chord.end)]:
+        return "selected chord"
+    if len(ranges) == 1:
+        return f"{format_time(ranges[0][0])} - {format_time(ranges[0][1])}"
+    return f"{len(ranges)} ranges"

@@ -1,4 +1,4 @@
-from pitchstems.editor_playback import review_playback_loop_range
+from pitchstems.editor_review_target import review_playback_loop_range
 from pitchstems.editor_project import ChordRegion
 
 

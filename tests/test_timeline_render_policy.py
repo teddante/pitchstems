@@ -1,4 +1,4 @@
-from pitchstems.timeline_render_policy import TimelineRenderPolicy
+from pitchstems.gui_timeline import TimelineRenderPolicy
 
 
 def test_timeline_render_policy_uses_dense_mode_for_many_visible_notes() -> None:

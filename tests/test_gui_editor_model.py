@@ -1,4 +1,4 @@
-from pitchstems.gui_editor_model import EditorSummaryModel
+from pitchstems.gui_editor_state import EditorSummaryModel
 
 
 def test_editor_summary_model_empty_project() -> None:

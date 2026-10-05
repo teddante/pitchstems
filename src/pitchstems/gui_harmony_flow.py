@@ -19,7 +19,7 @@ from pitchstems.harmony_inspector import (
     selected_chord_analysis_notes,
 )
 from pitchstems import harmony_panel
-from pitchstems.theory import analyze_theory_at, analyze_theory_region
+from pitchstems.scale_analysis import analyze_theory_at, analyze_theory_region
 
 
 @dataclass

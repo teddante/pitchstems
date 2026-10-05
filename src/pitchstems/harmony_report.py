@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pitchstems.chord_detection import analyze_chord_at, analyze_chord_region, analyze_chord_regions
+from pitchstems.chord_analysis import analyze_chord_at, analyze_chord_region, analyze_chord_regions
 from pitchstems.editor_project import (
     NoteEvent,
 )

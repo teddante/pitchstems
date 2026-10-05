@@ -6,12 +6,57 @@ from pitchstems.acceleration import torch_status
 from pitchstems.gui_helpers import blocked_signals, clear_layout
 from pitchstems.gui_import_clip import can_clear_import_clip_selection, can_play_import_clip_preview
 from pitchstems.gui_jobs import thread_is_alive
-from pitchstems.gui_options import default_midi_checked, device_label, optional_frequency
-from pitchstems.gui_pipeline_model import PipelinePageModel
 from pitchstems.model_assets import model_asset_statuses
 from pitchstems.model_catalog import DEFAULT_MODEL_KEY, model_choice
 from pitchstems.separation import SeparationOptions
-from pitchstems.transcription import MidiOptions
+from pitchstems.transcription import PERCUSSIVE_STEMS, MidiOptions, optional_frequency_limit
+
+
+def default_midi_checked(stem_name: str) -> bool:
+    return stem_name.lower() not in PERCUSSIVE_STEMS
+
+
+def device_label(device: str | None, cuda_available: bool) -> str:
+    if device == "cpu":
+        return "PyTorch CPU (forced)"
+    if device:
+        return f"PyTorch CUDA ({device})"
+    return "PyTorch CUDA (auto)" if cuda_available else "PyTorch CPU (auto fallback)"
+
+
+@dataclass(frozen=True)
+class PipelinePageModel:
+    busy: bool
+    has_result: bool
+    generate_midi: bool
+
+    @property
+    def drop_zone_enabled(self) -> bool:
+        return not self.busy
+
+    @property
+    def run_full_enabled(self) -> bool:
+        return not self.busy
+
+    @property
+    def run_midi_enabled(self) -> bool:
+        return (not self.busy) and self.has_result
+
+    @property
+    def export_enabled(self) -> bool:
+        return (not self.busy) and self.has_result
+
+    @property
+    def cancel_enabled(self) -> bool:
+        return self.busy
+
+    @property
+    def settings_enabled(self) -> bool:
+        return not self.busy
+
+    @property
+    def midi_stem_checks_enabled(self) -> bool:
+        return (not self.busy) and self.generate_midi
 
 
 @dataclass(frozen=True)
@@ -106,8 +151,8 @@ def selected_midi_options(window) -> MidiOptions:
         onset_threshold=window.onset_threshold.value(),
         frame_threshold=window.frame_threshold.value(),
         minimum_note_length=window.minimum_note_length.value(),
-        minimum_frequency=optional_frequency(window.minimum_frequency.value()),
-        maximum_frequency=optional_frequency(window.maximum_frequency.value()),
+        minimum_frequency=optional_frequency_limit(window.minimum_frequency.value()),
+        maximum_frequency=optional_frequency_limit(window.maximum_frequency.value()),
         multiple_pitch_bends=window.multiple_pitch_bends.isChecked(),
         melodia_trick=window.melodia_trick.isChecked(),
         midi_tempo=window.midi_tempo.value(),

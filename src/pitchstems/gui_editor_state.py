@@ -1,15 +1,69 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
-from pitchstems.chord_regions import merge_chord_ranges
-from pitchstems.editor_chord_assignment import chord_assignment_ranges, chord_assignment_target_text
+from pitchstems.chord_regions import merge_chord_ranges, merge_or_selected_chord_range as chord_assignment_ranges
+from pitchstems.editor_review_target import chord_assignment_target_text
 from pitchstems.editor_loader import apply_chord_edits
-from pitchstems.editor_project import ChordRegion, detect_chords
+from pitchstems.editor_models import ChordRegion
+from pitchstems.chord_analysis import detect_chords
 from pitchstems.editor_state import build_editor_state_snapshot, save_editor_state_snapshot
 from pitchstems.gui_helpers import blocked_signals
 from pitchstems.project_store import save_project_manifest
 from pitchstems.time_format import format_time
+
+EMPTY_EDITOR_SUMMARY = "Run separation + MIDI to build an editor timeline."
+
+
+@dataclass(frozen=True)
+class EditorLayoutPolicy:
+    window_width: int
+
+    @property
+    def compact(self) -> bool:
+        return self.window_width < 1040
+
+    @property
+    def harmony_panel_min_width(self) -> int:
+        return 260 if self.compact else 300
+
+    @property
+    def harmony_panel_width(self) -> int:
+        return 360 if self.compact else 440
+
+    @property
+    def track_panel_min_width(self) -> int:
+        return 220 if self.compact else 250
+
+    @property
+    def track_panel_width(self) -> int:
+        return 250 if self.compact else 280
+
+
+@dataclass(frozen=True)
+class EditorSummaryModel:
+    track_count: int
+    note_count: int
+    duration_seconds: float
+
+    @property
+    def has_timeline(self) -> bool:
+        return self.track_count > 0 or self.note_count > 0 or self.duration_seconds > 0
+
+    @property
+    def fit_song_enabled(self) -> bool:
+        return self.has_timeline
+
+    @property
+    def summary(self) -> str:
+        if not self.has_timeline:
+            return EMPTY_EDITOR_SUMMARY
+        minutes = int(self.duration_seconds // 60)
+        seconds = int(self.duration_seconds % 60)
+        return (
+            f"Editor timeline: {self.track_count} tracks, {self.note_count} notes, "
+            f"{minutes}:{seconds:02d}."
+        )
 
 
 def apply_manual_chords(window) -> None:

@@ -1,4 +1,4 @@
-from pitchstems.gui_pipeline_model import PipelinePageModel
+from pitchstems.gui_pipeline_state import PipelinePageModel
 
 
 def test_pipeline_page_model_disables_run_controls_while_busy() -> None:

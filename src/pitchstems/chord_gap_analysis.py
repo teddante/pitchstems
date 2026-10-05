@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from pitchstems.chord_analysis import ChordAnalysis, chord_sounding_pitch_classes_for_label
-from pitchstems.chord_detection import analyze_chord_region
+from pitchstems.chord_analysis import ChordAnalysis, analyze_chord_region, chord_sounding_pitch_classes_for_label
 from pitchstems.chord_scoring import ChordScoringOptions
 from pitchstems.editor_models import ChordRegion, NoteEvent
 from pitchstems.scale_analysis import TheoryAnalysis, analyze_theory_region
@@ -16,8 +15,8 @@ from pitchstems.theory_helpers import (
     next_chord as find_next_chord,
     previous_chord as find_previous_chord,
     region_energy,
-    report_time,
 )
+from pitchstems.time_format import format_time as report_time
 
 @dataclass(frozen=True)
 class ChordGapSuggestion:

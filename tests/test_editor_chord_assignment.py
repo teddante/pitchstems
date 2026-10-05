@@ -1,4 +1,5 @@
-from pitchstems.editor_chord_assignment import chord_assignment_ranges, chord_assignment_target_text
+from pitchstems.chord_regions import merge_or_selected_chord_range as chord_assignment_ranges
+from pitchstems.editor_review_target import chord_assignment_target_text
 from pitchstems.editor_project import ChordRegion
 
 

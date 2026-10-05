@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from bisect import bisect_left, bisect_right
 from typing import Any
 
 from pitchstems.chord_analysis import (
@@ -71,9 +72,10 @@ def candidate_pitch_class_movement(
 def _pitch_class_movement_score(from_tones: set[int], to_tones: set[int]) -> float:
     if not from_tones or not to_tones:
         return 0.0
-    distances = []
-    for pitch_class in from_tones:
-        distances.append(min(_pitch_class_distance(pitch_class, target) for target in to_tones))
+    distances = [
+        min(_pitch_class_distance(pitch_class, target) for target in to_tones)
+        for pitch_class in from_tones
+    ]
     average_distance = sum(distances) / len(distances)
     return fit_clamp(1.0 - average_distance / 6.0)
 
@@ -101,13 +103,21 @@ def candidate_common_tones(
 
 
 def previous_chord(chords: list[ChordRegion], seconds: float) -> ChordRegion | None:
-    previous = [chord for chord in chords if chord.end <= seconds]
-    return max(previous, key=lambda chord: chord.end, default=None)
+    if not chords:
+        return None
+    starts = [chord.start for chord in chords]
+    idx = bisect_right(starts, seconds)
+    candidates = [chord for chord in chords[:idx] if chord.end <= seconds]
+    return max(candidates, key=lambda chord: chord.end, default=None)
 
 
 def next_chord(chords: list[ChordRegion], seconds: float) -> ChordRegion | None:
-    next_chords = [chord for chord in chords if chord.start >= seconds]
-    return min(next_chords, key=lambda chord: chord.start, default=None)
+    if not chords:
+        return None
+    starts = [chord.start for chord in chords]
+    idx = bisect_left(starts, seconds)
+    candidates = [chord for chord in chords[idx:] if chord.start >= seconds]
+    return min(candidates, key=lambda chord: chord.start, default=None)
 
 
 def region_energy(notes: list[NoteEvent], start: float, end: float) -> float:

@@ -29,17 +29,13 @@ from pitchstems.theory_helpers import (
     next_chord as _next_chord,
     previous_chord as _previous_chord,
     region_energy as _region_energy,
-    report_time as _report_time,
 )
+from pitchstems.time_format import format_time as _report_time
 
 __all__ = [
     "ScaleCandidate",
     "ScaleDefinition",
     "TheoryAnalysis",
-    "analyze_theory_at",
-    "analyze_theory_region",
-    "fit_clamp",
-    "theory_analysis_report",
     "_candidate_common_tones",
     "_candidate_pitch_class_movement",
     "_candidate_theory_fit",
@@ -48,6 +44,10 @@ __all__ = [
     "_previous_chord",
     "_region_energy",
     "_report_time",
+    "analyze_theory_at",
+    "analyze_theory_region",
+    "fit_clamp",
+    "theory_analysis_report",
 ]
 
 
@@ -705,11 +705,8 @@ def _roman_inversion_suffix(symbol: ChordSymbol) -> str:
 
 
 def _has_seventh_stack(suffix: str) -> bool:
-    return (
-        "7" in suffix
-        or suffix.startswith(("9", "11", "13"))
-        or suffix.startswith(("maj9", "maj11", "maj13"))
-        or suffix.startswith(("m9", "m11", "m13"))
+    return "7" in suffix or suffix.startswith(
+        ("9", "11", "13", "maj9", "maj11", "maj13", "m9", "m11", "m13")
     )
 
 
@@ -762,7 +759,7 @@ def _chord_root(label: str) -> int | None:
 
 
 def _minor_or_diminished_suffix(suffix: str) -> bool:
-    return suffix.startswith("m") and not suffix.startswith("maj") or "dim" in suffix
+    return (suffix.startswith("m") and not suffix.startswith("maj")) or "dim" in suffix
 
 
 def spelling_preference_from_scale_label(label: str) -> str:

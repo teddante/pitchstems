@@ -95,16 +95,13 @@ Invoke-Checked "Running tests with focused core coverage..." {
     & $python @pythonArgs -m pytest `
         --cov=pitchstems.editor_models `
         --cov=pitchstems.export_files `
-        --cov=pitchstems.gui_editor_model `
         --cov=pitchstems.gui_jobs `
-        --cov=pitchstems.gui_layout_policy `
-        --cov=pitchstems.gui_pipeline_model `
+        --cov=pitchstems.pipeline_models `
         --cov=pitchstems.input_validation `
         --cov=pitchstems.preflight `
         --cov=pitchstems.pipeline `
         --cov=pitchstems.project_store `
         --cov=pitchstems.recent_projects `
-        --cov=pitchstems.timeline_render_policy `
         --cov=pitchstems.time_format `
         --cov-report=term-missing `
         --cov-fail-under=90

@@ -440,7 +440,6 @@ def _package_pipeline_outputs(result: PipelineResult) -> Path | None:
     if result.zip_path is None:
         return None
     return _zip_project_outputs(
-        result.project_dir,
         result.stems,
         result.midi_files,
         result.combined_midi,
@@ -517,7 +516,6 @@ def _safe_stem(stem: str, max_length: int = 80) -> str:
 
 
 def _zip_project_outputs(
-    project_dir: Path,
     stems: list[StemResult],
     midi_files: list[MidiResult],
     combined_midi: Path | None,

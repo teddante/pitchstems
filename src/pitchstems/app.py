@@ -25,21 +25,24 @@ from pitchstems.editor_project import (
     display_chord_label,
     midi_note_name,
 )
-from pitchstems.editor_playback import review_playback_loop_range
+from pitchstems.editor_review_target import review_playback_loop_range
 from pitchstems.editor_loader import EditorLoadResult
-from pitchstems.evidence_display import percent_text, visible_scale_candidates
-from pitchstems.gui_editor_model import EMPTY_EDITOR_SUMMARY
+from pitchstems.gui_editor_state import EMPTY_EDITOR_SUMMARY
 from pitchstems.midi_preview import render_note_preview
 from pitchstems.note_colours import note_colour_map
-from pitchstems.note_preview import single_note_preview_notes
-from pitchstems.notation import pitch_class_for_name, pitch_class_name, split_chord_label
-from pitchstems.pipeline_models import PipelineResult, StemResult
-from pitchstems.scale_preview import SCALE_PREVIEW_PATTERNS, scale_preview_notes
-from pitchstems.theory_display import (
+from pitchstems.editor_models import single_note_preview_notes
+from pitchstems.notation import (
     display_scale_candidate_label,
     display_scale_candidate_notes,
     display_theory_note_names,
+    percent_text,
+    pitch_class_for_name,
+    pitch_class_name,
+    split_chord_label,
+    visible_scale_candidates,
 )
+from pitchstems.pipeline_models import PipelineResult, StemResult
+from pitchstems.scale_preview import SCALE_PREVIEW_PATTERNS, scale_preview_notes
 from pitchstems.harmony_inspector import (
     chord_analysis_track_names as inspector_chord_analysis_track_names,
     resolve_notation_preference,
@@ -65,7 +68,8 @@ from pitchstems.gui_theme import (
     pitchstems_stylesheet,
 )
 from pitchstems.gui_track_controls import rebuild_track_controls, sync_track_control_panel as sync_track_controls
-from pitchstems.theory import ChordGapAnalysis, TheoryAnalysis
+from pitchstems.chord_gap_analysis import ChordGapAnalysis
+from pitchstems.scale_analysis import TheoryAnalysis
 from pitchstems.time_format import format_time
 from pitchstems.transcription import midi_option_spec
 
@@ -960,7 +964,7 @@ def main() -> int:
                 if font.pointSizeF() > 0:
                     scaled_font.setPointSizeF(font.pointSizeF() * self.ui_scale)
                 elif font.pixelSize() > 0:
-                    scaled_font.setPixelSize(max(1, int(round(font.pixelSize() * self.ui_scale))))
+                    scaled_font.setPixelSize(max(1, round(font.pixelSize() * self.ui_scale)))
                 app.setFont(scaled_font)
                 app.setStyleSheet(pitchstems_stylesheet(self.ui_scale))
             if persist:

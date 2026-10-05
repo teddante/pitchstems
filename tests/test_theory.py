@@ -4,15 +4,9 @@ import pitchstems.scale_analysis as scale_analysis
 from pitchstems.editor_project import ChordRegion, NoteEvent
 from pitchstems.chord_gap_analysis import analyze_chord_gap as analyze_gap_from_module
 from pitchstems.scale_analysis import analyze_theory_region as analyze_theory_from_module
-from pitchstems.theory import (
-    SCALE_REGISTRY,
-    analyze_chord_gap,
-    analyze_theory_region,
-    chord_gap_report,
-    contained_chords_for_scale,
-    searchable_scale_labels,
-    theory_analysis_report,
-)
+from pitchstems.chord_gap_analysis import analyze_chord_gap, chord_gap_report
+from pitchstems.scale_analysis import SCALE_REGISTRY, analyze_theory_region, theory_analysis_report
+from pitchstems.scale_chords import contained_chords_for_scale, searchable_scale_labels
 
 
 def test_scale_registry_includes_common_modal_and_symmetrical_families() -> None:

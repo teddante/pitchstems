@@ -1,10 +1,10 @@
-from pitchstems.notation import pitch_class_name
-from pitchstems.scale_analysis import ScaleCandidate, ScaleDefinition
-from pitchstems.theory_display import (
+from pitchstems.notation import (
     display_scale_candidate_label,
     display_scale_candidate_notes,
     display_theory_note_names,
+    pitch_class_name,
 )
+from pitchstems.scale_analysis import ScaleCandidate, ScaleDefinition
 
 
 def _candidate(root: int = 1) -> ScaleCandidate:

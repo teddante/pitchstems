@@ -13,27 +13,7 @@ from pitchstems.model_catalog import DEFAULT_MODEL_KEY, ModelChoice, model_choic
 from pitchstems.pipeline_models import StemResult
 
 
-@dataclass(frozen=True)
-class SeparationProfile:
-    key: str
-    label: str
-    best_for: str
-    expected_stems: list[str]
-    models: list[str]
-
-
 DEFAULT_PROFILE_KEY = "song-6-stem"
-
-LEGACY_PROFILE_ALIASES = {
-    "best": "song-6-stem",
-    "balanced": "song-6-stem",
-    "song-4-stem": "song-6-stem",
-    "song-6-stem": "song-6-stem",
-}
-
-PROFILE_MODEL_ALIASES = {
-    DEFAULT_PROFILE_KEY: DEFAULT_MODEL_KEY,
-}
 
 
 @dataclass(frozen=True)
@@ -152,26 +132,12 @@ def _retain_selected_stem(stems: list[StemResult], selected_stem: str) -> list[S
     return selected
 
 
-def get_profile(profile: str) -> SeparationProfile:
-    key = LEGACY_PROFILE_ALIASES.get(profile, profile)
-    if key not in PROFILE_MODEL_ALIASES:
-        key = DEFAULT_PROFILE_KEY
-    choice = model_choice(PROFILE_MODEL_ALIASES[key])
-    return SeparationProfile(
-        key=key,
-        label=choice.label,
-        best_for=choice.best_for,
-        expected_stems=choice.stems,
-        models=[choice.native_model_id],
-    )
-
-
 def model_key_for_profile(profile: str) -> str:
-    return PROFILE_MODEL_ALIASES.get(get_profile(profile).key, DEFAULT_MODEL_KEY)
+    return DEFAULT_MODEL_KEY
 
 
 def profile_keys() -> list[str]:
-    return list(PROFILE_MODEL_ALIASES)
+    return [DEFAULT_PROFILE_KEY]
 
 
 def _registry_model(registry, choice: ModelChoice):

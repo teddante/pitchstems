@@ -1,4 +1,4 @@
-from pitchstems.gui_layout_policy import EditorLayoutPolicy, PipelineLayoutPolicy
+from pitchstems.gui_editor_state import EditorLayoutPolicy
 
 
 def test_editor_layout_policy_uses_compact_panels_below_desktop_width() -> None:
@@ -19,10 +19,3 @@ def test_editor_layout_policy_uses_roomier_panels_on_default_window() -> None:
     assert policy.harmony_panel_width == 440
     assert policy.track_panel_min_width == 250
     assert policy.track_panel_width == 280
-
-
-def test_pipeline_layout_policy_keeps_intro_copy_short() -> None:
-    policy = PipelineLayoutPolicy()
-
-    assert len(policy.pipeline_intro) <= 110
-    assert "BS-RoFormer" in policy.pipeline_intro

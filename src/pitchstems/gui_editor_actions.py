@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from pitchstems.editor_project import ChordRegion
+from pitchstems.editor_project import ChordRegion, EditorProject
 from pitchstems.editor_review_target import review_ranges, single_review_range
 from pitchstems.time_format import format_time
 
@@ -25,7 +25,7 @@ class _Timeline(Protocol):
 
 
 class _EditorWindow(Protocol):
-    editor_project: object | None
+    editor_project: EditorProject | None
     timeline: _Timeline
 
     def statusBar(self) -> _StatusBar: ...

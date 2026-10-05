@@ -54,7 +54,7 @@ def _model_registry_check(model_key: str) -> PreflightCheck:
         from pitchstems.model_catalog import model_choice
 
         backend = importlib.import_module("bs_roformer")
-        registry = getattr(backend, "MODEL_REGISTRY")
+        registry = backend.MODEL_REGISTRY
         choice = model_choice(model_key)
         if registry.get(choice.native_model_id) is None:
             return PreflightCheck("BS-RoFormer model registry", False, choice.native_model_id)

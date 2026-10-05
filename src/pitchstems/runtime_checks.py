@@ -4,28 +4,7 @@ import importlib
 import shutil
 import sys
 from dataclasses import dataclass
-from typing import Protocol
-
-
-class InstalledRuntimeStatusLike(Protocol):
-    @property
-    def installed(self) -> bool: ...
-
-
-class OnnxRuntimeStatusLike(InstalledRuntimeStatusLike, Protocol):
-    @property
-    def providers(self) -> list[str]: ...
-
-    @property
-    def has_cuda(self) -> bool: ...
-
-
-class TorchStatusLike(InstalledRuntimeStatusLike, Protocol):
-    @property
-    def cuda_available(self) -> bool: ...
-
-    @property
-    def device_name(self) -> str | None: ...
+from pitchstems.acceleration import OnnxRuntimeStatus, TorchStatus
 
 
 @dataclass(frozen=True)
@@ -56,7 +35,7 @@ def module_check(name: str, module_name: str) -> RuntimeCheck:
     return RuntimeCheck(name=name, ok=True, detail="imported successfully")
 
 
-def onnxruntime_check(status: OnnxRuntimeStatusLike) -> RuntimeCheck:
+def onnxruntime_check(status: OnnxRuntimeStatus) -> RuntimeCheck:
     if not status.installed:
         return RuntimeCheck(
             name="ONNX Runtime",
@@ -70,7 +49,7 @@ def onnxruntime_check(status: OnnxRuntimeStatusLike) -> RuntimeCheck:
     )
 
 
-def onnxruntime_cuda_check(status: OnnxRuntimeStatusLike) -> RuntimeCheck:
+def onnxruntime_cuda_check(status: OnnxRuntimeStatus) -> RuntimeCheck:
     if not status.installed:
         return RuntimeCheck(
             name="ONNX Runtime CUDA",
@@ -84,12 +63,12 @@ def onnxruntime_cuda_check(status: OnnxRuntimeStatusLike) -> RuntimeCheck:
     )
 
 
-def torch_cuda_check(status: TorchStatusLike) -> RuntimeCheck:
+def torch_cuda_check(status: TorchStatus) -> RuntimeCheck:
     if not status.installed:
         return RuntimeCheck(name="PyTorch CUDA", ok=False, detail="`torch` missing")
     detail = status.device_name if status.cuda_available else "CUDA is not available to PyTorch"
     return RuntimeCheck(name="PyTorch CUDA", ok=status.cuda_available, detail=detail or "")
 
 
-def _provider_detail(status: OnnxRuntimeStatusLike) -> str:
+def _provider_detail(status: OnnxRuntimeStatus) -> str:
     return ", ".join(status.providers) or "no providers"

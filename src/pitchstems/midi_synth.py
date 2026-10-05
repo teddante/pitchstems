@@ -81,7 +81,7 @@ class MidiSynthEngine:
 
 def _add_note(samples: array, note: SynthNote, volume: float, buffer_start: float, sample_rate: int) -> None:
     start = max(0, int((note.start - buffer_start) * sample_rate))
-    end = min(len(samples), max(start + 1, int(math.ceil((note.end - buffer_start) * sample_rate))))
+    end = min(len(samples), max(start + 1, math.ceil((note.end - buffer_start) * sample_rate)))
     if end <= 0 or start >= len(samples):
         return
     start = max(0, start)

@@ -25,7 +25,7 @@ def normalized_ui_scale(value: object) -> float:
 
 
 def scale_px(value: int, ui_scale: float) -> int:
-    return max(1, int(round(value * normalized_ui_scale(ui_scale))))
+    return max(1, round(value * normalized_ui_scale(ui_scale)))
 
 
 def pitchstems_stylesheet(ui_scale: float = DEFAULT_UI_SCALE) -> str:

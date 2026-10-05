@@ -1,4 +1,4 @@
-from pitchstems.note_preview import single_note_preview_notes
+from pitchstems.editor_models import single_note_preview_notes
 
 
 def test_single_note_preview_notes_clamp_pitch_and_use_short_envelope() -> None:

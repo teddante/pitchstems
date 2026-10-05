@@ -11,8 +11,12 @@ from PySide6.QtWidgets import (
 )
 
 from pitchstems.gui_helpers import section_label
-from pitchstems.gui_layout_policy import PipelineLayoutPolicy
 from pitchstems.transcription import midi_option_spec
+
+
+PIPELINE_INTRO = (
+    "Drop audio, choose output settings, then run the local BS-RoFormer and Basic Pitch pipeline."
+)
 
 
 def build_pipeline_page(window) -> QWidget:
@@ -38,7 +42,7 @@ def build_pipeline_page(window) -> QWidget:
     separation_panel = QVBoxLayout()
     separation_panel.setSpacing(8)
     separation_panel.addWidget(section_label("Separation stage"))
-    intro = QLabel(PipelineLayoutPolicy().pipeline_intro)
+    intro = QLabel(PIPELINE_INTRO)
     intro.setWordWrap(True)
     intro.setStyleSheet("color: #4b5563;")
     separation_panel.addWidget(intro)

@@ -137,7 +137,6 @@ def test_zip_project_outputs_packages_canonical_assets_without_export_copies(tmp
     manifest_path.write_text("{}", encoding="utf-8")
 
     _zip_project_outputs(
-        project_dir,
         [StemResult("bass", stem_path)],
         [MidiResult("bass", midi_path)],
         combined_path,
@@ -427,7 +426,7 @@ def test_package_pipeline_outputs_forwards_result_assets(monkeypatch, tmp_path: 
     monkeypatch.setattr(pipeline, "_zip_project_outputs", fake_zip_project_outputs)
 
     assert _package_pipeline_outputs(result) == zip_path
-    assert calls == [(project_dir, [stem], [midi], combined, zip_path)]
+    assert calls == [([stem], [midi], combined, zip_path)]
 
 
 def test_midi_rerun_keeps_existing_outputs_when_transcription_fails(tmp_path: Path, monkeypatch) -> None:

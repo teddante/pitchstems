@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from pitchstems.evidence_display import percent_text, visible_scale_candidates
+from pitchstems.notation import percent_text, visible_scale_candidates
 
 
 @dataclass(frozen=True)

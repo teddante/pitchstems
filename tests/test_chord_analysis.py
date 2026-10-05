@@ -62,7 +62,7 @@ def test_chord_naming_module_exposes_public_helpers() -> None:
 
 
 def test_split_chord_modules_expose_public_surfaces() -> None:
-    from pitchstems.chord_detection import analyze_chord as analyze_from_detection
+    from pitchstems.chord_analysis import analyze_chord as analyze_from_detection
     from pitchstems.chord_explanation import partial_harmony_hints
     from pitchstems.chord_scoring import ChordScoringOptions
 

@@ -23,7 +23,7 @@ from pitchstems.chord_analysis import (
     identify_chord,
     midi_note_name,
 )
-from pitchstems.chord_detection import (
+from pitchstems.chord_analysis import (
     active_notes_at,
     analyze_chord,
     analyze_chord_at,

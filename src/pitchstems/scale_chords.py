@@ -60,10 +60,11 @@ def contained_chords_for_scale(
 
 
 def searchable_scale_labels(spelling_preference: str | None = "auto") -> list[tuple[str, int, ScaleDefinition]]:
-    rows: list[tuple[str, int, ScaleDefinition]] = []
-    for root in range(12):
-        for scale in SCALE_REGISTRY:
-            rows.append((scale_label(root, scale.intervals, scale.name, spelling_preference), root, scale))
+    rows = [
+        (scale_label(root, scale.intervals, scale.name, spelling_preference), root, scale)
+        for root in range(12)
+        for scale in SCALE_REGISTRY
+    ]
     rows.sort(key=lambda row: row[0].lower())
     return rows
 
@@ -81,7 +82,7 @@ def _degree_label(index: int) -> str:
 
 
 def _chord_category(intervals: tuple[int, ...]) -> str:
-    unique_count = len(set(interval % 12 for interval in intervals))
+    unique_count = len({interval % 12 for interval in intervals})
     if unique_count <= 3:
         return "triad"
     if unique_count == 4 and any(interval % 12 in {9, 10, 11} for interval in intervals):

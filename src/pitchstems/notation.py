@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from typing import TypeVar
 
 
 SHARP_PITCH_NAMES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
@@ -276,3 +278,49 @@ def _spell_heptatonic_candidate(
 
 def _accidental_cost(note_name: str) -> int:
     return note_name.count("#") + note_name.count("b")
+
+
+T = TypeVar("T")
+
+
+def percent_text(value: float) -> str:
+    return f"{max(0.0, min(1.0, value)):.0%}"
+
+
+def is_chromatic_candidate(candidate: object) -> bool:
+    scale = getattr(candidate, "scale", None)
+    return getattr(scale, "name", "") == "Chromatic"
+
+
+def visible_scale_candidates(candidates: Iterable[T], *, show_chromatic: bool) -> list[T]:
+    if show_chromatic:
+        return list(candidates)
+    return [candidate for candidate in candidates if not is_chromatic_candidate(candidate)]
+
+
+def display_theory_note_names(
+    note_names: list[str],
+    pitch_class_formatter: Callable[[int], str],
+) -> list[str]:
+    displayed = []
+    for note_name in note_names:
+        pitch_class = pitch_class_for_name(note_name)
+        displayed.append(pitch_class_formatter(pitch_class) if pitch_class is not None else note_name)
+    return displayed
+
+
+def display_scale_candidate_label(candidate: object, preference: str | None) -> str:
+    return scale_label(
+        getattr(candidate, "root"),
+        getattr(getattr(candidate, "scale"), "intervals"),
+        getattr(getattr(candidate, "scale"), "name"),
+        preference,
+    )
+
+
+def display_scale_candidate_notes(candidate: object, preference: str | None) -> list[str]:
+    return spell_scale(
+        getattr(candidate, "root"),
+        getattr(getattr(candidate, "scale"), "intervals"),
+        preference,
+    )
