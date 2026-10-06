@@ -12,12 +12,13 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from pitchstems import harmony_panel
 from pitchstems.notation import spell_scale
 from pitchstems.scale_chords import contained_chords_for_scale, searchable_scale_labels
 
 
 def show_selected_scale_chords(window) -> None:
-    candidate = window.selected_theory_scale_candidate()
+    candidate = harmony_panel.selected_theory_scale_candidate(window)
     if candidate is None:
         return
     dialog = QDialog(window)

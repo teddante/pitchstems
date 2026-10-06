@@ -338,6 +338,7 @@ class _TheoryWindow:
     ) -> None:
         self.timeline = _Timeline(ranges, selected_chord)
         self.editor_project: _TheoryProject | None = _TheoryProject()
+        self.theory_note_overrides: dict[int, str] = {}
         self.theory_analyses = []
 
     def set_theory_analysis(self, analysis) -> None:

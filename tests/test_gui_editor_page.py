@@ -16,14 +16,13 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSlider,
-    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from pitchstems.gui_editor_page import build_editor_page
 from pitchstems.gui_timeline import TimelineView
-from pitchstems.gui_widgets import FretboardNoteMapWidget, PianoChordWidget
+from pitchstems.gui_widgets import NoteMapPair
 
 
 def _app() -> QApplication:
@@ -50,24 +49,14 @@ class _EditorWindow:
         self.revert_chord_edits_button = QPushButton("Revert All Chord Edits")
         self.reset_note_filter_button = QPushButton("Reset Evidence")
         self.inspect_chord_button = QPushButton("Inspect")
-        self.piano_chord_view = PianoChordWidget()
-        self.chord_fretboard_view = FretboardNoteMapWidget()
-        self.chord_note_map_stack = QStackedWidget()
-        self.chord_note_map_stack.addWidget(self.piano_chord_view)
-        self.chord_note_map_stack.addWidget(self.chord_fretboard_view)
-        self.chord_view_mode = QComboBox()
+        self.chord_note_maps = _note_maps()
         self.chord_one_octave_button = QPushButton("1 Oct")
         self.note_map_colours = QCheckBox("Colours")
         self.preview_bass_note = QComboBox()
         self.preview_top_note = QComboBox()
         self.chord_list = QListWidget()
         self.theory_context = _wrapped_label("Theory: -", 54)
-        self.theory_scale_view = PianoChordWidget()
-        self.theory_fretboard_view = FretboardNoteMapWidget()
-        self.theory_note_map_stack = QStackedWidget()
-        self.theory_note_map_stack.addWidget(self.theory_scale_view)
-        self.theory_note_map_stack.addWidget(self.theory_fretboard_view)
-        self.theory_view_mode = QComboBox()
+        self.theory_note_maps = _note_maps()
         self.theory_one_octave_button = QPushButton("1 Oct")
         self.theory_list = QListWidget()
         self.show_chromatic_scales = QCheckBox("Chromatic")
@@ -151,7 +140,7 @@ def test_editor_chord_map_controls_use_two_row_grid() -> None:
     side_panel = side_scroll.widget()
     grid = side_panel.layout().itemAt(9).layout()
 
-    assert grid.itemAtPosition(0, 0).widget() is window.chord_view_mode
+    assert grid.itemAtPosition(0, 0).widget() is window.chord_note_maps.mode
     assert grid.itemAtPosition(1, 0).widget() is window.chord_one_octave_button
     assert grid.itemAtPosition(1, 1).widget() is window.note_map_colours
 
@@ -180,3 +169,15 @@ def test_editor_side_panel_shrinks_to_scroll_viewport() -> None:
 
     assert side_panel.minimumWidth() == 0
     assert side_panel.width() <= side_scroll.viewport().width()
+
+
+def _note_maps() -> NoteMapPair:
+    return NoteMapPair(
+        pitch_class_formatter=str,
+        on_note_clicked=None,
+        on_note_constraint_changed=None,
+        on_note_constraints_reset=None,
+        on_preview_range_changed=None,
+        preview_range=(48, 72),
+        mode_tooltip="",
+    )

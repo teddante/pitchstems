@@ -38,7 +38,17 @@ def run_startup_smoke(window) -> None:
     _assert(not hasattr(window, "timeline_slider"), "no hidden timeline slider")
     _assert(window.drop_zone.maximumHeight() > 1000, "drop zone can grow with content")
     _assert(window.note_filter_list.maximumHeight() > 1000, "note evidence list can grow")
-    _assert(window.piano_chord_view.maximumHeight() > 1000, "piano view can grow")
+    _assert(window.chord_note_maps.piano.maximumHeight() > 1000, "piano view can grow")
+    window.chord_note_maps.mode.setCurrentIndex(window.chord_note_maps.mode.findData("guitar"))
+    _assert(
+        window.chord_note_maps.stack.currentWidget() is window.chord_note_maps.fretboard,
+        "chord map switches to fretboard",
+    )
+    window.chord_note_maps.mode.setCurrentIndex(0)
+    _assert(
+        window.chord_note_maps.stack.currentWidget() is window.chord_note_maps.piano,
+        "chord map switches back to piano",
+    )
 
     window.main_tabs.setCurrentIndex(tab_names.index("Pipeline"))
     _assert(window.run_full.isEnabled(), "run button enabled")
@@ -210,6 +220,12 @@ def run_project_smoke(window) -> None:
     _assert(window.play_button.text() == "Play", "stop resets play button")
     _assert(not window.stop_button.isEnabled(), "stop disabled after stop")
     _assert(window.save_editor_state(), "editor state save")
+    window.preview_note_pitch(60, "smoke C4", "C4")
+    _assert(
+        (window.current_result.project_dir / "editor" / "note-preview" / "smoke_C4.wav").exists(),
+        "note preview renders through shared preview player",
+    )
+    _assert(window.statusBar().currentMessage() == "Playing note C4.", "note preview status")
 
     second_manifest_path = _create_smoke_project(stem_name="piano", pitches=[60, 64, 67])
     window.transport.is_playing = True

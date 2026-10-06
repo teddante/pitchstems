@@ -84,14 +84,9 @@ def refresh_current_harmony(window, seconds: float) -> None:
     if context != window.chord_note_filter_context:
         window.chord_note_filter_context = context
         window.chord_note_overrides = {}
-        if hasattr(window, "theory_note_overrides"):
-            window.theory_note_overrides = {}
-        if hasattr(window, "piano_chord_view"):
-            window.piano_chord_view.set_note_constraints(window.chord_note_overrides)
-        if hasattr(window, "chord_fretboard_view"):
-            window.chord_fretboard_view.set_note_constraints(window.chord_note_overrides)
-        if hasattr(window, "theory_scale_view"):
-            window.theory_scale_view.set_note_constraints(getattr(window, "theory_note_overrides", {}))
+        window.theory_note_overrides = {}
+        window.chord_note_maps.set_note_constraints(window.chord_note_overrides)
+        window.theory_note_maps.set_note_constraints(window.theory_note_overrides)
     inputs = chord_inputs(window, seconds)
     source_notes = inputs.source_notes
     window.current_chord_base_weights = inputs.base_weights
@@ -196,7 +191,7 @@ def refresh_current_theory(window, source_notes, seconds: float) -> None:
     if len(target.ranges) > 1:
         window.set_theory_analysis(None)
         return
-    required, excluded = chord_note_constraints(getattr(window, "theory_note_overrides", {}))
+    required, excluded = chord_note_constraints(window.theory_note_overrides)
     selection = target.single_range
     if selection is not None:
         start, end = selection
@@ -291,10 +286,7 @@ def selected_chord_analysis_tracks(window) -> set[str] | None:
 
 def populate_note_filter_list(window, weights: dict[int, float]) -> None:
     harmony_panel.populate_note_filter_list(window, weights)
-    if hasattr(window, "piano_chord_view"):
-        window.piano_chord_view.set_note_constraints(window.chord_note_overrides)
-    if hasattr(window, "chord_fretboard_view"):
-        window.chord_fretboard_view.set_note_constraints(window.chord_note_overrides)
+    window.chord_note_maps.set_note_constraints(window.chord_note_overrides)
 
 
 def handle_chord_note_filter_changed(window, item) -> None:
@@ -317,8 +309,5 @@ def handle_chord_note_filter_changed(window, item) -> None:
 
 def reset_chord_note_filter(window) -> None:
     window.chord_note_overrides = {}
-    if hasattr(window, "piano_chord_view"):
-        window.piano_chord_view.set_note_constraints(window.chord_note_overrides)
-    if hasattr(window, "chord_fretboard_view"):
-        window.chord_fretboard_view.set_note_constraints(window.chord_note_overrides)
+    window.chord_note_maps.set_note_constraints(window.chord_note_overrides)
     window.refresh_current_harmony(window.timeline.position, force=True)

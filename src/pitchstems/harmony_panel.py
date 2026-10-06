@@ -5,8 +5,10 @@ from PySide6.QtWidgets import QListWidgetItem
 
 from pitchstems.review_ranges import review_ranges
 from pitchstems.editor_models import ChordRegion
-from pitchstems.notation import percent_text
+from pitchstems.note_colours import note_colour_map
+from pitchstems.notation import percent_text, split_chord_label, visible_scale_candidates
 from pitchstems.chord_explanation import partial_harmony_note_order
+from pitchstems.scale_analysis import TheoryAnalysis
 from pitchstems.time_format import format_time
 
 
@@ -143,66 +145,28 @@ def select_first_chord_candidate(window) -> None:
 
 
 def refresh_chord_keyboard(window) -> None:
+    label, note_names, source_label, note_roles = _chord_keyboard_content(window)
+    window.chord_note_maps.set_chord(
+        window.display_chord(label) if label else None,
+        note_names,
+        source_label,
+        note_roles,
+    )
+    window.chord_note_maps.set_note_constraints(window.chord_note_overrides)
+    set_chord_note_map_colours(window, label, note_names)
+
+
+def _chord_keyboard_content(window) -> tuple[str | None, list[str], str, dict[int, set[str]]]:
     track_chord = active_chord_track_region(window)
     if track_chord is not None:
-        note_names = window.display_chord_tones(track_chord.label)
-        note_roles = window.preview_voicing_note_roles(track_chord.label) if hasattr(window, "preview_voicing_note_roles") else {}
-        window.piano_chord_view.set_chord(
-            window.display_chord(track_chord.label),
-            note_names,
-            "Chord track",
-            note_roles,
-        )
-        if hasattr(window, "chord_fretboard_view"):
-            window.chord_fretboard_view.set_chord(
-                window.display_chord(track_chord.label),
-                note_names,
-                "Chord track",
-                note_roles,
-            )
-        if hasattr(window.piano_chord_view, "set_note_constraints"):
-            window.piano_chord_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
-        if hasattr(window, "chord_fretboard_view"):
-            window.chord_fretboard_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
-        if hasattr(window, "set_chord_note_map_colours"):
-            window.set_chord_note_map_colours(track_chord.label, note_names)
-        return
+        label = track_chord.label
+        return label, window.display_chord_tones(label), "Chord track", window.preview_voicing_note_roles(label)
     item = window.chord_list.currentItem()
-    if item is None:
-        window.piano_chord_view.set_chord(None, [])
-        if hasattr(window, "chord_fretboard_view"):
-            window.chord_fretboard_view.set_chord(None, [])
-        if hasattr(window.piano_chord_view, "set_note_constraints"):
-            window.piano_chord_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
-        if hasattr(window, "chord_fretboard_view"):
-            window.chord_fretboard_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
-        if hasattr(window, "set_chord_note_map_colours"):
-            window.set_chord_note_map_colours(None, [])
-        return
-    label = item.data(Qt.UserRole)
+    label = item.data(Qt.UserRole) if item is not None else None
     if not label:
-        window.piano_chord_view.set_chord(None, [])
-        if hasattr(window, "chord_fretboard_view"):
-            window.chord_fretboard_view.set_chord(None, [])
-        if hasattr(window.piano_chord_view, "set_note_constraints"):
-            window.piano_chord_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
-        if hasattr(window, "chord_fretboard_view"):
-            window.chord_fretboard_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
-        if hasattr(window, "set_chord_note_map_colours"):
-            window.set_chord_note_map_colours(None, [])
-        return
+        return None, [], "Selected chord", {}
     note_names = item.data(Qt.UserRole + 2) or []
-    source_label = window.preview_voicing_source_label() if hasattr(window, "preview_voicing_source_label") else "Inspector"
-    note_roles = window.preview_voicing_note_roles(label) if hasattr(window, "preview_voicing_note_roles") else {}
-    window.piano_chord_view.set_chord(window.display_chord(label), note_names, source_label, note_roles)
-    if hasattr(window, "chord_fretboard_view"):
-        window.chord_fretboard_view.set_chord(window.display_chord(label), note_names, source_label, note_roles)
-    if hasattr(window.piano_chord_view, "set_note_constraints"):
-        window.piano_chord_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
-    if hasattr(window, "chord_fretboard_view"):
-        window.chord_fretboard_view.set_note_constraints(getattr(window, "chord_note_overrides", {}))
-    if hasattr(window, "set_chord_note_map_colours"):
-        window.set_chord_note_map_colours(label, note_names)
+    return label, note_names, window.preview_voicing_source_label(), window.preview_voicing_note_roles(label)
 
 
 def active_chord_track_region(window) -> ChordRegion | None:
@@ -264,3 +228,109 @@ def refresh_chord_actions(window) -> None:
         window.use_chord_button.setText("Use for Selection")
         window.use_chord_button.setToolTip("Apply this detected harmony to the selected timeline range.")
         window.delete_chord_button.setToolTip("Select a chord block to remove it.")
+
+
+def set_theory_analysis(window, analysis: TheoryAnalysis | None) -> None:
+    window.current_theory_analysis = analysis
+    window.theory_list.clear()
+    has_candidates = bool(analysis and analysis.candidates)
+    window.inspect_theory_button.setEnabled(has_candidates)
+    visible_candidates = (
+        visible_scale_candidates(
+            analysis.candidates,
+            show_chromatic=window.show_chromatic_scales.isChecked(),
+        )
+        if analysis is not None
+        else []
+    )
+    if not has_candidates or analysis is None:
+        window.theory_context.setText("Theory: -")
+        window.theory_context.setToolTip("No scale, key, or mode evidence yet.")
+        refresh_theory_preview_actions(window)
+        return
+    shown_best = visible_candidates[0] if visible_candidates else analysis.candidates[0]
+    shown_best_label = window.display_scale_candidate_label(shown_best)
+    note_text = ", ".join(
+        f"{window.display_weighted_note_name(name)} ({weight:.0%})"
+        for name, weight in analysis.note_weights[:8]
+    )
+    interpretation_prefix = "Likely" if analysis.label else "Possible"
+    window.theory_context.setText(
+        f"{interpretation_prefix}: {shown_best_label} (score {percent_text(shown_best.score)})\n"
+        f"Weighted notes: {note_text or '-'}"
+    )
+    window.theory_context.setToolTip(window.theory_context.text())
+    for candidate in visible_candidates[:8]:
+        display_label = window.display_scale_candidate_label(candidate)
+        notes = " - ".join(window.display_scale_candidate_notes(candidate))
+        item = QListWidgetItem(
+            f"{display_label}  score {percent_text(candidate.score)}\n"
+            f"{notes}\n"
+            f"fit {percent_text(candidate.pitch_fit)}, "
+            f"coverage {percent_text(candidate.evidence_strength)}, "
+            f"centre {percent_text(candidate.center_strength)}, "
+            f"chords {percent_text(candidate.chord_support)}"
+        )
+        item.setData(Qt.UserRole, candidate)
+        item.setToolTip("\n".join(candidate.explanation))
+        window.theory_list.addItem(item)
+    if not visible_candidates:
+        window.theory_list.addItem("Chromatic candidates hidden. Tick Chromatic to show them.")
+    if analysis.progression is not None:
+        window.theory_list.addItem(
+            "Progression\n"
+            f"{' - '.join(analysis.progression.chord_labels) or '-'}\n"
+            f"{' - '.join(analysis.progression.roman_numerals) or '-'}"
+        )
+    if analysis.core_notes or analysis.scale_notes:
+        window.theory_list.addItem(
+            "Playable notes\n"
+            f"Core: {' - '.join(window.display_theory_note_names(analysis.core_notes)) or '-'}\n"
+            f"Scale: {' - '.join(window.display_theory_note_names(analysis.scale_notes)) or '-'}"
+        )
+    window.theory_list.setCurrentRow(0 if visible_candidates else -1)
+    refresh_theory_preview_actions(window)
+
+
+def refresh_theory_preview_actions(window) -> None:
+    candidate = selected_theory_scale_candidate(window)
+    has_candidate = candidate is not None
+    window.preview_scale_button.setEnabled(has_candidate)
+    window.preview_scale_pattern.setEnabled(has_candidate)
+    window.scale_chords_button.setEnabled(has_candidate)
+    maps = window.theory_note_maps
+    if candidate is None:
+        maps.set_notes(None, [], "Theory scale", empty_message="No scale selected")
+    else:
+        maps.set_notes(
+            window.display_scale_candidate_label(candidate),
+            window.display_scale_candidate_notes(candidate),
+            "Theory scale",
+            {candidate.root: {"root"}},
+        )
+    maps.set_note_constraints(window.theory_note_overrides)
+    set_theory_note_map_colours(window, candidate)
+    maps.set_preview_range(*window.scale_preview_range)
+
+
+def selected_theory_scale_candidate(window):
+    item = window.theory_list.currentItem()
+    return item.data(Qt.UserRole) if item is not None else None
+
+
+def set_chord_note_map_colours(window, label: str | None, note_names: list[str]) -> None:
+    colours = {}
+    if window.note_map_colours.isChecked() and note_names:
+        parts = split_chord_label(label or "")
+        colours = note_colour_map(
+            note_names,
+            parts.root_pitch_class if parts is not None else None,
+        )
+    window.chord_note_maps.set_note_colours(colours)
+
+
+def set_theory_note_map_colours(window, candidate) -> None:
+    colours = {}
+    if window.note_map_colours.isChecked() and candidate is not None:
+        colours = note_colour_map(window.display_scale_candidate_notes(candidate), candidate.root)
+    window.theory_note_maps.set_note_colours(colours)

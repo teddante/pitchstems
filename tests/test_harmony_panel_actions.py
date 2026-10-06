@@ -84,7 +84,9 @@ class _Window:
         self.use_chord_button = _Button()
         self.delete_chord_button = _Button()
         self.editor_project = None
-        self.piano_chord_view = _PianoChordView()
+        self.chord_note_maps = _NoteMaps()
+        self.chord_note_overrides: dict[int, str] = {}
+        self.note_map_colours = _Check(False)
 
     def display_chord(self, label: str | None) -> str:
         return {"Bb/D": "A#/D"}.get(label, label or "No clear chord")
@@ -105,12 +107,27 @@ class _Window:
         return {10: {"root"}, 2: {"bass"}} if label == "Bb/D" else {}
 
 
-class _PianoChordView:
+class _Check:
+    def __init__(self, checked: bool) -> None:
+        self.checked = checked
+
+    def isChecked(self) -> bool:
+        return self.checked
+
+
+class _NoteMaps:
     def __init__(self) -> None:
         self.calls = []
+        self.constraints = []
 
     def set_chord(self, label, note_names, source_label="Selected chord", note_roles=None) -> None:
         self.calls.append((label, note_names, source_label, note_roles or {}))
+
+    def set_note_constraints(self, constraints) -> None:
+        self.constraints.append(constraints)
+
+    def set_note_colours(self, colours) -> None:
+        self.colours = colours
 
 
 def test_refresh_chord_actions_targets_selected_chord_without_selection() -> None:
@@ -156,7 +173,7 @@ def test_refresh_chord_keyboard_uses_display_spelling_for_inspector_title() -> N
 
     refresh_chord_keyboard(window)
 
-    assert window.piano_chord_view.calls == [
+    assert window.chord_note_maps.calls == [
         ("A#/D", ["A#", "D", "F"], "Preview bass D", {10: {"root"}, 2: {"bass"}})
     ]
 
@@ -167,7 +184,7 @@ def test_refresh_chord_keyboard_clears_for_non_candidate_rows() -> None:
 
     refresh_chord_keyboard(window)
 
-    assert window.piano_chord_view.calls == [(None, [], "Selected chord", {})]
+    assert window.chord_note_maps.calls == [(None, [], "Selected chord", {})]
 
 
 class _Analysis:

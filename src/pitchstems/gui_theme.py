@@ -90,6 +90,19 @@ def pitchstems_stylesheet(ui_scale: float = DEFAULT_UI_SCALE) -> str:
         color: #64748b;
     }
 
+    QLabel#helpText {
+        color: #4b5563;
+    }
+
+    QLabel#detailText {
+        color: #475569;
+    }
+
+    QLabel#smallText {
+        color: #64748b;
+        font-size: __SMALL_SIZE__px;
+    }
+
     QPushButton {
         background: #ffffff;
         border: 1px solid #cbd5e1;
@@ -211,5 +224,6 @@ def pitchstems_stylesheet(ui_scale: float = DEFAULT_UI_SCALE) -> str:
         stylesheet.replace("__FONT_SIZE__", str(scale_px(12, scale)))
         .replace("__BRAND_SIZE__", str(scale_px(15, scale)))
         .replace("__EYEBROW_SIZE__", str(scale_px(9, scale)))
+        .replace("__SMALL_SIZE__", str(scale_px(10, scale)))
         .replace("__CONTROL_HEIGHT__", str(scale_px(26, scale)))
     )

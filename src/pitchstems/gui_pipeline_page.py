@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from pitchstems.gui_helpers import section_label
+from pitchstems.gui_helpers import section_label, text_label
 from pitchstems.transcription import midi_option_spec
 
 
@@ -42,9 +42,7 @@ def build_pipeline_page(window) -> QWidget:
     separation_panel = QVBoxLayout()
     separation_panel.setSpacing(8)
     separation_panel.addWidget(section_label("Separation stage"))
-    intro = QLabel(PIPELINE_INTRO)
-    intro.setWordWrap(True)
-    intro.setStyleSheet("color: #4b5563;")
+    intro = text_label(PIPELINE_INTRO)
     separation_panel.addWidget(intro)
     separation_panel.addWidget(window.workflow_note)
     window.separation_card = QGroupBox()
@@ -109,14 +107,14 @@ def build_pipeline_page(window) -> QWidget:
         "Defaults shown here are Basic Pitch defaults."
     )
     midi_settings_intro.setWordWrap(True)
-    midi_settings_intro.setStyleSheet("color: #4b5563;")
+    midi_settings_intro.setObjectName("helpText")
     midi_settings_layout.addWidget(midi_settings_intro)
     midi_settings_hint = QLabel(
         "Higher thresholds are stricter and usually create fewer notes. "
         "Frequency limits filter the MIDI note range after prediction."
     )
     midi_settings_hint.setWordWrap(True)
-    midi_settings_hint.setStyleSheet("color: #4b5563;")
+    midi_settings_hint.setObjectName("helpText")
     midi_settings_layout.addWidget(midi_settings_hint)
     midi_grid = QGridLayout()
     midi_grid.setHorizontalSpacing(10)
@@ -208,7 +206,7 @@ def grid_control(layout: QGridLayout, row: int, column: int, label: str, default
     title = QLabel(label)
     title.setStyleSheet("font-weight: 600;")
     hint = QLabel(default)
-    hint.setStyleSheet("color: #6b7280; font-size: 11px;")
+    hint.setObjectName("smallText")
     stack.addWidget(title)
     stack.addWidget(hint)
     stack.addWidget(widget)

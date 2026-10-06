@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QSizePolicy,
     QSpinBox,
+    QStackedWidget,
     QWidget,
 )
 
@@ -702,6 +703,73 @@ class FretboardNoteMapWidget(_NoteMapWidget):
         painter.setPen(QPen(color, 2))
         painter.setBrush(Qt.NoBrush)
         painter.drawEllipse(rect.adjusted(-2, -2, 2, 2))
+
+class NoteMapPair:
+    """Piano and bass/guitar views of the same notes, switched by a view-mode combo box."""
+
+    def __init__(
+        self,
+        *,
+        pitch_class_formatter,
+        on_note_clicked,
+        on_note_constraint_changed,
+        on_note_constraints_reset,
+        on_preview_range_changed,
+        preview_range: tuple[int, int],
+        mode_tooltip: str,
+    ) -> None:
+        self.piano = PianoChordWidget()
+        self.fretboard = FretboardNoteMapWidget()
+        for view in self.views:
+            view.set_pitch_class_formatter(pitch_class_formatter)
+            view.on_note_clicked = on_note_clicked
+            view.on_note_constraint_changed = on_note_constraint_changed
+            view.on_note_constraints_reset = on_note_constraints_reset
+        self.piano.on_preview_range_changed = on_preview_range_changed
+        self.piano.set_preview_range(*preview_range)
+        self.stack = QStackedWidget()
+        self.stack.addWidget(self.piano)
+        self.stack.addWidget(self.fretboard)
+        self.mode = NoWheelComboBox()
+        self.mode.addItem("Piano", "piano")
+        self.mode.addItem("Bass", "bass")
+        self.mode.addItem("Guitar", "guitar")
+        self.mode.setToolTip(mode_tooltip)
+        self.mode.currentIndexChanged.connect(self._apply_mode)
+
+    @property
+    def views(self) -> tuple[_NoteMapWidget, ...]:
+        return (self.piano, self.fretboard)
+
+    def set_chord(self, *args, **kwargs) -> None:
+        for view in self.views:
+            view.set_chord(*args, **kwargs)
+
+    def set_notes(self, *args, **kwargs) -> None:
+        for view in self.views:
+            view.set_notes(*args, **kwargs)
+
+    def set_note_constraints(self, constraints: dict[int, str] | None) -> None:
+        for view in self.views:
+            view.set_note_constraints(constraints)
+
+    def set_note_colours(self, colours: dict[int, str] | None) -> None:
+        for view in self.views:
+            view.set_note_colours(colours)
+
+    def set_pitch_class_formatter(self, formatter) -> None:
+        for view in self.views:
+            view.set_pitch_class_formatter(formatter)
+
+    def set_preview_range(self, low_pitch: int, high_pitch: int) -> None:
+        self.piano.set_preview_range(low_pitch, high_pitch)
+
+    def _apply_mode(self, *_args) -> None:
+        mode = self.mode.currentData() or "piano"
+        self.stack.setCurrentWidget(self.piano if mode == "piano" else self.fretboard)
+        if mode in {"bass", "guitar"}:
+            self.fretboard.set_tuning(mode)
+
 
 def _contrast_text_colour(colour: QColor) -> QColor:
     luminance = (colour.red() * 0.299) + (colour.green() * 0.587) + (colour.blue() * 0.114)

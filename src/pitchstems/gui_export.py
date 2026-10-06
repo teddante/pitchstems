@@ -154,7 +154,7 @@ class ExportSelectedFilesDialog:
 
         layout = QVBoxLayout()
         intro = QLabel("Choose the project files to copy.")
-        intro.setStyleSheet("color: #4b5563;")
+        intro.setObjectName("helpText")
         layout.addWidget(intro)
 
         destination_row = QHBoxLayout()
@@ -179,7 +179,7 @@ class ExportSelectedFilesDialog:
         none.clicked.connect(self.clear_selected_items)
         selection_row.addWidget(none)
         self._selection_summary = QLabel("")
-        self._selection_summary.setStyleSheet("color: #4b5563;")
+        self._selection_summary.setObjectName("helpText")
         selection_row.addWidget(self._selection_summary, 1)
         layout.addLayout(selection_row)
 
