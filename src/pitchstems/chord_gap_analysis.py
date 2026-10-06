@@ -16,7 +16,6 @@ from pitchstems.theory_helpers import (
 )
 from pitchstems.editor_query import ChordIndex
 from pitchstems.midi_energy import total_region_energy
-from pitchstems.time_format import format_time
 
 @dataclass(frozen=True)
 class ChordGapSuggestion:
@@ -84,43 +83,6 @@ def analyze_chord_gap(
         local_chord_analysis=local_chord_analysis,
         theory_analysis=theory_analysis,
     )
-
-
-def chord_gap_report(analysis: ChordGapAnalysis) -> str:
-    lines = [
-        "Chord Gap Suggestions",
-        "=====================",
-        f"Gap: {format_time(analysis.start)} - {format_time(analysis.end)}",
-        f"Previous chord: {analysis.previous_chord.label if analysis.previous_chord else '-'}",
-        f"Next chord: {analysis.next_chord.label if analysis.next_chord else '-'}",
-        "",
-        "Evidence Model",
-        "--------------",
-        "Local MIDI evidence uses the same overlap_seconds * (velocity / 127)^2 energy model.",
-        "Theory fit checks formal chord tones against the current scale/key/mode candidate.",
-        "Pitch-class movement uses minimum distance on the 12-tone circle; it does not model register-aware part-writing.",
-        "Common-tone support counts shared pitch classes with neighbouring chord regions.",
-        "Suggestions are ordered by evidence-first ranking rules, not blended policy weights.",
-        "",
-        "Suggestions",
-        "-----------",
-    ]
-    if not analysis.suggestions:
-        lines.append("No suggestions. There is not enough gap or context evidence.")
-    for suggestion in analysis.suggestions:
-        lines.extend(
-            [
-                "",
-                f"{suggestion.label} ({suggestion.score:.0%})",
-                f"Action: {suggestion.action}",
-                f"Local MIDI evidence: {suggestion.local_evidence:.0%}",
-                f"Theory fit: {suggestion.theory_fit:.0%}",
-                f"Pitch-class movement: {suggestion.pitch_class_movement:.0%}",
-                f"Common-tone support: {suggestion.common_tone_support:.0%}",
-                *suggestion.explanation,
-            ]
-        )
-    return "\n".join(lines)
 
 
 def _gap_suggestions(

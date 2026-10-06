@@ -47,16 +47,14 @@ from pitchstems.harmony_inspector import (
 )
 from pitchstems import harmony_panel
 from pitchstems import gui_editor_actions
-from pitchstems import gui_harmony_dialogs
+from pitchstems import gui_dialogs
 from pitchstems import gui_harmony_flow
 from pitchstems import gui_export
-from pitchstems import gui_scale_dialogs
 from pitchstems import gui_pipeline_state
 from pitchstems import gui_processing
 from pitchstems import gui_editor_load
 from pitchstems import gui_editor_state
 from pitchstems import gui_project_flow
-from pitchstems import gui_shutdown
 from pitchstems import gui_transport_flow
 from pitchstems.gui_jobs import EditorLoadJobState, WorkerJobState, thread_is_alive
 from pitchstems.gui_theme import (
@@ -586,16 +584,16 @@ def main() -> int:
             self.reset_note_filter_button.clicked.connect(lambda: gui_harmony_flow.reset_chord_note_filter(self))
             self.revert_chord_edits_button.clicked.connect(lambda: gui_editor_state.revert_all_chord_edits(self))
             self.detect_chords_button.clicked.connect(lambda: gui_editor_state.generate_detected_chords(self))
-            self.inspect_chord_button.clicked.connect(lambda: gui_harmony_dialogs.inspect_current_chord_analysis(self))
-            self.inspect_theory_button.clicked.connect(lambda: gui_harmony_dialogs.inspect_current_theory_analysis(self))
+            self.inspect_chord_button.clicked.connect(lambda: gui_dialogs.inspect_current_chord_analysis(self))
+            self.inspect_theory_button.clicked.connect(lambda: gui_dialogs.inspect_current_theory_analysis(self))
             self.preview_scale_button.clicked.connect(self.preview_selected_scale)
-            self.scale_chords_button.clicked.connect(lambda: gui_scale_dialogs.show_selected_scale_chords(self))
-            self.scale_browser_button.clicked.connect(lambda: gui_scale_dialogs.show_scale_browser(self))
+            self.scale_chords_button.clicked.connect(lambda: gui_dialogs.show_selected_scale_chords(self))
+            self.scale_browser_button.clicked.connect(lambda: gui_dialogs.show_scale_browser(self))
             self.note_map_colours.toggled.connect(self.refresh_note_map_colours)
             self.chord_one_octave_button.clicked.connect(self.reset_chord_preview_to_one_octave)
             self.theory_one_octave_button.clicked.connect(self.reset_scale_preview_to_one_octave)
             self.use_gap_suggestion_button.clicked.connect(self.use_selected_gap_suggestion)
-            self.inspect_gap_suggestion_button.clicked.connect(lambda: gui_harmony_dialogs.inspect_current_gap_suggestions(self))
+            self.inspect_gap_suggestion_button.clicked.connect(lambda: gui_dialogs.inspect_current_gap_suggestions(self))
             self.gap_suggestion_list.currentItemChanged.connect(
                 lambda *_args: harmony_panel.refresh_gap_suggestion_actions(self)
             )
@@ -635,7 +633,7 @@ def main() -> int:
             self.apply_ui_scale(self.ui_scale, persist=False)
 
         def closeEvent(self, event) -> None:
-            if not gui_shutdown.request_window_close(self):
+            if not gui_processing.request_window_close(self):
                 event.ignore()
                 return
             self.save_editor_state()

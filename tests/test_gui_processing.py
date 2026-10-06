@@ -4,7 +4,6 @@ import queue
 from pathlib import Path
 
 import pitchstems.gui_processing as gui_processing
-import pitchstems.gui_shutdown as gui_shutdown
 from pitchstems.audio_clip import AudioClipRange
 from pitchstems.gui_jobs import EditorLoadJobState, WorkerJobState
 from pitchstems.pipeline_models import PipelineResult, StemResult
@@ -474,7 +473,7 @@ class _FlushWindow:
 
     def close(self) -> None:
         self.close_attempts += 1
-        if gui_shutdown.request_window_close(self):
+        if gui_processing.request_window_close(self):
             self.closed = True
 
 
@@ -537,3 +536,63 @@ def test_finish_worker_completion_ignores_stale_token() -> None:
     assert window.processing_states == []
     assert window.activity_messages == []
     assert window.logger.infos == [("Ignored stale worker completion for token %s", 42)]
+
+
+class _ShutdownWorker:
+    def __init__(self, alive: bool) -> None:
+        self._alive = alive
+
+    def is_alive(self) -> bool:
+        return self._alive
+
+
+class _ShutdownWindow:
+    def __init__(self, alive: bool) -> None:
+        self.worker = _ShutdownWorker(alive)
+        self.worker_jobs = WorkerJobState()
+        self.worker_jobs.start()
+        self.logs: list[str] = []
+        self.activities: list[str] = []
+        self.close_after_worker = False
+        self.editor_load_jobs = EditorLoadJobState()
+
+    def append_log(self, message: str) -> None:
+        self.logs.append(message)
+
+    def set_activity_message(self, message: str) -> None:
+        self.activities.append(message)
+
+    def cancel_processing(self) -> bool:
+        return gui_processing.cancel_processing(self)
+
+
+def test_request_window_close_allows_close_when_no_worker_is_alive() -> None:
+    window = _ShutdownWindow(alive=False)
+
+    assert gui_processing.request_window_close(window) is True
+    assert not window.close_after_worker
+
+
+def test_request_window_close_cancels_active_worker_and_defers_close() -> None:
+    window = _ShutdownWindow(alive=True)
+
+    assert gui_processing.request_window_close(window) is False
+    assert window.worker_jobs.is_active(1)
+    assert window.close_after_worker
+    assert window.activities[-1] == "Cancelling after the current model stage..."
+
+
+def test_request_window_close_allows_close_when_worker_state_is_retired() -> None:
+    window = _ShutdownWindow(alive=True)
+    window.worker = None
+
+    assert gui_processing.request_window_close(window) is True
+
+
+def test_request_window_close_invalidates_auxiliary_workers_when_no_processing() -> None:
+    window = _ShutdownWindow(alive=False)
+    window.editor_load_jobs.worker = object()  # type: ignore[assignment]
+
+    assert gui_processing.request_window_close(window) is True
+
+    assert window.editor_load_jobs.closing

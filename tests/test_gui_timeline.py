@@ -13,8 +13,8 @@ from PySide6.QtWidgets import QApplication
 
 from pitchstems.editor_models import ChordRegion, NoteEvent
 from pitchstems.editor_project import EditorProject, EditorTrack
+from pitchstems.gui_timeline import TimelineRenderPolicy, TimelineView
 from pitchstems.gui_track_controls import TRACK_CONTROL_MIN_HEIGHT
-from pitchstems.gui_timeline import TimelineView
 
 
 def _app() -> QApplication:
@@ -412,3 +412,19 @@ def test_chord_drag_preview_draws_lightweight_feedback(tmp_path: Path) -> None:
     assert all(item.scene() is None for item in preview_items)
     assert view.chord_drag_preview_items == []
     assert not any(sticky_item in preview_items for sticky_item, _offset in view.sticky_y_items)
+
+
+def test_timeline_render_policy_uses_dense_mode_for_many_visible_notes() -> None:
+    policy = TimelineRenderPolicy(pixels_per_second=92, visible_note_count=2500)
+
+    assert policy.dense_render is True
+    assert policy.enable_tooltips is False
+    assert policy.draw_note_labels is False
+
+
+def test_timeline_render_policy_shows_labels_only_when_zoomed_and_sparse() -> None:
+    policy = TimelineRenderPolicy(pixels_per_second=160, visible_note_count=120)
+
+    assert policy.dense_render is False
+    assert policy.enable_tooltips is True
+    assert policy.draw_note_labels is True

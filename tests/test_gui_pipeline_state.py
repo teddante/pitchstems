@@ -4,11 +4,15 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from pitchstems.gui_pipeline_state import (
+    PipelinePageModel,
+    default_midi_checked,
+    device_label,
     midi_stem_checkbox_state,
     pipeline_settings_widgets,
     restore_pipeline_settings,
     set_processing_state,
 )
+from pitchstems.transcription import optional_frequency_limit as optional_frequency
 
 
 def test_pipeline_settings_widgets_lists_controls_in_stable_order() -> None:
@@ -250,3 +254,45 @@ class _PipelineWindow:
 
     def stop_import_clip_preview(self) -> None:
         raise AssertionError("idle state should not stop preview playback")
+
+
+def test_pipeline_page_model_disables_run_controls_while_busy() -> None:
+    model = PipelinePageModel(busy=True, has_result=True, generate_midi=True)
+
+    assert model.drop_zone_enabled is False
+    assert model.run_full_enabled is False
+    assert model.run_midi_enabled is False
+    assert model.export_enabled is False
+    assert model.cancel_enabled is True
+    assert model.midi_stem_checks_enabled is False
+
+
+def test_pipeline_page_model_enables_midi_rerun_only_with_result() -> None:
+    model = PipelinePageModel(busy=False, has_result=True, generate_midi=True)
+
+    assert model.drop_zone_enabled is True
+    assert model.run_full_enabled is True
+    assert model.run_midi_enabled is True
+    assert model.export_enabled is True
+    assert model.cancel_enabled is False
+    assert model.midi_stem_checks_enabled is True
+
+
+def test_optional_frequency_treats_zero_as_unbounded() -> None:
+    assert optional_frequency(0.0) is None
+    assert optional_frequency(-10.0) is None
+    assert optional_frequency(82.4) == 82.4
+
+
+def test_default_midi_checked_excludes_unpitched_or_mix_stems() -> None:
+    assert default_midi_checked("bass") is True
+    assert default_midi_checked("drums") is False
+    assert default_midi_checked("Drum") is False
+    assert default_midi_checked("kick") is False
+
+
+def test_device_label_describes_auto_and_forced_modes() -> None:
+    assert device_label("cpu", cuda_available=True) == "PyTorch CPU (forced)"
+    assert device_label("cuda:0", cuda_available=True) == "PyTorch CUDA (cuda:0)"
+    assert device_label(None, cuda_available=True) == "PyTorch CUDA (auto)"
+    assert device_label(None, cuda_available=False) == "PyTorch CPU (auto fallback)"

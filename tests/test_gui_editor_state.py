@@ -8,9 +8,47 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtCore import Qt
 
+from pitchstems import gui_editor_state
 from pitchstems.editor_models import ChordRegion
 from pitchstems.editor_project import EditorProject
-from pitchstems import gui_editor_state
+from pitchstems.gui_editor_state import EditorLayoutPolicy, EditorSummaryModel
+
+
+def test_editor_summary_model_empty_project() -> None:
+    model = EditorSummaryModel(track_count=0, note_count=0, duration_seconds=0.0)
+
+    assert model.has_timeline is False
+    assert model.fit_song_enabled is False
+    assert model.summary == "Run separation + MIDI to build an editor timeline."
+
+
+def test_editor_summary_model_loaded_project() -> None:
+    model = EditorSummaryModel(track_count=2, note_count=150, duration_seconds=92.4)
+
+    assert model.has_timeline is True
+    assert model.fit_song_enabled is True
+    assert "2 tracks" in model.summary
+    assert "150 notes" in model.summary
+
+
+def test_editor_layout_policy_uses_compact_panels_below_desktop_width() -> None:
+    policy = EditorLayoutPolicy(window_width=900)
+
+    assert policy.compact is True
+    assert policy.harmony_panel_min_width == 260
+    assert policy.harmony_panel_width == 360
+    assert policy.track_panel_min_width == 220
+    assert policy.track_panel_width == 250
+
+
+def test_editor_layout_policy_uses_roomier_panels_on_default_window() -> None:
+    policy = EditorLayoutPolicy(window_width=1220)
+
+    assert policy.compact is False
+    assert policy.harmony_panel_min_width == 300
+    assert policy.harmony_panel_width == 440
+    assert policy.track_panel_min_width == 250
+    assert policy.track_panel_width == 280
 
 
 class _Item:

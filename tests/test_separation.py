@@ -6,7 +6,13 @@ import pytest
 
 import pitchstems.separation as separation
 from pitchstems.model_catalog import model_choice
-from pitchstems.separation import _redirect_output, _registry_model
+from pitchstems.pipeline_models import StemResult
+from pitchstems.separation import (
+    _redirect_output,
+    _registry_model,
+    _retain_selected_stem,
+    model_key_for_profile,
+)
 
 
 def test_redirect_output_captures_stderr_when_console_stream_is_missing(monkeypatch) -> None:
@@ -52,3 +58,30 @@ def test_separation_fails_when_native_backend_produces_no_stems(
 
     with pytest.raises(RuntimeError, match="did not produce any stems"):
         separation.separate_stems(audio, tmp_path / "out")
+
+
+def test_model_key_for_profile_resolves_current_and_legacy_profiles() -> None:
+    assert model_key_for_profile("song-6-stem") == "bs_roformer_sw"
+    assert model_key_for_profile("best") == "bs_roformer_sw"
+
+
+def test_default_profile_reuses_model_catalog_stems_and_registry_id() -> None:
+    choice = model_choice("bs_roformer_sw")
+    assert choice.stems == ["vocals", "drums", "bass", "guitar", "piano", "other", "instrumental"]
+    assert choice.native_model_id == "roformer-model-bs-roformer-sw-by-jarredou"
+
+
+def test_retain_selected_stem_removes_other_new_outputs(tmp_path: Path) -> None:
+    bass = tmp_path / "bass.wav"
+    drums = tmp_path / "drums.wav"
+    bass.write_bytes(b"bass")
+    drums.write_bytes(b"drums")
+
+    selected = _retain_selected_stem(
+        [StemResult("bass", bass), StemResult("drums", drums)],
+        "bass",
+    )
+
+    assert selected == [StemResult("bass", bass)]
+    assert bass.exists()
+    assert not drums.exists()

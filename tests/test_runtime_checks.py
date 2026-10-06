@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pitchstems.runtime_checks as runtime_checks
-from pitchstems.acceleration import OnnxRuntimeStatus
+from pitchstems.acceleration import OnnxRuntimeStatus, TorchStatus
 from pitchstems.model_assets import ModelAssetStatus
 from pitchstems.model_catalog import DEFAULT_MODEL_KEY
 from pitchstems.runtime_checks import (
@@ -110,7 +110,7 @@ def test_preflight_reports_unwritable_output_root(monkeypatch, tmp_path: Path) -
     assert "Output directory" in report.failure_summary()
 
 
-def test_preflight_can_skipmodel_registry_check_when_ml_not_required(monkeypatch) -> None:
+def test_preflight_can_skip_model_registry_check_when_ml_not_required(monkeypatch) -> None:
     monkeypatch.setattr("pitchstems.runtime_checks.require_ffmpeg", lambda: "ffmpeg")
 
     report = run_preflight(require_ml=False, model_key="bs_roformer_sw")
@@ -142,7 +142,7 @@ def test_preflight_can_require_separation_without_transcription(monkeypatch) -> 
     assert any(check.name == "BS-RoFormer native backend" for check in report.checks)
 
 
-def testmodel_registry_check_imports_and_validates_requested_model(monkeypatch) -> None:
+def test_model_registry_check_imports_and_validates_requested_model(monkeypatch) -> None:
     monkeypatch.setattr(
         "pitchstems.runtime_checks.importlib.import_module",
         lambda _name: SimpleNamespace(
@@ -156,7 +156,7 @@ def testmodel_registry_check_imports_and_validates_requested_model(monkeypatch) 
     assert check.detail == "roformer-model-bs-roformer-sw-by-jarredou"
 
 
-def testbasic_pitch_check_reports_loaded_provider(monkeypatch) -> None:
+def test_basic_pitch_check_reports_loaded_provider(monkeypatch) -> None:
     monkeypatch.setattr(
         "pitchstems.runtime_checks.load_basic_pitch_runtime",
         lambda: (object(), "ONNX CPU"),
@@ -168,7 +168,7 @@ def testbasic_pitch_check_reports_loaded_provider(monkeypatch) -> None:
     assert check.detail == "model loaded: ONNX CPU"
 
 
-def testbasic_pitch_check_reports_session_failure(monkeypatch) -> None:
+def test_basic_pitch_check_reports_session_failure(monkeypatch) -> None:
     def fail():
         raise RuntimeError("bad model")
 
@@ -205,3 +205,99 @@ def test_run_setup_uses_shared_full_model_verification(monkeypatch, tmp_path: Pa
         "verify_hash": True,
     }
     assert "OK        model.bin: verified" in runtime_checks.format_setup_result(result)
+
+
+def test_command_check_reports_path_or_missing_command(monkeypatch) -> None:
+    monkeypatch.setattr(runtime_checks.shutil, "which", lambda name: "/bin/ffmpeg" if name == "ffmpeg" else None)
+
+    assert runtime_checks.command_check("FFmpeg", "ffmpeg") == RuntimeCheck("FFmpeg", True, "/bin/ffmpeg")
+    missing = runtime_checks.command_check("NVIDIA driver", "nvidia-smi")
+    assert not missing.ok
+    assert "`nvidia-smi` was not found on PATH" == missing.detail
+
+
+def test_python_check_reports_running_version() -> None:
+    check = runtime_checks.python_check()
+
+    assert check.name == "Python"
+    assert "supports Python 3.10 and 3.11" in check.detail
+
+
+def test_module_check_reports_first_line_of_import_failure() -> None:
+    check = runtime_checks.module_check("Missing", "pitchstems_definitely_missing_module")
+
+    assert not check.ok
+    assert check.detail.startswith("`pitchstems_definitely_missing_module` import failed:")
+    assert runtime_checks.module_check("MIDI tools", "json").ok
+
+
+def test_gpu_checks_report_missing_and_available_runtimes() -> None:
+    assert not runtime_checks.onnxruntime_cuda_check(OnnxRuntimeStatus(installed=False, providers=[])).ok
+    cuda = runtime_checks.onnxruntime_cuda_check(
+        OnnxRuntimeStatus(installed=True, providers=["CUDAExecutionProvider"])
+    )
+    assert cuda.ok and "CUDAExecutionProvider" in cuda.detail
+    cpu_only = runtime_checks.onnxruntime_cuda_check(OnnxRuntimeStatus(installed=True, providers=[]))
+    assert not cpu_only.ok and cpu_only.detail == "providers: no providers"
+
+    assert runtime_checks.torch_cuda_check(TorchStatus(installed=False, cuda_available=False)).detail == "`torch` missing"
+    no_cuda = runtime_checks.torch_cuda_check(TorchStatus(installed=True, cuda_available=False))
+    assert not no_cuda.ok and no_cuda.detail == "CUDA is not available to PyTorch"
+    gpu = runtime_checks.torch_cuda_check(
+        TorchStatus(installed=True, cuda_available=True, device_name="RTX")
+    )
+    assert gpu == RuntimeCheck("PyTorch CUDA", True, "RTX")
+
+
+def test_run_checks_adds_gpu_checks_and_formats_status(monkeypatch) -> None:
+    monkeypatch.setattr(runtime_checks.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(
+        runtime_checks,
+        "onnxruntime_status",
+        lambda: OnnxRuntimeStatus(installed=True, providers=["CPUExecutionProvider"]),
+    )
+    monkeypatch.setattr(runtime_checks, "torch_status", lambda: TorchStatus(installed=False, cuda_available=False))
+    monkeypatch.setattr(runtime_checks, "load_basic_pitch_runtime", lambda: (object(), "ONNX CPU"))
+
+    checks = runtime_checks.run_checks(require_gpu=True)
+    names = [check.name for check in checks]
+
+    assert names[-3:] == ["NVIDIA driver", "ONNX Runtime CUDA", "PyTorch CUDA"]
+    text = runtime_checks.format_checks(checks)
+    assert "MISSING FFmpeg:" in text
+    assert "OK      Basic Pitch: model loaded: ONNX CPU" in text
+
+
+def test_model_registry_check_reports_unknown_model_and_import_failure(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "pitchstems.runtime_checks.importlib.import_module",
+        lambda _name: SimpleNamespace(MODEL_REGISTRY={}),
+    )
+    assert not model_registry_check("bs_roformer_sw").ok
+
+    def fail(_name):
+        raise ImportError("no backend")
+
+    monkeypatch.setattr("pitchstems.runtime_checks.importlib.import_module", fail)
+    check = model_registry_check("bs_roformer_sw")
+    assert not check.ok and check.detail == "no backend"
+
+
+def test_run_setup_reports_repair_failure_with_current_statuses(monkeypatch, tmp_path: Path) -> None:
+    logs: list[str] = []
+    statuses = [ModelAssetStatus("model.bin", tmp_path / "model.bin", False, "missing")]
+    monkeypatch.setattr(runtime_checks, "run_checks", lambda require_gpu: [])
+
+    def fail(*_args, **_kwargs):
+        raise RuntimeError("download failed")
+
+    monkeypatch.setattr(runtime_checks, "ensure_model_assets", fail)
+    monkeypatch.setattr(runtime_checks, "model_asset_statuses", lambda *_args, **_kwargs: statuses)
+
+    result = runtime_checks.run_setup(log=logs.append)
+
+    assert not result.ok
+    assert logs == ["Setup repair failed: download failed"]
+    text = runtime_checks.format_setup_result(result)
+    assert "NEEDS FIX model.bin: missing" in text
+    assert "Setup error: download failed" in text

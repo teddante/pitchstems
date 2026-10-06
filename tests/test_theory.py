@@ -4,8 +4,9 @@ import pitchstems.scale_analysis as scale_analysis
 from pitchstems.editor_models import ChordRegion, NoteEvent
 from pitchstems.chord_gap_analysis import analyze_chord_gap as analyze_gap_from_module
 from pitchstems.scale_analysis import analyze_theory_region as analyze_theory_from_module
-from pitchstems.chord_gap_analysis import analyze_chord_gap, chord_gap_report
-from pitchstems.scale_analysis import SCALE_REGISTRY, analyze_theory_region, theory_analysis_report
+from pitchstems.chord_gap_analysis import analyze_chord_gap
+from pitchstems.harmony_report import chord_gap_report, theory_analysis_report
+from pitchstems.scale_analysis import SCALE_REGISTRY, analyze_theory_region
 from pitchstems.scale_chords import contained_chords_for_scale, searchable_scale_labels
 
 

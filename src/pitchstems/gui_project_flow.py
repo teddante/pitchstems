@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from pathlib import Path
 
 from pitchstems.app_logging import logs_dir
-from pitchstems.file_opening import open_folder
 from pitchstems.gui_editor_state import EMPTY_EDITOR_SUMMARY
 from pitchstems.gui_helpers import blocked_signals, clear_layout
 from pitchstems.gui_import_clip import waveform_preview_for_path
@@ -307,3 +307,19 @@ def open_folder_path(window, target: Path, label: str) -> None:
         window.statusBar().showMessage(f"Could not open {label}. See logs for details.", 6000)
         return
     window.statusBar().showMessage(f"Opened {label}: {opened}", 3000)
+
+
+def open_folder(path: Path, opener: Callable[[str], object] | None = None) -> Path:
+    target = path.expanduser()
+    target.mkdir(parents=True, exist_ok=True)
+    result = opener(str(target)) if opener is not None else _qt_open_folder(target)
+    if result is False:
+        raise RuntimeError(f"Could not open folder: {target}")
+    return target
+
+
+def _qt_open_folder(path: Path) -> bool:
+    from PySide6.QtCore import QUrl
+    from PySide6.QtGui import QDesktopServices
+
+    return QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))

@@ -36,3 +36,22 @@ def test_chord_index_uses_ordered_starts_for_active_lookup() -> None:
     assert index.active_at(2.5) == chords[1]
     assert index.active_at(3.5) is None
     assert index.gap_at(3.5) == (3.0, 4.0)
+
+
+def test_note_index_returns_correct_dense_active_notes() -> None:
+    notes = [
+        NoteEvent(
+            stem="piano",
+            start=index * 0.01,
+            end=index * 0.01 + 0.5,
+            pitch=60 + index % 24,
+            velocity=80,
+        )
+        for index in range(10_000)
+    ]
+    index = NoteIndex(notes)
+
+    active = index.active_at(50.0)
+
+    assert active
+    assert all(note.start <= 50.0 < note.end for note in active)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pitchstems.chord_gap_analysis import ChordGapAnalysis
 from pitchstems.chord_analysis import analyze_chord_at, analyze_chord_region, analyze_chord_regions
 from pitchstems.editor_models import NoteEvent
 from pitchstems.review_ranges import (
@@ -10,6 +11,7 @@ from pitchstems.review_ranges import (
 )
 from pitchstems import gui_harmony_flow
 from pitchstems.midi_energy import active_notes_at, midi_velocity_energy, note_overlap_seconds
+from pitchstems.scale_analysis import TheoryAnalysis
 from pitchstems.notation import pitch_class_for_name
 from pitchstems.time_format import format_time
 
@@ -225,3 +227,104 @@ def pitch_class_list(window, pitch_classes: set[int]) -> str:
     if not pitch_classes:
         return "-"
     return ", ".join(window.display_pitch_class_name(pitch_class) for pitch_class in sorted(pitch_classes))
+
+
+def theory_analysis_report(analysis: TheoryAnalysis) -> str:
+    detected = analysis.label or "No clear key/mode"
+    score_label = "ranking score" if analysis.label else "best candidate score"
+    lines = [
+        "Theory Inspector Calculation",
+        "============================",
+        f"Detected interpretation: {detected} ({score_label} {analysis.confidence:.0%})",
+        "",
+        "Pitch Evidence",
+        "--------------",
+        "MIDI energy model: note energy = overlap_seconds * (velocity / 127)^2.",
+        "Pitch classes are summed across octaves and selected analysis tracks.",
+        "Pitch fit means the observed energy fits the scale; interpretation strength also needs enough coverage and tonal-centre evidence.",
+        "",
+        "Weighted Pitch Classes",
+        "----------------------",
+    ]
+    if analysis.note_weights:
+        lines.extend(f"{name:>2}: {weight:.0%}" for name, weight in analysis.note_weights)
+    else:
+        lines.append("-")
+    lines.extend(["", "Scale / Key / Mode Candidates", "-----------------------------"])
+    if not analysis.candidates:
+        lines.append("No candidates. There is not enough pitch evidence.")
+    for candidate in analysis.candidates:
+        lines.extend(
+            [
+                "",
+                f"{candidate.label} ({candidate.score:.0%})",
+                f"Scale notes: {' - '.join(candidate.notes)}",
+                f"Family: {candidate.scale.family}",
+                f"Aliases: {', '.join(candidate.scale.aliases) or '-'}",
+                f"Pitch fit: {candidate.pitch_fit:.0%}",
+                f"Evidence coverage: {candidate.evidence_strength:.0%}",
+                f"Outside energy: {candidate.outside_energy:.0%}",
+                f"Tonal-centre strength: {candidate.center_strength:.0%}",
+                f"Chord support: {candidate.chord_support:.0%}",
+                *candidate.explanation,
+            ]
+        )
+    if analysis.progression:
+        lines.extend(
+            [
+                "",
+                "Progression",
+                "-----------",
+                f"Chords: {' - '.join(analysis.progression.chord_labels) or '-'}",
+                f"In {analysis.progression.candidate_label}: "
+                f"{' - '.join(analysis.progression.roman_numerals) or '-'}",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "Suggested Note Groups",
+            "---------------------",
+            f"Core chord tones: {' - '.join(analysis.core_notes) or '-'}",
+            f"In-scale notes: {' - '.join(analysis.scale_notes) or '-'}",
+            f"Outside notes: {' - '.join(analysis.outside_notes) or '-'}",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def chord_gap_report(analysis: ChordGapAnalysis) -> str:
+    lines = [
+        "Chord Gap Suggestions",
+        "=====================",
+        f"Gap: {format_time(analysis.start)} - {format_time(analysis.end)}",
+        f"Previous chord: {analysis.previous_chord.label if analysis.previous_chord else '-'}",
+        f"Next chord: {analysis.next_chord.label if analysis.next_chord else '-'}",
+        "",
+        "Evidence Model",
+        "--------------",
+        "Local MIDI evidence uses the same overlap_seconds * (velocity / 127)^2 energy model.",
+        "Theory fit checks formal chord tones against the current scale/key/mode candidate.",
+        "Pitch-class movement uses minimum distance on the 12-tone circle; it does not model register-aware part-writing.",
+        "Common-tone support counts shared pitch classes with neighbouring chord regions.",
+        "Suggestions are ordered by evidence-first ranking rules, not blended policy weights.",
+        "",
+        "Suggestions",
+        "-----------",
+    ]
+    if not analysis.suggestions:
+        lines.append("No suggestions. There is not enough gap or context evidence.")
+    for suggestion in analysis.suggestions:
+        lines.extend(
+            [
+                "",
+                f"{suggestion.label} ({suggestion.score:.0%})",
+                f"Action: {suggestion.action}",
+                f"Local MIDI evidence: {suggestion.local_evidence:.0%}",
+                f"Theory fit: {suggestion.theory_fit:.0%}",
+                f"Pitch-class movement: {suggestion.pitch_class_movement:.0%}",
+                f"Common-tone support: {suggestion.common_tone_support:.0%}",
+                *suggestion.explanation,
+            ]
+        )
+    return "\n".join(lines)

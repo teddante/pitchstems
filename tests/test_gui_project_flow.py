@@ -7,6 +7,7 @@ from pitchstems.gui_project_flow import (
     _reset_loaded_project_state,
     _reset_project_view_state,
     _reset_track_control_state,
+    open_folder,
     set_audio_path,
 )
 
@@ -235,3 +236,23 @@ def test_reset_project_view_state_clears_visible_project_controls() -> None:
     assert window.chord_list.cleared
     assert keyboard_refreshes == ["refreshed"]
     assert window.timeline.project is None
+
+
+def test_open_folder_creates_target_and_calls_opener(tmp_path: Path) -> None:
+    opened = []
+    target = tmp_path / "new-folder"
+
+    result = open_folder(target, opener=opened.append)
+
+    assert result == target
+    assert target.is_dir()
+    assert opened == [str(target)]
+
+
+def test_open_folder_uses_cross_platform_qt_opener(tmp_path: Path, monkeypatch) -> None:
+    opened = []
+    monkeypatch.setattr("pitchstems.gui_project_flow._qt_open_folder", lambda path: opened.append(path) or True)
+
+    target = tmp_path / "folder"
+    assert open_folder(target) == target
+    assert opened == [target]

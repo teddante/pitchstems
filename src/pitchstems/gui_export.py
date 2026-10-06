@@ -122,7 +122,7 @@ def _close_after_export_if_requested(window) -> None:
     if not getattr(window, "close_after_export", False):
         return
     window.close_after_export = False
-    from pitchstems.gui_shutdown import begin_auxiliary_shutdown
+    from pitchstems.gui_processing import begin_auxiliary_shutdown
 
     begin_auxiliary_shutdown(window)
     window.close()
