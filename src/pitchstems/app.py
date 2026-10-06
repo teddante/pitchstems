@@ -60,7 +60,7 @@ from pitchstems import gui_editor_state
 from pitchstems import gui_project_flow
 from pitchstems import gui_shutdown
 from pitchstems import gui_transport_flow
-from pitchstems.gui_jobs import EditorLoadJobState, MidiPreviewJobState, WorkerJobState, thread_is_alive
+from pitchstems.gui_jobs import EditorLoadJobState, WorkerJobState, thread_is_alive
 from pitchstems.gui_theme import (
     DEFAULT_UI_SCALE,
     UI_SCALE_STEP,
@@ -136,7 +136,6 @@ def main() -> int:
     from pitchstems.gui_timeline import TimelineView
     from pitchstems.gui_transport import (
         TransportController,
-        find_existing_midi_previews,
         loop_playback_start,
         reset_player_source,
         safe_qt_multimedia_call,
@@ -157,7 +156,6 @@ def main() -> int:
             self.worker: threading.Thread | None = None
             self.worker_jobs = WorkerJobState()
             self.editor_load_jobs = EditorLoadJobState()
-            self.midi_preview_jobs = MidiPreviewJobState()
             self.close_after_worker = False
             self.latest_output_dir: Path | None = None
             self.current_result: PipelineResult | None = None
@@ -182,7 +180,6 @@ def main() -> int:
                 track_midi_checks=self.track_midi_checks,
                 track_midi_sliders=self.track_midi_sliders,
             )
-            self.rendering_midi_previews: set[str] = set()
             self.export_worker: threading.Thread | None = None
             self.export_cancel_event: threading.Event | None = None
             self.close_after_export = False
@@ -1118,25 +1115,6 @@ def main() -> int:
 
         def clear_transport_players(self) -> None:
             self.transport.clear_players()
-
-        def find_existing_midi_previews(self, result: PipelineResult) -> dict[str, Path]:
-            return find_existing_midi_previews(result)
-
-        def start_midi_preview_render(
-            self,
-            result: PipelineResult,
-            requested_stems: set[str] | None = None,
-        ) -> None:
-            gui_transport_flow.start_midi_preview_render(self, result, requested_stems)
-
-        def _midi_preview_worker_running(self, project_dir: Path, stem_name: str) -> bool:
-            return gui_transport_flow.midi_preview_worker_running(self, project_dir, stem_name)
-
-        def clear_midi_preview_worker(self, project_dir: Path, stem_name: str, token: int) -> None:
-            gui_transport_flow.clear_midi_preview_worker(self, project_dir, stem_name, token)
-
-        def attach_midi_preview_players(self, previews: dict[str, Path], finish_activity: bool = True) -> None:
-            gui_transport_flow.attach_midi_preview_players(self, previews, finish_activity)
 
         def refresh_playback_mix(self) -> None:
             self.transport.refresh_mix()

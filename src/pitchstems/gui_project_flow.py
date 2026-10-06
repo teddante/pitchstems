@@ -181,7 +181,6 @@ def reset_stage_state(window, path: Path | None = None) -> None:
     window.invalidate_worker_token()
     window.editor_load_jobs.next()
     window.editor_load_jobs.activity_tokens.clear()
-    window.midi_preview_jobs.next()
     if path is None:
         window.drop_zone.reset_prompt()
     _reset_loaded_project_state(window)
@@ -286,7 +285,6 @@ def _reset_loaded_project_state(window) -> None:
 
 
 def _reset_track_control_state(window) -> None:
-    window.rendering_midi_previews.clear()
     window.clear_transport_players()
     reset_track_control_widgets(window)
 

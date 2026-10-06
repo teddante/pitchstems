@@ -16,8 +16,8 @@ from pitchstems.project_store import (
     _midi_results_manifest,
     _stem_results_from_manifest,
     _stem_results_manifest,
-    _write_json_atomic,
 )
+from pitchstems.atomic_files import write_json_atomic
 from pitchstems.separation import SeparationOptions
 from pitchstems.transcription import MidiOptions
 
@@ -125,7 +125,7 @@ def test_save_project_manifest_removes_unimplemented_note_edits(tmp_path: Path) 
     manifest_path = save_project_manifest(result)
     manifest = load_project_manifest(manifest_path)
     manifest["editor"]["note_edits"] = [{"stem": "bass", "pitch": 48, "start": 1.25}]
-    _write_json_atomic(manifest_path, manifest)
+    write_json_atomic(manifest_path, manifest)
 
     save_project_manifest(result, track_visibility={"bass": False}, notation_spelling="sharp")
     updated = load_project_manifest(manifest_path)
@@ -160,7 +160,7 @@ def test_save_project_manifest_writes_explicit_falsey_editor_values(tmp_path: Pa
     )
     manifest = load_project_manifest(manifest_path)
     manifest["editor"]["note_edits"] = [{"stem": "bass", "pitch": 48, "start": 1.25}]
-    _write_json_atomic(manifest_path, manifest)
+    write_json_atomic(manifest_path, manifest)
 
     save_project_manifest(
         result,
@@ -329,7 +329,7 @@ def test_write_json_atomic_replaces_existing_manifest_without_temp_file(tmp_path
     manifest_path = tmp_path / PROJECT_FILENAME
     manifest_path.write_text('{"old": true}', encoding="utf-8")
 
-    _write_json_atomic(manifest_path, {"new": True})
+    write_json_atomic(manifest_path, {"new": True})
 
     assert json.loads(manifest_path.read_text(encoding="utf-8")) == {"new": True}
     assert not list(tmp_path.glob(f".{PROJECT_FILENAME}.*.tmp"))

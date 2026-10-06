@@ -25,4 +25,3 @@ def request_window_close(window) -> bool:
 def begin_auxiliary_shutdown(window) -> None:
     window.waveform_token = getattr(window, "waveform_token", 0) + 1
     window.editor_load_jobs.begin_closing()
-    window.midi_preview_jobs.begin_closing()

@@ -1,6 +1,5 @@
 from pathlib import Path
 from types import SimpleNamespace
-import wave
 
 import pytest
 
@@ -10,14 +9,12 @@ from PySide6.QtCore import QUrl
 
 from pitchstems.gui_transport import (
     TransportController,
-    find_existing_midi_previews,
     loop_playback_start,
     reset_player_source,
     safe_qt_multimedia_call,
     start_player_source,
 )
 from pitchstems import gui_transport_flow
-from pitchstems.gui_transport_flow import midi_preview_note_stems, midi_preview_stems_to_render
 from pitchstems.pipeline_models import PipelineResult, StemResult
 
 
@@ -52,79 +49,6 @@ def test_update_transport_position_loops_selected_chord_range() -> None:
 
     assert window.seeked_seconds == [1.0]
     assert window.positions == [1.0]
-
-
-def test_midi_preview_stems_to_render_filters_unavailable_tracks(tmp_path: Path) -> None:
-    result = _pipeline_result(tmp_path / "song.pitchstems", [])
-    window = _PreviewWindow(
-        tracks=["Bass", "Drums", "Piano", "Ready"],
-        note_stems=["bass", "drums", "ready"],
-        existing_previews={"Ready": tmp_path / "ready.wav"},
-        running={"drums"},
-    )
-
-    assert midi_preview_stems_to_render(window, result, {"BASS", "drums", "piano", "ready"}) == ["Bass"]
-    assert window.worker_checks == [
-        (result.project_dir, "Bass"),
-        (result.project_dir, "Drums"),
-    ]
-
-
-def test_midi_preview_stems_to_render_requires_project_notes(tmp_path: Path) -> None:
-    result = _pipeline_result(tmp_path / "song.pitchstems", [])
-    window = _PreviewWindow(tracks=["Bass"], note_stems=[])
-
-    assert midi_preview_stems_to_render(window, result) == []
-
-    window.editor_project = None
-
-    assert midi_preview_stems_to_render(window, result) == []
-
-
-def test_midi_preview_note_stems_normalizes_note_stem_names() -> None:
-    notes = [
-        SimpleNamespace(stem="Bass"),
-        SimpleNamespace(stem="bass"),
-        SimpleNamespace(stem="PIANO"),
-    ]
-
-    assert midi_preview_note_stems(notes) == {"bass", "piano"}
-
-
-def test_find_existing_midi_previews_returns_existing_stem_previews(tmp_path: Path) -> None:
-    preview_dir = tmp_path / "editor" / "midi-preview"
-    preview_dir.mkdir(parents=True)
-    bass_preview = preview_dir / "bass_midi_preview.wav"
-    _write_wav(bass_preview)
-    result = _pipeline_result(
-        tmp_path,
-        [
-            StemResult("bass", tmp_path / "bass.wav"),
-            StemResult("piano", tmp_path / "piano.wav"),
-        ],
-    )
-
-    assert find_existing_midi_previews(result) == {"bass": bass_preview}
-
-
-def test_find_existing_midi_previews_uses_sanitized_stem_names(tmp_path: Path) -> None:
-    preview_dir = tmp_path / "editor" / "midi-preview"
-    preview_dir.mkdir(parents=True)
-    preview = preview_dir / "bad_stem_midi_preview.wav"
-    _write_wav(preview)
-    result = _pipeline_result(tmp_path, [StemResult("../bad/stem", tmp_path / "bad.wav")])
-
-    assert find_existing_midi_previews(result) == {"../bad/stem": preview}
-
-
-def test_find_existing_midi_previews_ignores_unreadable_wavs(tmp_path: Path) -> None:
-    preview_dir = tmp_path / "editor" / "midi-preview"
-    preview_dir.mkdir(parents=True)
-    bass_preview = preview_dir / "bass_midi_preview.wav"
-    bass_preview.write_bytes(b"not a wav")
-    result = _pipeline_result(tmp_path, [StemResult("bass", tmp_path / "bass.wav")])
-
-    assert find_existing_midi_previews(result) == {}
 
 
 def test_prepare_players_reuses_players_for_same_result(monkeypatch, tmp_path: Path) -> None:
@@ -176,7 +100,7 @@ def test_prepare_players_reuses_players_for_same_result(monkeypatch, tmp_path: P
     ]
 
 
-def test_prepare_transport_players_does_not_render_missing_midi_previews(tmp_path: Path) -> None:
+def test_prepare_transport_players_prepares_live_midi_synth(tmp_path: Path) -> None:
     result = _pipeline_result(tmp_path, [StemResult("bass", tmp_path / "bass.wav")])
     window = _PrepareTransportWindow()
 
@@ -184,8 +108,6 @@ def test_prepare_transport_players_does_not_render_missing_midi_previews(tmp_pat
 
     assert window.transport.prepared_results == [result]
     assert window.transport.prepared_midi_synths == [(window.editor_project.notes, window.editor_project.duration)]
-    assert window.attached_previews == []
-    assert window.started_midi_renders == []
     assert window.refreshed_mix
 
 
@@ -224,30 +146,15 @@ def test_start_player_source_sets_source_and_plays() -> None:
     assert player.actions == ["setSource:file:///preview.wav", "play"]
 
 
-def test_attach_midi_preview_players_preserves_disabled_controls(monkeypatch, tmp_path: Path) -> None:
+def test_disabled_midi_controls_are_not_played(monkeypatch) -> None:
     monkeypatch.setattr("pitchstems.gui_transport.QMediaPlayer", _FakePlayer)
     monkeypatch.setattr("pitchstems.gui_transport.QAudioOutput", _FakeAudioOutput)
     midi_check = _FakeCheck(checked=True, enabled=False)
     midi_slider = _FakeSlider(value=70, enabled=False)
     controller = TransportController(None, _Logger(), {}, {}, {"piano": midi_check}, {"piano": midi_slider})
-    preview = tmp_path / "piano_midi_preview.wav"
-    _write_wav(preview)
 
-    assert controller.attach_midi_preview_players({"piano": preview}, 12.0) == 1
-
-    assert not midi_check.enabled
-    assert not midi_slider.enabled
-    assert "generated MIDI preview audio" in midi_check.tooltip
-    assert midi_slider.tooltip == "MIDI preview audio volume."
+    assert controller.midi_track_volumes() == {}
     assert not controller.midi_track_enabled("piano")
-
-
-def _write_wav(path: Path) -> None:
-    with wave.open(str(path), "wb") as wav:
-        wav.setnchannels(1)
-        wav.setsampwidth(2)
-        wav.setframerate(8000)
-        wav.writeframes(b"\x00\x00" * 16)
 
 
 class _Logger:
@@ -316,31 +223,8 @@ class _TransportWindow:
         self.positions.append(seconds)
 
 
-class _PreviewWindow:
-    def __init__(
-        self,
-        tracks: list[str],
-        note_stems: list[str],
-        existing_previews: dict[str, Path] | None = None,
-        running: set[str] | None = None,
-    ) -> None:
-        self.midi_preview_jobs = SimpleNamespace(closing=False)
-        self.editor_project = SimpleNamespace(
-            tracks=[SimpleNamespace(name=name) for name in tracks],
-            notes=[SimpleNamespace(stem=stem) for stem in note_stems],
-        )
-        self.transport = SimpleNamespace(midi_preview_paths=existing_previews or {})
-        self.running = {stem.lower() for stem in (running or set())}
-        self.worker_checks: list[tuple[Path, str]] = []
-
-    def _midi_preview_worker_running(self, project_dir: Path, stem_name: str) -> bool:
-        self.worker_checks.append((project_dir, stem_name))
-        return stem_name.lower() in self.running
-
-
 class _PrepareTransport:
     def __init__(self) -> None:
-        self.midi_preview_paths: dict[str, Path] = {}
         self.prepared_results: list[PipelineResult] = []
         self.prepared_midi_synths: list[tuple[list[object], float]] = []
 
@@ -357,8 +241,6 @@ class _PrepareTransportWindow:
         self.editor_project = SimpleNamespace(notes=[SimpleNamespace(stem="bass")], duration=12.0)
         self.track_midi_checks = {"bass": _FakeCheck(True, True)}
         self.activity_messages: list[str] = []
-        self.attached_previews: list[dict[str, Path]] = []
-        self.started_midi_renders: list[tuple[PipelineResult, set[str] | None]] = []
         self.refreshed_mix = False
 
     def set_activity_message(self, message: str) -> None:
@@ -366,17 +248,6 @@ class _PrepareTransportWindow:
 
     def pause_transport(self) -> None:
         pass
-
-    def attach_midi_preview_players(self, previews: dict[str, Path], finish_activity: bool = True) -> None:
-        del finish_activity
-        self.attached_previews.append(previews)
-
-    def start_midi_preview_render(
-        self,
-        result: PipelineResult,
-        requested_stems: set[str] | None = None,
-    ) -> None:
-        self.started_midi_renders.append((result, requested_stems))
 
     def refresh_playback_mix(self) -> None:
         self.refreshed_mix = True

@@ -1,10 +1,5 @@
 from __future__ import annotations
 
-import threading
-from pathlib import Path
-
-from pitchstems.midi_preview import render_midi_preview
-
 
 def prepare_transport_players(window, result) -> None:
     window.set_activity_message("Preparing audio players...")
@@ -13,118 +8,6 @@ def prepare_transport_players(window, result) -> None:
     if window.editor_project is not None:
         window.transport.prepare_midi_synth(window.editor_project.notes, window.editor_project.duration)
     window.refresh_playback_mix()
-
-
-def start_midi_preview_render(window, result, requested_stems: set[str] | None = None) -> None:
-    missing = midi_preview_stems_to_render(window, result, requested_stems)
-    if not missing:
-        return
-    project = window.editor_project
-    preview_dir = result.project_dir / "editor" / "midi-preview"
-    token = window.midi_preview_jobs.token
-    window.rendering_midi_previews.update(missing)
-    window.refresh_timeline_track_summaries()
-    window.append_log(f"Rendering MIDI preview audio for {', '.join(missing)} in the background...")
-    window.midi_preview_jobs.activity_counts[token] = (
-        window.midi_preview_jobs.activity_counts.get(token, 0) + 1
-    )
-    window.begin_activity("Rendering MIDI preview audio...")
-
-    def worker() -> None:
-        previews: dict[str, Path] = {}
-        try:
-            for stem_name in missing:
-                preview = render_midi_preview(
-                    stem_name,
-                    project.notes,
-                    preview_dir,
-                    project.duration,
-                )
-                if preview:
-                    previews[stem_name] = preview
-            if window.midi_preview_jobs.closing or token != window.midi_preview_jobs.token:
-                window.messages.put(
-                    ("MIDI_PREVIEW_DISCARDED", token, result.project_dir, set(missing))
-                )
-                return
-            window.messages.put(("MIDI_PREVIEWS", token, result.project_dir, set(missing), previews))
-        except Exception as exc:
-            window.logger.exception("MIDI preview render failed")
-            if window.midi_preview_jobs.closing or token != window.midi_preview_jobs.token:
-                window.messages.put(
-                    ("MIDI_PREVIEW_DISCARDED", token, result.project_dir, set(missing))
-                )
-                return
-            window.messages.put(
-                (
-                    "MIDI_PREVIEW_FAILED",
-                    token,
-                    result.project_dir,
-                    set(missing),
-                    f"Could not render MIDI previews: {exc}",
-                )
-            )
-
-    worker_thread = threading.Thread(target=worker, daemon=True)
-    for stem_name in missing:
-        window.midi_preview_jobs.workers[(result.project_dir, stem_name.lower())] = (token, worker_thread)
-    worker_thread.start()
-
-
-def midi_preview_stems_to_render(window, result, requested_stems: set[str] | None = None) -> list[str]:
-    if window.midi_preview_jobs.closing:
-        return []
-    if window.editor_project is None or not window.editor_project.notes:
-        return []
-    requested_keys = {stem.lower() for stem in (requested_stems or set())}
-    note_stems = midi_preview_note_stems(window.editor_project.notes)
-    return [
-        track.name
-        for track in window.editor_project.tracks
-        if (not requested_keys or track.name.lower() in requested_keys)
-        if track.name not in window.transport.midi_preview_paths
-        and track.name.lower() in note_stems
-        and not window._midi_preview_worker_running(result.project_dir, track.name)
-    ]
-
-
-def midi_preview_note_stems(notes) -> set[str]:
-    return {note.stem.lower() for note in notes}
-
-
-def midi_preview_worker_running(window, project_dir: Path, stem_name: str) -> bool:
-    key = (project_dir, stem_name.lower())
-    entry = window.midi_preview_jobs.workers.get(key)
-    if entry is None:
-        return False
-    token, worker = entry
-    if token != window.midi_preview_jobs.token or not worker.is_alive():
-        window.midi_preview_jobs.workers.pop(key, None)
-        return False
-    return True
-
-
-def clear_midi_preview_worker(window, project_dir: Path, stem_name: str, token: int) -> None:
-    key = (project_dir, stem_name.lower())
-    entry = window.midi_preview_jobs.workers.get(key)
-    if entry is not None and entry[0] == token:
-        window.midi_preview_jobs.workers.pop(key, None)
-
-
-def attach_midi_preview_players(window, previews: dict[str, Path], finish_activity: bool = True) -> None:
-    if not previews:
-        window.refresh_timeline_track_summaries()
-        if finish_activity:
-            window.end_activity("No MIDI preview audio rendered")
-        return
-    for stem_name in previews:
-        window.rendering_midi_previews.discard(stem_name)
-    window.transport.attach_midi_preview_players(previews, window.timeline.position)
-    window.refresh_playback_mix()
-    window.refresh_timeline_track_summaries()
-    if finish_activity:
-        window.append_log(f"MIDI preview audio ready: {len(previews)} tracks.")
-        window.end_activity("MIDI preview audio ready")
 
 
 def toggle_playback(window) -> None:

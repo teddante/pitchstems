@@ -8,7 +8,6 @@ from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 
 from pitchstems.editor_project import NoteEvent
 from pitchstems.gui_midi_synth import RealtimeMidiPreview
-from pitchstems.midi_preview import midi_preview_path, valid_preview_wav
 from pitchstems.pipeline_models import PipelineResult
 
 
@@ -40,9 +39,6 @@ class TransportController:
         self.is_playing = False
         self.track_players: dict[str, QMediaPlayer] = {}
         self.track_audio_outputs: dict[str, QAudioOutput] = {}
-        self.midi_players: dict[str, QMediaPlayer] = {}
-        self.midi_audio_outputs: dict[str, QAudioOutput] = {}
-        self.midi_preview_paths: dict[str, Path] = {}
         self.midi_synth = RealtimeMidiPreview(parent, logger)
         self._prepared_result_key: tuple[Path, tuple[tuple[str, Path], ...]] | None = None
 
@@ -78,7 +74,7 @@ class TransportController:
                 "Transport player cleanup failed",
                 lambda player=player: clear_player_source(player),
             )
-        for output in [*self.track_audio_outputs.values(), *self.midi_audio_outputs.values()]:
+        for output in self.track_audio_outputs.values():
             safe_qt_multimedia_call(
                 self.logger,
                 "Transport audio output cleanup failed",
@@ -86,58 +82,12 @@ class TransportController:
             )
         self.track_players.clear()
         self.track_audio_outputs.clear()
-        self.midi_players.clear()
-        self.midi_audio_outputs.clear()
-        self.midi_preview_paths.clear()
         self.midi_synth.clear()
         self._prepared_result_key = None
         self.is_playing = False
 
     def players(self) -> list[QMediaPlayer]:
-        return list(self.track_players.values()) + list(self.midi_players.values())
-
-    def attach_midi_preview_players(
-        self,
-        previews: dict[str, Path],
-        position_seconds: float,
-    ) -> int:
-        self.midi_preview_paths.update(previews)
-        attached = 0
-        for stem_name, midi_preview in previews.items():
-            if stem_name in self.midi_players:
-                continue
-            midi_player = QMediaPlayer(self.parent)
-            midi_output = QAudioOutput(self.parent)
-            midi_player.setAudioOutput(midi_output)
-            midi_player.setSource(QUrl.fromLocalFile(str(midi_preview)))
-            self.midi_players[stem_name] = midi_player
-            self.midi_audio_outputs[stem_name] = midi_output
-            attached += 1
-
-            midi_check = self.track_midi_checks.get(stem_name)
-            midi_slider = self.track_midi_sliders.get(stem_name)
-            if midi_check:
-                midi_check.setToolTip(
-                    "Play the generated MIDI preview audio for this stem. This does not affect chord detection."
-                )
-            if midi_slider:
-                midi_slider.setToolTip("MIDI preview audio volume.")
-            if self.is_playing and self.midi_track_enabled(stem_name):
-                safe_qt_multimedia_call(
-                    self.logger,
-                    "MIDI preview player start failed",
-                    lambda midi_player=midi_player, position_ms=int(position_seconds * 1000): start_player(
-                        midi_player, position_ms
-                    ),
-                )
-            else:
-                safe_qt_multimedia_call(
-                    self.logger,
-                    "MIDI preview player pause failed",
-                    lambda midi_player=midi_player: midi_player.pause(),
-                )
-        self.refresh_mix()
-        return attached
+        return list(self.track_players.values())
 
     def refresh_mix(self) -> None:
         for stem_name, output in self.track_audio_outputs.items():
@@ -152,23 +102,12 @@ class TransportController:
                     volume if is_enabled else 0.0
                 ),
             )
-        for stem_name, output in self.midi_audio_outputs.items():
-            slider = self.track_midi_sliders.get(stem_name)
-            volume = slider.value() / 100 if slider else 0.7
-            enabled = self.midi_track_enabled(stem_name)
-            safe_qt_multimedia_call(
-                self.logger,
-                "MIDI audio volume update failed",
-                lambda output=output, volume=volume, enabled=enabled: output.setVolume(
-                    volume if enabled else 0.0
-                ),
-            )
         self.midi_synth.set_track_volumes(self.midi_track_volumes())
 
     def midi_track_volumes(self) -> dict[str, float]:
         volumes = {}
-        for stem_name, checkbox in self.track_midi_checks.items():
-            if not checkbox.isEnabled() or not checkbox.isChecked():
+        for stem_name in self.track_midi_checks:
+            if not self.midi_track_enabled(stem_name):
                 continue
             slider = self.track_midi_sliders.get(stem_name)
             volumes[stem_name] = slider.value() / 100 if slider else 0.7
@@ -183,17 +122,6 @@ class TransportController:
             return
         if self.midi_synth.device is not None and not self.midi_synth.is_playing:
             self.midi_synth.play(position_seconds)
-        position_ms = int(position_seconds * 1000)
-        for stem_name, player in self.midi_players.items():
-            try:
-                if self.midi_track_enabled(stem_name):
-                    if player.playbackState() != QMediaPlayer.PlayingState:
-                        player.setPosition(position_ms)
-                        player.play()
-                else:
-                    player.pause()
-            except RuntimeError:
-                self.logger.exception("MIDI transport state update failed")
 
     def play(self, start_position: float) -> None:
         position_ms = int(start_position * 1000)
@@ -203,19 +131,6 @@ class TransportController:
                 "Track player start failed",
                 lambda player=player: start_player(player, position_ms),
             )
-        for stem_name, player in self.midi_players.items():
-            if self.midi_track_enabled(stem_name):
-                safe_qt_multimedia_call(
-                    self.logger,
-                    "MIDI player start failed",
-                    lambda player=player: start_player(player, position_ms),
-                )
-            else:
-                safe_qt_multimedia_call(
-                    self.logger,
-                    "MIDI player pause failed",
-                    lambda player=player: pause_player_at(player, position_ms),
-                )
         self.is_playing = True
         self.midi_synth.play(start_position)
 
@@ -293,16 +208,6 @@ class TransportController:
         self.midi_synth.resync(master_position / 1000, drift_ms / 1000)
 
 
-def find_existing_midi_previews(result: PipelineResult) -> dict[str, Path]:
-    preview_dir = result.project_dir / "editor" / "midi-preview"
-    previews = {}
-    for stem in result.stems:
-        preview = midi_preview_path(stem.name, preview_dir)
-        if valid_preview_wav(preview):
-            previews[stem.name] = preview
-    return previews
-
-
 def transport_result_key(result: PipelineResult) -> tuple[Path, tuple[tuple[str, Path], ...]]:
     return (
         result.project_dir,
@@ -328,11 +233,6 @@ def start_player_source(player: QMediaPlayer, source: QUrl) -> None:
 def start_player(player: QMediaPlayer, position_ms: int) -> None:
     player.setPosition(position_ms)
     player.play()
-
-
-def pause_player_at(player: QMediaPlayer, position_ms: int) -> None:
-    player.setPosition(position_ms)
-    player.pause()
 
 
 def stop_player_at_start(player: QMediaPlayer) -> None:

@@ -193,13 +193,10 @@ def run_project_smoke(window) -> None:
     _assert(not window.track_audio_checks["bass"].isChecked(), "audio toggle state")
     _assert(window.track_audio_sliders["bass"].value() == 25, "audio volume state")
     window.track_audio_checks["bass"].setChecked(True)
-    original_preview_renderer = window.start_midi_preview_render
-    window.start_midi_preview_render = lambda *_args, **_kwargs: None
     window.track_midi_checks["bass"].setChecked(True)
     QApplication.processEvents()
     _assert(window.midi_track_enabled("bass"), "MIDI toggle enables transport state")
     window.track_midi_checks["bass"].setChecked(False)
-    window.start_midi_preview_render = original_preview_renderer
     QApplication.processEvents()
     _assert(not window.midi_track_enabled("bass"), "MIDI toggle disables transport state")
     window.play_transport()
@@ -259,26 +256,6 @@ def run_project_smoke(window) -> None:
     window.messages.put(("ENABLE_PROCESS", 9))
     window.flush_messages()
     _assert(window.activity_label.text() == activity_label, "stale worker completion ignored")
-    stale_preview = active_project_dir / "editor" / "midi-preview" / "piano_midi_preview.wav"
-    window.messages.put(("MIDI_PREVIEWS", window.midi_preview_jobs.token - 1, active_project_dir, {"piano"}, {"piano": stale_preview}))
-    window.flush_messages()
-    _assert("piano" not in window.transport.midi_preview_paths, "stale MIDI preview ignored")
-    stale_token = window.midi_preview_jobs.token - 1
-    current_token = window.midi_preview_jobs.token
-    current_worker = _FakeWorker(alive=True)
-    worker_key = (active_project_dir, "piano")
-    window.midi_preview_jobs.workers[worker_key] = (stale_token, _FakeWorker(alive=True))
-    _assert(
-        not window._midi_preview_worker_running(active_project_dir, "piano"),
-        "stale MIDI preview worker does not block current project",
-    )
-    window.midi_preview_jobs.workers[worker_key] = (current_token, current_worker)
-    window.messages.put(("MIDI_PREVIEWS", stale_token, active_project_dir, {"piano"}, {"piano": stale_preview}))
-    window.flush_messages()
-    _assert(
-        window.midi_preview_jobs.workers.get(worker_key) == (current_token, current_worker),
-        "stale MIDI preview completion does not clear current worker",
-    )
     stale_loaded = EditorLoadResult(
         pipeline_result=window.current_result,
         base_project=window.base_editor_project,
@@ -442,14 +419,6 @@ def _wait_for(predicate, label: str, timeout_seconds: float = 5.0) -> None:
             return
         time.sleep(0.02)
     raise RuntimeError(f"GUI startup smoke failed: timed out waiting for {label}")
-
-
-class _FakeWorker:
-    def __init__(self, alive: bool) -> None:
-        self.alive = alive
-
-    def is_alive(self) -> bool:
-        return self.alive
 
 
 def _assert(condition: bool, label: str) -> None:

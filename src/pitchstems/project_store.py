@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import contextlib
 import json
-import os
 import threading
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, cast
 
+from pitchstems.atomic_files import write_json_atomic
 from pitchstems.audio_clip import AudioClipRange, clip_range_from_manifest
 from pitchstems.filename_safety import safe_stem_key
 from pitchstems.pipeline_models import MidiResult, PipelineResult, StemResult
@@ -100,7 +100,7 @@ def save_project_manifest(
                 chord_removals=chord_removals,
             ),
         }
-        _write_json_atomic(manifest_path, manifest)
+        write_json_atomic(manifest_path, manifest)
     return manifest_path
 
 
@@ -126,7 +126,7 @@ def save_failed_project_manifest(
         "settings": {},
         "editor": {},
     }
-    _write_json_atomic(manifest_path, manifest)
+    write_json_atomic(manifest_path, manifest)
     return manifest_path
 
 
@@ -563,17 +563,6 @@ def _read_existing_manifest(path: Path) -> dict[str, Any]:
         if isinstance(existing, dict) and existing.get("format") == "pitchstems-project":
             return existing
     return {}
-
-
-def _write_json_atomic(path: Path, data: dict[str, Any]) -> None:
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-    try:
-        temporary.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
-        temporary.replace(path)
-    finally:
-        with contextlib.suppress(OSError):
-            if temporary.exists():
-                temporary.unlink()
 
 
 def _now() -> str:

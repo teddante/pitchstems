@@ -47,17 +47,24 @@ class MidiSynthEngine:
     def has_notes(self) -> bool:
         return bool(self._notes_by_stem)
 
+    @property
+    def stems(self) -> list[str]:
+        return list(self._notes_by_stem)
+
     def render(self, position_seconds: float, frame_count: int, track_volumes: dict[str, float]) -> bytes:
         if frame_count <= 0:
             return b""
-        samples = array("f", [0.0]) * frame_count
+        return _pcm16(self.render_samples(position_seconds, frame_count, track_volumes))
+
+    def render_samples(self, position_seconds: float, frame_count: int, track_volumes: dict[str, float]) -> array:
+        samples = array("f", [0.0]) * max(0, frame_count)
         buffer_start = max(0.0, position_seconds)
         buffer_end = buffer_start + frame_count / self.sample_rate
         for stem, volume in track_volumes.items():
             if volume <= 0:
                 continue
             self._add_stem(samples, stem, volume, buffer_start, buffer_end)
-        return _pcm16(samples)
+        return samples
 
     def _add_stem(
         self,

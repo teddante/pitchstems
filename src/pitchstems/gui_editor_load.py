@@ -42,7 +42,6 @@ def set_current_result(window, result, open_output: bool = True) -> None:
 
 def _apply_current_result_state(window, result) -> None:
     window.current_result = result
-    window.midi_preview_jobs.next()
     window.current_stems = result.stems
     window.current_input_stem = result.normalized_audio.stem
     window.latest_output_dir = result.project_dir
@@ -50,7 +49,6 @@ def _apply_current_result_state(window, result) -> None:
     window.editor_project = None
     window.manual_chords = []
     window.removed_chord_ranges = []
-    window.rendering_midi_previews.clear()
     from pitchstems.gui_pipeline_state import restore_pipeline_settings
 
     restore_pipeline_settings(window, getattr(result, "settings", {}))
@@ -125,13 +123,6 @@ def finish_editor_project_load(window, token: int, loaded) -> None:
     refresh_editor_lists(window, track_visibility)
     window.refresh_playback_controls(editor_state)
     window.clear_transport_players()
-    checked_midi_stems = {
-        stem_name
-        for stem_name, checkbox in window.track_midi_checks.items()
-        if checkbox.isChecked()
-    }
-    if checked_midi_stems:
-        window.start_midi_preview_render(window.current_result, checked_midi_stems)
     window.logger.info("Drawing editor timeline")
     window.set_activity_message("Drawing editor timeline...")
     with window.timeline.deferred_redraw():

@@ -130,7 +130,6 @@ def test_reset_loaded_project_state_clears_editor_domain_state() -> None:
 def test_reset_track_control_state_clears_transport_and_track_caches() -> None:
     clear_calls = []
     window = SimpleNamespace(
-        rendering_midi_previews={"bass"},
         clear_transport_players=lambda: clear_calls.append("cleared"),
         track_audio_checks={"bass": object()},
         track_audio_sliders={"bass": object()},
@@ -147,7 +146,6 @@ def test_reset_track_control_state_clears_transport_and_track_caches() -> None:
 
     _reset_track_control_state(window)
 
-    assert window.rendering_midi_previews == set()
     assert clear_calls == ["cleared"]
     assert window.track_audio_checks == {}
     assert window.track_audio_sliders == {}

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import os
 import shutil
 import zipfile
 from dataclasses import dataclass
@@ -10,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, TypedDict
 
+from pitchstems.atomic_files import write_json_atomic
 from pitchstems.audio import normalize_to_wav
 from pitchstems.audio_clip import AudioClipRange
 from pitchstems.filename_safety import safe_file_stem
@@ -375,7 +375,6 @@ def _process_midi_from_stems_unlocked(
             staged_export_paths,
             generated_export_midi,
         )
-        _remove_midi_preview_cache(workspace.project_dir)
         _remove_export_stem_copies(workspace.export_dir, stems)
         midi_files = final_midi_files
     except Exception:
@@ -592,15 +591,7 @@ def _write_midi_transaction(
         "generated_export_midi": sorted(generated_export_midi),
         "had_midi_dir": had_midi_dir,
     }
-    temporary = workspace.transaction_path.with_name(
-        f".{workspace.transaction_path.name}.{os.getpid()}.tmp"
-    )
-    with temporary.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2, sort_keys=True)
-        handle.write("\n")
-        handle.flush()
-        os.fsync(handle.fileno())
-    temporary.replace(workspace.transaction_path)
+    write_json_atomic(workspace.transaction_path, payload, fsync=True)
 
 
 def _commit_midi_transaction(workspace: _MidiWorkspace) -> None:
@@ -756,11 +747,6 @@ def _remove_export_stem_copies(export_dir: Path, stems: list[StemResult]) -> Non
         duplicate = export_dir / stem.path.name
         if _looks_like_copied_file(stem.path, duplicate):
             duplicate.unlink()
-
-
-def _remove_midi_preview_cache(project_dir: Path) -> None:
-    with contextlib.suppress(OSError):
-        _remove_staging_dir(project_dir / "editor" / "midi-preview", project_dir)
 
 
 def _looks_like_copied_file(source: Path, candidate: Path) -> bool:

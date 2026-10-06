@@ -568,61 +568,6 @@ def test_midi_rerun_keeps_unrelated_export_midi_files(tmp_path: Path, monkeypatc
     assert old_generated.read_bytes() != b"old"
 
 
-def test_midi_rerun_clears_stale_midi_preview_cache(tmp_path: Path, monkeypatch) -> None:
-    project_dir = tmp_path / "song.pitchstems"
-    stems_dir = project_dir / "stems"
-    stem_path = stems_dir / "song_bass.wav"
-    preview = project_dir / "editor" / "midi-preview" / "bass_midi_preview.wav"
-    for path in [stem_path, preview]:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(b"old")
-
-    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", _fake_transcribe)
-
-    process_midi_from_stems(
-        project_dir=project_dir,
-        input_stem="source",
-        normalized_audio=None,
-        stems=[StemResult("bass", stem_path)],
-        midi_stems={"bass"},
-        create_zip=False,
-    )
-
-    assert not preview.exists()
-
-
-def test_midi_rerun_does_not_fail_if_preview_cache_cleanup_is_locked(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    project_dir = tmp_path / "song.pitchstems"
-    stems_dir = project_dir / "stems"
-    stem_path = stems_dir / "song_bass.wav"
-    stem_path.parent.mkdir(parents=True, exist_ok=True)
-    stem_path.write_bytes(b"old")
-
-    real_remove_staging_dir = pipeline._remove_staging_dir
-
-    def locked_preview_cache(path, project_root=None):
-        if path == project_dir / "editor" / "midi-preview":
-            raise PermissionError("preview in use")
-        return real_remove_staging_dir(path, project_root)
-
-    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", _fake_transcribe)
-    monkeypatch.setattr(pipeline, "_remove_staging_dir", locked_preview_cache)
-
-    result = process_midi_from_stems(
-        project_dir=project_dir,
-        input_stem="source",
-        normalized_audio=None,
-        stems=[StemResult("bass", stem_path)],
-        midi_stems={"bass"},
-        create_zip=False,
-    )
-
-    assert result.midi_files
-
-
 def test_midi_rerun_cancellation_preserves_existing_outputs(tmp_path: Path, monkeypatch) -> None:
     project_dir = tmp_path / "song.pitchstems"
     stem_path = project_dir / "stems" / "song_bass.wav"

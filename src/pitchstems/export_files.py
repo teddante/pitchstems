@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import os
 import shutil
-import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from pitchstems.atomic_files import atomic_replace
 from pitchstems.filename_safety import safe_file_stem
 from pitchstems.pipeline_models import PipelineResult
 
@@ -152,8 +152,7 @@ def _copy_file_atomic(
     total_bytes: int,
     progress: Callable[[int, int, Path], None] | None,
 ) -> int:
-    temporary = target.with_name(f".{target.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-    try:
+    with atomic_replace(target) as temporary:
         with source.open("rb") as source_handle, temporary.open("xb") as target_handle:
             while chunk := source_handle.read(1024 * 1024):
                 if cancelled is not None and cancelled():
@@ -167,10 +166,7 @@ def _copy_file_atomic(
         shutil.copystat(source, temporary)
         if target.exists() and not overwrite:
             raise FileExistsError(f"Export destination already exists: {target}")
-        temporary.replace(target)
-        return copied_bytes
-    finally:
-        temporary.unlink(missing_ok=True)
+    return copied_bytes
 
 
 def _append_item(
