@@ -81,8 +81,7 @@ python_version = "3.10"
 files = [
   "src/pitchstems/audio_clip.py",
   "src/pitchstems/cli.py",
-  "src/pitchstems/editor_chord_navigation.py",
-  "src/pitchstems/editor_review_target.py",
+  "src/pitchstems/review_ranges.py",
   "src/pitchstems/editor_models.py",
   "src/pitchstems/export_files.py",
   "src/pitchstems/filename_safety.py",
@@ -91,11 +90,10 @@ files = [
   "src/pitchstems/input_validation.py",
   "src/pitchstems/pipeline.py",
   "src/pitchstems/pipeline_models.py",
-  "src/pitchstems/preflight.py",
+  "src/pitchstems/runtime_checks.py",
   "src/pitchstems/project_store.py",
   "src/pitchstems/project_lock.py",
   "src/pitchstems/recent_projects.py",
-  "src/pitchstems/timeline_selection.py",
   "src/pitchstems/time_format.py",
   "src/pitchstems/transcription.py",
 ]

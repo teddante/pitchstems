@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
 
+from pitchstems.review_ranges import MIN_RANGE_SECONDS
 from pitchstems.editor_models import ChordRegion, NoteEvent
 
 
@@ -57,4 +58,4 @@ class ChordIndex:
         next_chord = self.chords[right] if right < len(self.chords) else None
         start = previous.end if previous else 0.0
         end = next_chord.start if next_chord else self.duration
-        return (start, end) if end - start >= 0.05 else None
+        return (start, end) if end - start >= MIN_RANGE_SECONDS else None

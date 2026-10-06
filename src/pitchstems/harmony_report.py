@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pitchstems.chord_analysis import analyze_chord_at, analyze_chord_region, analyze_chord_regions
 from pitchstems.editor_models import NoteEvent
-from pitchstems.editor_review_target import (
+from pitchstems.review_ranges import (
     review_range_text,
     review_ranges,
     review_ranges_detail_text,

@@ -3,7 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QListWidgetItem
 
-from pitchstems.chord_regions import merge_or_selected_chord_range as chord_assignment_ranges
+from pitchstems.review_ranges import review_ranges
 from pitchstems.editor_models import ChordRegion
 from pitchstems.notation import percent_text
 from pitchstems.chord_explanation import partial_harmony_note_order
@@ -251,7 +251,7 @@ def refresh_chord_actions(window) -> None:
     has_candidate = bool(item and item.data(Qt.UserRole))
     explicit_ranges = window.timeline.selection_ranges()
     selected_chord = window.timeline.selected_chord
-    target_ranges = chord_assignment_ranges(explicit_ranges, selected_chord)
+    target_ranges = review_ranges(explicit_ranges, selected_chord)
     selected_chord_target = not explicit_ranges and selected_chord is not None
     window.preview_chord_button.setEnabled(has_candidate)
     window.use_chord_button.setEnabled(has_candidate and bool(target_ranges))

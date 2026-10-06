@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 from pitchstems.atomic_files import atomic_replace
-from pitchstems.filename_safety import safe_file_stem
+from pitchstems.filename_safety import safe_file_stem, slugify
 from pitchstems.pipeline_models import PipelineResult
 
 
@@ -209,17 +209,4 @@ def _safe_filename(name: str) -> str:
 
 
 def _export_file_stem(value: str, fallback: str) -> str:
-    return safe_file_stem(_export_slug(value), fallback=fallback)
-
-
-def _export_slug(value: str) -> str:
-    cleaned = []
-    previous_dash = False
-    for character in value.strip().lower():
-        if character.isalnum():
-            cleaned.append(character)
-            previous_dash = False
-        elif not previous_dash:
-            cleaned.append("-")
-            previous_dash = True
-    return "".join(cleaned).strip("-")
+    return safe_file_stem(slugify(value), fallback=fallback)

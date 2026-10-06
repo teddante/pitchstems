@@ -4,8 +4,13 @@ from typing import Protocol
 
 from pitchstems.editor_models import ChordRegion
 from pitchstems.editor_project import EditorProject
-from pitchstems.editor_review_target import review_ranges, single_review_range
-from pitchstems.time_format import format_time
+from pitchstems.review_ranges import (
+    MIN_RANGE_SECONDS,
+    review_range_text,
+    review_ranges,
+    review_ranges_brief_text,
+    single_review_range,
+)
 
 
 class _StatusBar(Protocol):
@@ -51,18 +56,16 @@ def set_editor_selection(window: _EditorWindow, selection: tuple[float, float] |
     window.refresh_chord_actions()
     selection_ranges = window.timeline.selection_ranges()
     if len(selection_ranges) > 1:
-        total = sum(end - start for start, end in selection_ranges)
         window.statusBar().showMessage(
-            f"Chord analysis selection active: {len(selection_ranges)} ranges, {total:.2f}s total.",
+            f"Chord analysis selection active: {review_ranges_brief_text(selection_ranges)}.",
             5000,
         )
         return
     if selection is None:
         window.statusBar().showMessage("Timeline selection cleared.", 3000)
         return
-    start, end = selection
     window.statusBar().showMessage(
-        f"Loop selection active: {format_time(start)} - {format_time(end)}. Press Play to loop this range.",
+        f"Loop selection active: {review_range_text(selection)}. Press Play to loop this range.",
         5000,
     )
 
@@ -112,7 +115,7 @@ def play_editor_review_target(window: _EditorWindow) -> None:
             window.statusBar().showMessage("Select a timeline range or chord before playing the review target.", 4000)
         return
     start, end = target
-    if end - start < 0.05:
+    if end - start < MIN_RANGE_SECONDS:
         window.statusBar().showMessage("Review target is too short to play.", 4000)
         return
     window.set_editor_position_seconds(start, save=False)

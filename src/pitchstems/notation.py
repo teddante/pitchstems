@@ -47,9 +47,12 @@ def pitch_class_name(pitch_class: int, preference: str | None = "auto") -> str:
     return DEFAULT_PITCH_NAMES[pitch_class]
 
 
+def midi_octave(pitch: int) -> int:
+    return pitch // 12 - 1
+
+
 def midi_note_name(pitch: int, preference: str | None = "auto") -> str:
-    octave = pitch // 12 - 1
-    return f"{pitch_class_name(pitch, preference)}{octave}"
+    return f"{pitch_class_name(pitch, preference)}{midi_octave(pitch)}"
 
 
 def normalized_pitch_class_weights(totals: dict[int, float]) -> list[tuple[str, float]]:

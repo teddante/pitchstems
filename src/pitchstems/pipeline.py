@@ -15,7 +15,7 @@ from pitchstems.audio_clip import AudioClipRange
 from pitchstems.filename_safety import safe_file_stem
 from pitchstems.midi import combine_midi_tracks
 from pitchstems.pipeline_models import MidiResult, PipelineResult, StemResult
-from pitchstems.preflight import run_preflight
+from pitchstems.runtime_checks import run_preflight
 from pitchstems.project_lock import project_mutation_lock
 from pitchstems.project_store import (
     PROJECT_FILENAME,
@@ -40,8 +40,21 @@ class _MidiTransaction(TypedDict):
     had_midi_dir: bool
 
 
+class _ProjectPaths:
+    project_dir: Path
+    input_stem: str
+
+    @property
+    def normalized_audio(self) -> Path:
+        return self.project_dir / "work" / f"{self.input_stem}.wav"
+
+    @property
+    def zip_path(self) -> Path:
+        return self.project_dir / f"{self.input_stem}_pitchstems.zip"
+
+
 @dataclass(frozen=True)
-class _ProjectWorkspace:
+class _ProjectWorkspace(_ProjectPaths):
     project_dir: Path
     input_stem: str
     audio_dir: Path
@@ -64,14 +77,6 @@ class _ProjectWorkspace:
             export_dir=project_dir / "export",
         )
 
-    @property
-    def normalized_audio(self) -> Path:
-        return self.work_dir / f"{self.input_stem}.wav"
-
-    @property
-    def zip_path(self) -> Path:
-        return self.project_dir / f"{self.input_stem}_pitchstems.zip"
-
     def create_directories(self) -> None:
         for directory in [
             self.audio_dir,
@@ -84,7 +89,7 @@ class _ProjectWorkspace:
 
 
 @dataclass(frozen=True)
-class _MidiWorkspace:
+class _MidiWorkspace(_ProjectPaths):
     project_dir: Path
     input_stem: str
     midi_dir: Path
@@ -109,14 +114,6 @@ class _MidiWorkspace:
             backup_export_dir=project_dir / "export.backup.tmp",
             transaction_path=project_dir / ".midi-transaction.json",
         )
-
-    @property
-    def normalized_audio(self) -> Path:
-        return self.project_dir / "work" / f"{self.input_stem}.wav"
-
-    @property
-    def zip_path(self) -> Path:
-        return self.project_dir / f"{self.input_stem}_pitchstems.zip"
 
 
 def process_audio_file(

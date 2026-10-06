@@ -8,7 +8,6 @@ from PySide6.QtCore import QPointF, QTimer, Qt
 from PySide6.QtGui import QColor, QBrush, QFontMetrics, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QGraphicsScene, QGraphicsView
 
-from pitchstems.editor_chord_navigation import review_navigation_chord
 from pitchstems.editor_models import ChordRegion, NoteEvent
 from pitchstems.editor_project import EditorProject
 from pitchstems.notation import midi_note_name
@@ -27,11 +26,14 @@ from pitchstems.timeline_chord_geometry import (
     timeline_x_for_seconds,
 )
 from dataclasses import dataclass
-from pitchstems.timeline_selection import (
+from pitchstems.review_ranges import (
+    MIN_RANGE_SECONDS,
     active_selection_range,
     clamp_selection_bounds,
     commit_selection_range,
     merged_selection_ranges,
+    review_navigation_chord,
+    single_review_range,
 )
 from pitchstems.time_format import format_time
 
@@ -258,13 +260,13 @@ class TimelineView(QGraphicsView):
         duration = max(self.project.duration, 0.0)
         start = max(0.0, min(start, duration))
         end = max(0.0, min(end, duration))
-        if end - start < 0.05:
+        if end - start < MIN_RANGE_SECONDS:
             return False
         self._clear_pending_zoom(stop_zoom_timer=True, stop_view_timer=True)
 
         viewport = self.viewport().rect()
         time_width = max(80, viewport.width() - self.label_width - 92)
-        range_duration = max(0.05, end - start)
+        range_duration = max(MIN_RANGE_SECONDS, end - start)
         self.pixels_per_second = max(1, min(420, time_width / range_duration))
         self.redraw()
         target_left = max(0.0, self._x(start) - 24)
@@ -794,10 +796,7 @@ class TimelineView(QGraphicsView):
         self.playhead.setLine(line)
 
     def selection_range(self) -> tuple[float, float] | None:
-        ranges = self.selection_ranges()
-        if len(ranges) != 1:
-            return None
-        return ranges[0]
+        return single_review_range(self.selection_ranges())
 
     def selection_ranges(self) -> list[tuple[float, float]]:
         return merged_selection_ranges(self.selection_segments, self._current_selection_range())

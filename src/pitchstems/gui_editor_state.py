@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from pitchstems.chord_regions import merge_chord_ranges, merge_or_selected_chord_range as chord_assignment_ranges
-from pitchstems.editor_review_target import chord_assignment_target_text
+from pitchstems.review_ranges import chord_assignment_target_text, merge_ranges, review_ranges
 from pitchstems.editor_loader import apply_chord_edits
 from pitchstems.editor_models import ChordRegion
 from pitchstems.chord_analysis import detect_chords
@@ -146,7 +145,7 @@ def assign_selected_chord_to_selection(window) -> None:
     if not _has_loaded_editor_project(window):
         return
     explicit_ranges = window.timeline.selection_ranges()
-    selection_ranges = chord_assignment_ranges(
+    selection_ranges = review_ranges(
         explicit_ranges,
         window.timeline.selected_chord,
     )
@@ -189,7 +188,7 @@ def insert_manual_chord(window, chord: ChordRegion) -> None:
         for existing in window.manual_chords
         if existing.end <= chord.start or existing.start >= chord.end
     ]
-    window.removed_chord_ranges = merge_chord_ranges(
+    window.removed_chord_ranges = merge_ranges(
         [*window.removed_chord_ranges, (chord.start, chord.end)]
     )
     window.manual_chords.append(chord)
@@ -199,7 +198,7 @@ def insert_manual_chord(window, chord: ChordRegion) -> None:
 def edit_timeline_chord(window, original: ChordRegion, edited: ChordRegion) -> None:
     if edited == original:
         return
-    window.removed_chord_ranges = merge_chord_ranges(
+    window.removed_chord_ranges = merge_ranges(
         [*window.removed_chord_ranges, (original.start, original.end), (edited.start, edited.end)]
     )
     window.manual_chords = [chord for chord in window.manual_chords if chord != original]
@@ -212,7 +211,7 @@ def edit_timeline_chord(window, original: ChordRegion, edited: ChordRegion) -> N
 
 
 def delete_timeline_chord(window, chord: ChordRegion) -> None:
-    window.removed_chord_ranges = merge_chord_ranges(
+    window.removed_chord_ranges = merge_ranges(
         [*window.removed_chord_ranges, (chord.start, chord.end)]
     )
     window.manual_chords = [manual for manual in window.manual_chords if manual != chord]

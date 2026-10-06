@@ -4,7 +4,8 @@ from dataclasses import dataclass
 
 from pitchstems.editor_models import NoteEvent
 
-from pitchstems.editor_review_target import (
+from pitchstems.review_ranges import (
+    MIN_RANGE_SECONDS,
     ReviewTarget,
     review_ranges_brief_text,
     review_target,
@@ -14,6 +15,7 @@ from pitchstems.chord_analysis import analyze_chord_at, analyze_chord_regions
 from pitchstems.chord_gap_analysis import analyze_chord_gap
 from pitchstems.harmony_inspector import (
     HarmonyContextKey,
+    apply_note_override,
     chord_base_pitch_weights,
     chord_note_constraints,
     chord_sample_text,
@@ -254,7 +256,7 @@ def current_chord_gap_range(window) -> tuple[float, float] | None:
         return None
     if selection is not None:
         start, end = selection
-        if end - start >= 0.05:
+        if end - start >= MIN_RANGE_SECONDS:
             return start, end
         return None
     if window.timeline.selected_chord is not None:
@@ -309,10 +311,7 @@ def handle_chord_note_filter_changed(window, item) -> None:
         Qt.PartiallyChecked: "auto",
         Qt.Checked: "force",
     }.get(item.checkState(), "auto")
-    if state == "auto":
-        window.chord_note_overrides.pop(pitch_class, None)
-    else:
-        window.chord_note_overrides[pitch_class] = state
+    apply_note_override(window.chord_note_overrides, pitch_class, state)
     window.refresh_current_harmony(window.timeline.position, force=True)
 
 

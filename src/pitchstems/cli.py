@@ -3,12 +3,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from pitchstems.doctor import format_checks, run_checks
+from pitchstems.runtime_checks import format_checks, run_checks
 from pitchstems.model_catalog import DEFAULT_MODEL_KEY, model_choice
 from pitchstems.pipeline import process_audio_file
 from pitchstems.separation import download_model, model_key_for_profile, profile_keys
 from pitchstems.separation import SeparationOptions
-from pitchstems.setup_runtime import format_setup_result, run_setup
+from pitchstems.runtime_checks import format_setup_result, run_setup
 from pitchstems.transcription import MidiOptions, midi_option_spec, optional_frequency_limit
 
 

@@ -98,7 +98,7 @@ Invoke-Checked "Running tests with focused core coverage..." {
         --cov=pitchstems.gui_jobs `
         --cov=pitchstems.pipeline_models `
         --cov=pitchstems.input_validation `
-        --cov=pitchstems.preflight `
+        --cov=pitchstems.runtime_checks `
         --cov=pitchstems.pipeline `
         --cov=pitchstems.project_store `
         --cov=pitchstems.recent_projects `

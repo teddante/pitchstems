@@ -24,7 +24,7 @@ from pitchstems.chord_naming import (
     display_chord_label,
 )
 from pitchstems.notation import midi_note_name
-from pitchstems.editor_review_target import review_playback_loop_range
+from pitchstems.review_ranges import review_playback_loop_range
 from pitchstems.editor_loader import EditorLoadResult
 from pitchstems.gui_editor_state import EMPTY_EDITOR_SUMMARY
 from pitchstems.midi_preview import render_note_preview
@@ -1019,7 +1019,7 @@ def main() -> int:
             self.append_log("Repairing PitchStems setup...")
 
             def run_repair() -> None:
-                from pitchstems.setup_runtime import format_setup_result, run_setup
+                from pitchstems.runtime_checks import format_setup_result, run_setup
 
                 try:
                     result = run_setup(log=lambda message: self.messages.put(message))

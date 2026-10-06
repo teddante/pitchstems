@@ -15,7 +15,9 @@ from PySide6.QtWidgets import (
 )
 
 from pitchstems.input_validation import validate_audio_input
-from pitchstems.notation import pitch_class_for_name, pitch_class_name
+from pitchstems.recent_projects import short_path
+from pitchstems.harmony_inspector import apply_note_override
+from pitchstems.notation import midi_note_name, midi_octave, pitch_class_for_name, pitch_class_name
 
 
 class DropZone(QLabel):
@@ -43,7 +45,7 @@ class DropZone(QLabel):
 
     def set_audio_file(self, path: Path) -> None:
         self.path = path
-        self.setText(f"Audio\n{path.name}\n{self._short_path(path.parent)}")
+        self.setText(f"Audio\n{path.name}\n{short_path(path.parent, 72)}")
         self.setToolTip(str(path))
 
     def set_project_file(self, project_dir: Path, source_audio: Path | None) -> None:
@@ -61,14 +63,6 @@ class DropZone(QLabel):
         self.path = None
         self.setText("Drop an audio file here")
         self.setToolTip("")
-
-    def _short_path(self, path: Path, max_length: int = 72) -> str:
-        text = str(path)
-        if len(text) <= max_length:
-            return text
-        parts = path.parts
-        tail = str(Path(*parts[-2:])) if len(parts) >= 2 else path.name
-        return f"...\\{tail}"
 
     def dragEnterEvent(self, event) -> None:
         urls = event.mimeData().urls()
@@ -188,6 +182,25 @@ class _NoteMapWidget(QWidget):
     def _highlight_colour(self, pitch_class: int, fallback: str) -> QColor:
         return QColor(self.note_colours.get(pitch_class, fallback))
 
+    def _paint_role_badge(self, painter: QPainter, pitch_class: int, badge_at) -> None:
+        """Draw the role initials badge; ``badge_at(text)`` returns the badge rect."""
+        roles = self.note_roles.get(pitch_class)
+        if not roles:
+            return
+        text = "/".join(role[:1].upper() for role in sorted(roles))
+        badge = badge_at(text)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(QColor("#0f766e")))
+        painter.drawRoundedRect(badge, 3, 3)
+        painter.setPen(QColor("#f8fafc"))
+        painter.drawText(badge, Qt.AlignCenter, text)
+
+    def _constraint_colour(self, pitch_class: int) -> QColor | None:
+        state = self.note_constraints.get(pitch_class)
+        if state not in {"force", "exclude"}:
+            return None
+        return QColor("#16a34a" if state == "force" else "#dc2626")
+
     def _show_note_constraint_menu(self, position, pitch_class: int, name: str) -> None:
         menu = QMenu(self)
         actions = {
@@ -214,10 +227,7 @@ class _NoteMapWidget(QWidget):
 
     def _set_note_constraint(self, pitch_class: int, state: str) -> None:
         pitch_class %= 12
-        if state == "auto":
-            self.note_constraints.pop(pitch_class, None)
-        elif state in {"force", "exclude"}:
-            self.note_constraints[pitch_class] = state
+        apply_note_override(self.note_constraints, pitch_class, state)
         if self.on_note_constraint_changed is not None:
             self.on_note_constraint_changed(pitch_class, state)
         self.update()
@@ -388,7 +398,7 @@ class PianoChordWidget(_NoteMapWidget):
     def _display_pitch_name(self, pitch: int, key_width: float) -> str:
         name = self.pitch_class_formatter(pitch % 12)
         metrics = QFontMetrics(self.font())
-        full = f"{name}{pitch // 12 - 1}"
+        full = f"{name}{midi_octave(pitch)}"
         if key_width >= 22 and metrics.horizontalAdvance(full) <= key_width:
             return full
         if metrics.horizontalAdvance(name) <= key_width:
@@ -396,23 +406,22 @@ class PianoChordWidget(_NoteMapWidget):
         return ""
 
     def _draw_role_badge(self, painter: QPainter, rect: QRectF, pitch_class: int) -> None:
-        roles = self.note_roles.get(pitch_class)
-        if not roles:
-            return
-        text = "/".join(role[:1].upper() for role in sorted(roles))
-        badge_width = min(max(14, len(text) * 8 + 6), max(14, int(rect.width()) - 4))
-        badge = QRectF(rect.left() + 2, rect.top() + 2, badge_width, 14)
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QBrush(QColor("#0f766e")))
-        painter.drawRoundedRect(badge, 3, 3)
-        painter.setPen(QColor("#f8fafc"))
-        painter.drawText(badge, Qt.AlignCenter, text)
+        self._paint_role_badge(
+            painter,
+            pitch_class,
+            lambda text: QRectF(
+                rect.left() + 2,
+                rect.top() + 2,
+                min(max(14, len(text) * 8 + 6), max(14, int(rect.width()) - 4)),
+                14,
+            ),
+        )
 
     def _draw_constraint_marker(self, painter: QPainter, rect: QRectF, pitch_class: int) -> None:
-        state = self.note_constraints.get(pitch_class)
-        if state not in {"force", "exclude"}:
+        color = self._constraint_colour(pitch_class)
+        if color is None:
             return
-        color = QColor("#16a34a" if state == "force" else "#dc2626")
+        state = self.note_constraints[pitch_class]
         painter.setPen(QPen(color, 2))
         painter.setBrush(Qt.NoBrush)
         painter.drawRect(rect.adjusted(2, 2, -2, -2))
@@ -441,8 +450,7 @@ class PianoChordWidget(_NoteMapWidget):
             painter.setBrush(QBrush(QColor("#2563eb")))
             painter.setPen(QPen(QColor("#1e3a8a"), 1))
             painter.drawRoundedRect(handle, 3, 3)
-        label = f"{pitch_class_name(self.preview_low_pitch % 12)}{self.preview_low_pitch // 12 - 1}"
-        label += f" - {pitch_class_name(self.preview_high_pitch % 12)}{self.preview_high_pitch // 12 - 1}"
+        label = f"{midi_note_name(self.preview_low_pitch)} - {midi_note_name(self.preview_high_pitch)}"
         label_width = max(0, int(selected.width()) - 24)
         metrics = QFontMetrics(self.font())
         if label_width >= metrics.horizontalAdvance(label):
@@ -681,22 +689,16 @@ class FretboardNoteMapWidget(_NoteMapWidget):
                 painter.drawEllipse(QPointF(x, center_y), radius, radius)
 
     def _draw_role_badge(self, painter: QPainter, rect: QRectF, pitch_class: int) -> None:
-        roles = self.note_roles.get(pitch_class)
-        if not roles:
-            return
-        text = "/".join(role[:1].upper() for role in sorted(roles))
-        badge = QRectF(rect.left() - 3, rect.top() - 8, max(14, len(text) * 8 + 5), 13)
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QBrush(QColor("#0f766e")))
-        painter.drawRoundedRect(badge, 3, 3)
-        painter.setPen(QColor("#f8fafc"))
-        painter.drawText(badge, Qt.AlignCenter, text)
+        self._paint_role_badge(
+            painter,
+            pitch_class,
+            lambda text: QRectF(rect.left() - 3, rect.top() - 8, max(14, len(text) * 8 + 5), 13),
+        )
 
     def _draw_constraint_marker(self, painter: QPainter, rect: QRectF, pitch_class: int) -> None:
-        state = self.note_constraints.get(pitch_class)
-        if state not in {"force", "exclude"}:
+        color = self._constraint_colour(pitch_class)
+        if color is None:
             return
-        color = QColor("#16a34a" if state == "force" else "#dc2626")
         painter.setPen(QPen(color, 2))
         painter.setBrush(Qt.NoBrush)
         painter.drawEllipse(rect.adjusted(-2, -2, 2, 2))

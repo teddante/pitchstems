@@ -81,6 +81,15 @@ def chord_sample_text(track_names: list[str], note_count: int) -> str:
     return f"Sample: {shown} ({note_count} MIDI notes). View, Audio, and MIDI ticks do not affect detection."
 
 
+def apply_note_override(overrides: dict[int, str], pitch_class: int, state: str) -> None:
+    """Set a pitch class to force/exclude, or clear it for "auto"."""
+    pitch_class %= 12
+    if state == "auto":
+        overrides.pop(pitch_class, None)
+    elif state in {"force", "exclude"}:
+        overrides[pitch_class] = state
+
+
 def chord_note_constraints(overrides: dict[int, str]) -> tuple[set[int], set[int]]:
     required = {pitch_class for pitch_class, state in overrides.items() if state == "force"}
     excluded = {pitch_class for pitch_class, state in overrides.items() if state == "exclude"}

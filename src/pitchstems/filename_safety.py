@@ -26,7 +26,8 @@ def safe_file_stem(value: str, fallback: str, max_length: int = 80) -> str:
     return safe
 
 
-def safe_stem_key(value: str, max_length: int = 80) -> str:
+def slugify(value: str) -> str:
+    """Lowercase alphanumerics with single dashes between runs of anything else."""
     cleaned = []
     previous_dash = False
     for character in value.strip().lower():
@@ -36,7 +37,11 @@ def safe_stem_key(value: str, max_length: int = 80) -> str:
         elif not previous_dash:
             cleaned.append("-")
             previous_dash = True
-    key = "".join(cleaned).strip("-")[:max_length].rstrip("-")
+    return "".join(cleaned).strip("-")
+
+
+def safe_stem_key(value: str, max_length: int = 80) -> str:
+    key = slugify(value)[:max_length].rstrip("-")
     if not key:
         key = "stem"
     if is_windows_reserved_name(key):
