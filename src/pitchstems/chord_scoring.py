@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from pitchstems.chord_naming import PITCH_NAMES, _chord_qualities, chord_pitch_classes_for_label
-from pitchstems.notation import normalized_pitch_class_weights, split_chord_label
+from pitchstems.notation import split_chord_label
 
 MIN_WEIGHTED_TONE_SUPPORT = 0.005
 PARTIAL_HINT_LIMIT = 6
@@ -105,10 +105,6 @@ def _score_root(
     if not best_explanation:
         return None
     return label, max(0.0, min(1.0, best_score)), best_explanation, best_rank_key
-
-
-def _normalized_note_weights(pitch_weights: dict[int, float]) -> list[tuple[str, float]]:
-    return normalized_pitch_class_weights(pitch_weights)
 
 
 def _score_weighted_root_candidates(

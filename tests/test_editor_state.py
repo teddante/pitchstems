@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pitchstems.editor_project import ChordRegion
+from pitchstems.editor_models import ChordRegion
 from pitchstems.editor_state import (
     EditorStateSnapshot,
     build_editor_state_snapshot,

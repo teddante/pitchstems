@@ -8,7 +8,8 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtCore import Qt
 
-from pitchstems.editor_project import ChordRegion, EditorProject
+from pitchstems.editor_models import ChordRegion
+from pitchstems.editor_project import EditorProject
 from pitchstems import gui_editor_state
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pitchstems.editor_project import ChordRegion
+from pitchstems.editor_models import ChordRegion
 
 
 def review_navigation_chord(

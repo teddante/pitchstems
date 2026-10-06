@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from pitchstems.editor_project import ChordRegion
+from pitchstems.editor_models import ChordRegion
 from pitchstems.gui_editor_load import (
     _apply_current_result_state,
     _apply_loaded_editor_result,

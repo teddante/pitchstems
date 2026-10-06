@@ -1,4 +1,4 @@
-from pitchstems.editor_project import (
+from pitchstems.chord_naming import (
     chord_bass_name_for_label,
     chord_pitch_classes_for_label,
     chord_sounding_pitch_classes_for_label,

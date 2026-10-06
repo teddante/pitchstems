@@ -1,4 +1,4 @@
-from pitchstems.editor_project import NoteEvent
+from pitchstems.editor_models import NoteEvent
 from pitchstems.midi_synth import MidiSynthEngine
 
 

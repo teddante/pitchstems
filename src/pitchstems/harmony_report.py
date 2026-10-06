@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from pitchstems.chord_analysis import analyze_chord_at, analyze_chord_region, analyze_chord_regions
-from pitchstems.editor_project import (
-    NoteEvent,
-)
+from pitchstems.editor_models import NoteEvent
 from pitchstems.editor_review_target import (
     review_range_text,
     review_ranges,
@@ -17,11 +15,11 @@ from pitchstems.time_format import format_time
 
 
 def current_chord_analysis_report(window) -> str:
-    source_notes = gui_harmony_flow.chord_analysis_notes(window)
-    context = gui_harmony_flow.chord_context_key(window, window.timeline.position)
-    window.current_chord_base_weights = gui_harmony_flow.chord_base_pitch_weights(source_notes, context)
-    analysis_notes = gui_harmony_flow.filtered_chord_analysis_notes(window, source_notes, context)
-    required, excluded = gui_harmony_flow.chord_note_constraints(window)
+    inputs = gui_harmony_flow.chord_inputs(window, window.timeline.position)
+    source_notes = inputs.source_notes
+    window.current_chord_base_weights = inputs.base_weights
+    analysis_notes = inputs.analysis_notes
+    required, excluded = inputs.required, inputs.excluded
     scoring_options = window.chord_scoring_options()
     explicit_ranges = window.timeline.selection_ranges()
     selection_ranges = review_ranges(explicit_ranges, window.timeline.selected_chord)

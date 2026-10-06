@@ -1,6 +1,6 @@
 from pitchstems.chord_regions import merge_or_selected_chord_range as chord_assignment_ranges
 from pitchstems.editor_review_target import chord_assignment_target_text
-from pitchstems.editor_project import ChordRegion
+from pitchstems.editor_models import ChordRegion
 
 
 def test_chord_assignment_ranges_prefer_explicit_selection() -> None:

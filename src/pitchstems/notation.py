@@ -114,10 +114,6 @@ def spell_chord_tones(
     ]
 
 
-def spell_pitch_for_letter(target_pitch_class: int, letter: str) -> str:
-    return _spell_pitch_for_letter(target_pitch_class, letter)
-
-
 def spell_scale(
     root_pitch_class: int,
     intervals: tuple[int, ...],
@@ -220,7 +216,7 @@ def _spell_interval_from_root(root_name: str, target_pitch_class: int, interval:
     root_letter = root_name[0]
     letter_steps = _chord_interval_letter_steps(interval)
     target_letter = LETTERS[(LETTERS.index(root_letter) + letter_steps) % len(LETTERS)]
-    return _spell_pitch_for_letter(target_pitch_class, target_letter)
+    return spell_pitch_for_letter(target_pitch_class, target_letter)
 
 
 def _chord_interval_letter_steps(interval: int) -> int:
@@ -243,10 +239,10 @@ def _chord_interval_letter_steps(interval: int) -> int:
 def _spell_scale_degree(root_name: str, target_pitch_class: int, degree_index: int) -> str:
     root_letter = root_name[0]
     target_letter = LETTERS[(LETTERS.index(root_letter) + degree_index) % len(LETTERS)]
-    return _spell_pitch_for_letter(target_pitch_class, target_letter)
+    return spell_pitch_for_letter(target_pitch_class, target_letter)
 
 
-def _spell_pitch_for_letter(target_pitch_class: int, letter: str) -> str:
+def spell_pitch_for_letter(target_pitch_class: int, letter: str) -> str:
     natural = NATURAL_PITCH_CLASSES[letter]
     diff = (target_pitch_class - natural) % 12
     if diff > 6:

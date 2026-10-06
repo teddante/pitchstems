@@ -5,7 +5,7 @@ from array import array
 from bisect import bisect_right
 from dataclasses import dataclass
 
-from pitchstems.editor_project import NoteEvent
+from pitchstems.editor_models import NoteEvent
 
 
 @dataclass(frozen=True)

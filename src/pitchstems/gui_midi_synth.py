@@ -5,7 +5,7 @@ import threading
 from PySide6.QtCore import QIODevice
 from PySide6.QtMultimedia import QAudioFormat, QAudioSink
 
-from pitchstems.editor_project import NoteEvent
+from pitchstems.editor_models import NoteEvent
 from pitchstems.midi_synth import MidiSynthEngine
 
 

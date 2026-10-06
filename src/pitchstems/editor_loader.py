@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Any
 
-from pitchstems.editor_project import ChordRegion, EditorProject, build_editor_project
+from pitchstems.editor_models import ChordRegion
+from pitchstems.editor_project import EditorProject, build_editor_project
 from pitchstems.editor_state import load_editor_state, parse_chord_overrides, parse_chord_removals
 from pitchstems.pipeline_models import PipelineResult
 from pitchstems.project_store import load_project_manifest

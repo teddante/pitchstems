@@ -1,5 +1,5 @@
 from pitchstems.editor_chord_navigation import review_navigation_chord
-from pitchstems.editor_project import ChordRegion
+from pitchstems.editor_models import ChordRegion
 
 
 def test_review_navigation_steps_from_selected_chord() -> None:

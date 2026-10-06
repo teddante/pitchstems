@@ -1,5 +1,5 @@
 from pitchstems.editor_review_target import review_playback_loop_range
-from pitchstems.editor_project import ChordRegion
+from pitchstems.editor_models import ChordRegion
 
 
 def test_review_playback_loop_range_uses_review_target_rules() -> None:

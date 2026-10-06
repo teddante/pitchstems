@@ -4,7 +4,8 @@ import wave
 from mido import Message, MidiFile, MidiTrack
 
 from pitchstems.editor_loader import apply_chord_edits, build_editor_load_result
-from pitchstems.editor_project import ChordRegion, EditorProject
+from pitchstems.editor_models import ChordRegion
+from pitchstems.editor_project import EditorProject
 from pitchstems.pipeline_models import MidiResult, PipelineResult, StemResult
 from pitchstems.project_store import save_project_manifest
 

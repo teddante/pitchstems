@@ -6,7 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import QUrl
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 
-from pitchstems.editor_project import NoteEvent
+from pitchstems.editor_models import NoteEvent
 from pitchstems.gui_midi_synth import RealtimeMidiPreview
 from pitchstems.pipeline_models import PipelineResult
 

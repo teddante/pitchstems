@@ -4,10 +4,10 @@ from pitchstems.chord_analysis import (
     analyze_chord_region,
     analyze_chord_regions,
     analyze_chord,
-    chord_tones_for_label,
     detect_chords,
-    midi_note_name,
 )
+from pitchstems.chord_naming import chord_tones_for_label
+from pitchstems.notation import midi_note_name
 from pitchstems.editor_models import NoteEvent
 
 
@@ -19,7 +19,7 @@ def test_chord_analysis_module_exposes_core_chord_helpers() -> None:
 
 def test_detect_chords_returns_shared_chord_region_type() -> None:
     from pitchstems.editor_models import ChordRegion
-    from pitchstems.editor_project import NoteEvent
+    from pitchstems.editor_models import NoteEvent
 
     chords = detect_chords([
         NoteEvent("piano", 0.0, 1.0, 60, 90),

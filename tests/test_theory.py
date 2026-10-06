@@ -1,7 +1,7 @@
 import pytest
 
 import pitchstems.scale_analysis as scale_analysis
-from pitchstems.editor_project import ChordRegion, NoteEvent
+from pitchstems.editor_models import ChordRegion, NoteEvent
 from pitchstems.chord_gap_analysis import analyze_chord_gap as analyze_gap_from_module
 from pitchstems.scale_analysis import analyze_theory_region as analyze_theory_from_module
 from pitchstems.chord_gap_analysis import analyze_chord_gap, chord_gap_report
@@ -359,16 +359,12 @@ def test_chord_gap_report_explains_gap_formula_terms() -> None:
     assert "Ranking rule:" in report
 
 
-def test_theory_helpers_expose_gap_support_functions() -> None:
+def test_gap_support_helpers_find_neighbours_and_energy() -> None:
     from pitchstems.editor_models import ChordRegion as SharedChordRegion
     from pitchstems.editor_models import NoteEvent as SharedNoteEvent
-    from pitchstems.theory_helpers import (
-        candidate_common_tones,
-        next_chord,
-        previous_chord,
-        region_energy,
-        report_time,
-    )
+    from pitchstems.editor_query import ChordIndex
+    from pitchstems.midi_energy import total_region_energy
+    from pitchstems.theory_helpers import candidate_common_tones
 
     chords = [
         SharedChordRegion(0.0, 1.0, "C", 0.9),
@@ -376,11 +372,11 @@ def test_theory_helpers_expose_gap_support_functions() -> None:
     ]
     notes = [SharedNoteEvent("piano", 1.25, 1.75, 60, 100)]
 
-    assert previous_chord(chords, 1.5) == chords[0]
-    assert next_chord(chords, 1.5) == chords[1]
-    assert region_energy(notes, 1.0, 2.0) > 0.0
+    index = ChordIndex(chords, duration=3.0)
+    assert index.previous_before(1.5) == chords[0]
+    assert index.next_after(1.5) == chords[1]
+    assert total_region_energy(notes, 1.0, 2.0) > 0.0
     assert candidate_common_tones({0, 4, 7}, chords[0], chords[1]) > 0.0
-    assert report_time(65.0) == "01:05.000"
 
 
 def test_theory_helpers_count_slash_bass_as_sounding_tone() -> None:

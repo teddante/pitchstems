@@ -2,7 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from pitchstems.editor_project import EditorProject, EditorTrack, NoteEvent, midi_velocity_energy
+from pitchstems.editor_project import EditorProject, EditorTrack
+from pitchstems.editor_models import NoteEvent
+from pitchstems.midi_energy import midi_velocity_energy
 from pitchstems.harmony_inspector import (
     chord_analysis_track_names,
     chord_base_pitch_weights,

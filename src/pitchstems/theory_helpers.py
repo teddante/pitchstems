@@ -1,17 +1,12 @@
 from __future__ import annotations
 
-from bisect import bisect_left, bisect_right
 from typing import Any
 
-from pitchstems.chord_analysis import (
+from pitchstems.chord_naming import (
     chord_sounding_pitch_classes_for_label,
     exact_chord_names_for_pitch_classes,
 )
-from pitchstems.editor_models import ChordRegion, NoteEvent
-from pitchstems.midi_energy import total_region_energy
-from pitchstems.time_format import format_time
-
-report_time = format_time
+from pitchstems.editor_models import ChordRegion
 
 
 def diatonic_chord_labels(analysis: Any) -> list[str]:
@@ -100,28 +95,6 @@ def candidate_common_tones(
     if not scores:
         return 0.0
     return sum(scores) / len(scores)
-
-
-def previous_chord(chords: list[ChordRegion], seconds: float) -> ChordRegion | None:
-    if not chords:
-        return None
-    starts = [chord.start for chord in chords]
-    idx = bisect_right(starts, seconds)
-    candidates = [chord for chord in chords[:idx] if chord.end <= seconds]
-    return max(candidates, key=lambda chord: chord.end, default=None)
-
-
-def next_chord(chords: list[ChordRegion], seconds: float) -> ChordRegion | None:
-    if not chords:
-        return None
-    starts = [chord.start for chord in chords]
-    idx = bisect_left(starts, seconds)
-    candidates = [chord for chord in chords[idx:] if chord.start >= seconds]
-    return min(candidates, key=lambda chord: chord.start, default=None)
-
-
-def region_energy(notes: list[NoteEvent], start: float, end: float) -> float:
-    return total_region_energy(notes, start, end)
 
 
 def fit_clamp(value: float) -> float:

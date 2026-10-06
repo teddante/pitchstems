@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 
 from pitchstems.editor_models import ChordRegion, NoteEvent
 
@@ -33,6 +33,17 @@ class ChordIndex:
             if chord.end <= seconds:
                 break
         return None
+
+    def previous_before(self, seconds: float) -> ChordRegion | None:
+        """Latest-ending chord that finishes at or before ``seconds``."""
+        right = bisect_right(self.starts, seconds)
+        candidates = [chord for chord in self.chords[:right] if chord.end <= seconds]
+        return max(candidates, key=lambda chord: chord.end, default=None)
+
+    def next_after(self, seconds: float) -> ChordRegion | None:
+        """Earliest chord that starts at or after ``seconds``."""
+        left = bisect_left(self.starts, seconds)
+        return self.chords[left] if left < len(self.chords) else None
 
     def gap_at(self, seconds: float) -> tuple[float, float] | None:
         if self.active_at(seconds) is not None:

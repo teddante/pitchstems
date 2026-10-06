@@ -37,15 +37,3 @@ class ChordRegion(TimeSpanMixin):
     end: float
     label: str
     confidence: float
-
-
-def single_note_preview_notes(pitch: int, duration: float = 0.55) -> list[NoteEvent]:
-    return [
-        NoteEvent(
-            stem="note-preview",
-            start=0.0,
-            end=duration,
-            pitch=max(0, min(127, pitch)),
-            velocity=96,
-        )
-    ]

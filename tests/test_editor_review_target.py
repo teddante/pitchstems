@@ -1,4 +1,4 @@
-from pitchstems.editor_project import ChordRegion
+from pitchstems.editor_models import ChordRegion
 from pitchstems.editor_review_target import (
     review_range_text,
     review_ranges,

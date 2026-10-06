@@ -6,7 +6,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QListWidget
 
-from pitchstems.editor_project import ChordRegion
+from pitchstems.editor_models import ChordRegion
 from pitchstems.harmony_panel import (
     partial_hint_text,
     refresh_chord_actions,

@@ -11,7 +11,8 @@ from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import QApplication
 
-from pitchstems.editor_project import ChordRegion, EditorProject, EditorTrack, NoteEvent
+from pitchstems.editor_models import ChordRegion, NoteEvent
+from pitchstems.editor_project import EditorProject, EditorTrack
 from pitchstems.gui_track_controls import TRACK_CONTROL_MIN_HEIGHT
 from pitchstems.gui_timeline import TimelineView
 

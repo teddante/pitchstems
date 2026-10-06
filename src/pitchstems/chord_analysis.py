@@ -3,62 +3,25 @@ from __future__ import annotations
 import contextlib
 from dataclasses import dataclass, field
 from itertools import pairwise
+from typing import Any
 
+from pitchstems.chord_explanation import partial_harmony_hints
 from pitchstems.chord_naming import (
     PITCH_NAMES,
     alternate_chord_names_for_label,
-    chord_bass_name_for_label,
-    chord_pitch_classes_for_label,
-    chord_sounding_pitch_classes_for_label,
     chord_tones_for_label,
-    display_chord_label,
-    exact_chord_names_for_pitch_classes,
 )
-from pitchstems.chord_explanation import partial_harmony_hints
 from pitchstems.chord_scoring import (
     ChordScoringOptions,
     PartialChordCandidate,
     _candidate_labels,
-    _normalized_note_weights,
     _partial_shell_candidates_from_weights,
     _score_root,
     _score_weighted_root_candidates,
 )
 from pitchstems.editor_models import ChordRegion, NoteEvent
-from pitchstems.midi_energy import (
-    active_notes_at as energy_active_notes_at,
-    midi_velocity_energy as energy_midi_velocity_energy,
-    point_pitch_energy,
-    region_pitch_energy,
-)
-from pitchstems.notation import (
-    midi_note_name as spell_midi_note_name,
-)
-
-__all__ = [
-    "ChordAnalysis",
-    "ChordRegion",
-    "ChordScoringOptions",
-    "PITCH_NAMES",
-    "PartialChordCandidate",
-    "active_notes_at",
-    "alternate_chord_names_for_label",
-    "analyze_chord",
-    "analyze_chord_at",
-    "analyze_chord_region",
-    "analyze_chord_regions",
-    "chord_bass_name_for_label",
-    "chord_pitch_classes_for_label",
-    "chord_sounding_pitch_classes_for_label",
-    "chord_tones_for_label",
-    "detect_chords",
-    "display_chord_label",
-    "exact_chord_names_for_pitch_classes",
-    "identify_chord",
-    "midi_note_name",
-    "midi_velocity_energy",
-    "partial_harmony_hints",
-]
+from pitchstems.midi_energy import point_pitch_energy, ranges_pitch_energy, region_pitch_energy
+from pitchstems.notation import midi_note_name, normalized_pitch_class_weights
 
 PLAIN_CHORD_THRESHOLD = 0.70
 WEIGHTED_CHORD_THRESHOLD = 0.30
@@ -138,14 +101,6 @@ def detect_chords(notes: list[NoteEvent], minimum_region: float = 0.18) -> list[
     return [region for region in atomic_regions if region.duration >= minimum_region]
 
 
-def active_notes_at(notes: list[NoteEvent], seconds: float) -> list[NoteEvent]:
-    return energy_active_notes_at(notes, seconds)
-
-
-def midi_velocity_energy(velocity: int) -> float:
-    return energy_midi_velocity_energy(velocity)
-
-
 def analyze_chord_at(
     notes: list[NoteEvent],
     seconds: float,
@@ -153,65 +108,13 @@ def analyze_chord_at(
     excluded_pitch_classes: set[int] | None = None,
     scoring_options: ChordScoringOptions | None = None,
 ) -> ChordAnalysis:
-    options = scoring_options or ChordScoringOptions()
     pitch_weights, exact_pitch_weights = point_pitch_energy(notes, seconds)
-
-    if pitch_weights and options.weak_note_floor > 0:
-        max_weight = max(pitch_weights.values())
-        kept_pitch_classes = {
-            pitch_class
-            for pitch_class, weight in pitch_weights.items()
-            if weight >= max_weight * options.weak_note_floor
-        }
-        if required_pitch_classes:
-            kept_pitch_classes |= required_pitch_classes
-        pitch_weights = {
-            pitch_class: weight
-            for pitch_class, weight in pitch_weights.items()
-            if pitch_class in kept_pitch_classes
-        }
-        exact_pitch_weights = {
-            pitch: weight
-            for pitch, weight in exact_pitch_weights.items()
-            if pitch % 12 in kept_pitch_classes
-        }
-
-    active_note_names = [midi_note_name(pitch) for pitch in sorted(exact_pitch_weights)]
-    if not pitch_weights:
-        return ChordAnalysis(None, 0.0, active_note_names, [])
-
-    max_exact_weight = max(exact_pitch_weights.values())
-    bass_pitch = min(
-        pitch
-        for pitch, weight in exact_pitch_weights.items()
-        if weight >= max_exact_weight * 0.12
-    )
-    note_weights = _normalized_note_weights(pitch_weights)
-    effective_pitch_classes = set(pitch_weights)
-    if required_pitch_classes:
-        effective_pitch_classes |= required_pitch_classes
-    if len(effective_pitch_classes) < 3:
-        return ChordAnalysis(
-            None,
-            0.0,
-            active_note_names,
-            sorted(pitch_weights),
-            bass=bass_pitch % 12,
-            note_weights=note_weights,
-            partial_hints=partial_harmony_hints(
-                set(pitch_weights),
-                bass_pitch % 12,
-                required_pitch_classes=required_pitch_classes,
-                excluded_pitch_classes=excluded_pitch_classes,
-            ),
-        )
-    return _analyze_weighted_pitch_classes(
+    return _analyze_pitch_weights(
         pitch_weights,
-        bass_pitch % 12,
-        active_note_names,
-        note_weights,
+        exact_pitch_weights,
         required_pitch_classes=required_pitch_classes,
         excluded_pitch_classes=excluded_pitch_classes,
+        scoring_options=scoring_options,
     )
 
 
@@ -223,18 +126,16 @@ def analyze_chord_region(
     excluded_pitch_classes: set[int] | None = None,
     scoring_options: ChordScoringOptions | None = None,
 ) -> ChordAnalysis:
-    options = scoring_options or ChordScoringOptions()
     start, end = sorted((start, end))
     if end - start <= 0:
         return ChordAnalysis(None, 0.0, [], [])
-
     pitch_weights, exact_pitch_weights = region_pitch_energy(notes, start, end)
-    return _analyze_region_pitch_weights(
+    return _analyze_pitch_weights(
         pitch_weights,
         exact_pitch_weights,
         required_pitch_classes=required_pitch_classes,
         excluded_pitch_classes=excluded_pitch_classes,
-        scoring_options=options,
+        scoring_options=scoring_options,
     )
 
 
@@ -245,30 +146,19 @@ def analyze_chord_regions(
     excluded_pitch_classes: set[int] | None = None,
     scoring_options: ChordScoringOptions | None = None,
 ) -> ChordAnalysis:
-    options = scoring_options or ChordScoringOptions()
-    pitch_weights: dict[int, float] = {}
-    exact_pitch_weights: dict[int, float] = {}
-    for start, end in ranges:
-        start, end = sorted((start, end))
-        if end - start <= 0:
-            continue
-        region_weights, region_exact_weights = region_pitch_energy(notes, start, end)
-        for pitch_class, weight in region_weights.items():
-            pitch_weights[pitch_class] = pitch_weights.get(pitch_class, 0.0) + weight
-        for pitch, weight in region_exact_weights.items():
-            exact_pitch_weights[pitch] = exact_pitch_weights.get(pitch, 0.0) + weight
+    pitch_weights, exact_pitch_weights = ranges_pitch_energy(notes, ranges)
     if not pitch_weights and not exact_pitch_weights:
         return ChordAnalysis(None, 0.0, [], [])
-    return _analyze_region_pitch_weights(
+    return _analyze_pitch_weights(
         pitch_weights,
         exact_pitch_weights,
         required_pitch_classes=required_pitch_classes,
         excluded_pitch_classes=excluded_pitch_classes,
-        scoring_options=options,
+        scoring_options=scoring_options,
     )
 
 
-def _analyze_region_pitch_weights(
+def _analyze_pitch_weights(
     pitch_weights: dict[int, float],
     exact_pitch_weights: dict[int, float],
     required_pitch_classes: set[int] | None = None,
@@ -277,60 +167,58 @@ def _analyze_region_pitch_weights(
 ) -> ChordAnalysis:
     options = scoring_options or ChordScoringOptions()
     if pitch_weights and options.weak_note_floor > 0:
-        max_pitch_class_weight = max(pitch_weights.values())
-        kept_pitch_classes = {
-            pitch_class
-            for pitch_class, weight in pitch_weights.items()
-            if weight >= max_pitch_class_weight * options.weak_note_floor
-        }
-        if required_pitch_classes:
-            kept_pitch_classes |= required_pitch_classes
-        pitch_weights = {
-            pitch_class: weight
-            for pitch_class, weight in pitch_weights.items()
-            if pitch_class in kept_pitch_classes
-        }
-        exact_pitch_weights = {
-            pitch: weight
-            for pitch, weight in exact_pitch_weights.items()
-            if pitch % 12 in kept_pitch_classes
-        }
+        pitch_weights, exact_pitch_weights = _drop_weak_notes(
+            pitch_weights,
+            exact_pitch_weights,
+            options.weak_note_floor,
+            required_pitch_classes,
+        )
 
     active_note_names = [midi_note_name(pitch) for pitch in sorted(exact_pitch_weights)]
     if not pitch_weights:
-        return ChordAnalysis(None, 0.0, active_note_names, sorted(pitch_weights))
+        return ChordAnalysis(None, 0.0, active_note_names, [])
     max_exact_weight = max(exact_pitch_weights.values())
-    bass_pitch = min(
+    bass = min(
         pitch
         for pitch, weight in exact_pitch_weights.items()
         if weight >= max_exact_weight * 0.12
-    )
-    note_weights = _normalized_note_weights(pitch_weights)
+    ) % 12
+    note_weights = normalized_pitch_class_weights(pitch_weights)
     effective_pitch_classes = set(pitch_weights)
     if required_pitch_classes:
         effective_pitch_classes |= required_pitch_classes
     if len(effective_pitch_classes) < 3:
-        return ChordAnalysis(
-            None,
-            0.0,
+        return _unresolved(
             active_note_names,
             sorted(pitch_weights),
-            bass=bass_pitch % 12,
+            bass,
+            required_pitch_classes,
+            excluded_pitch_classes,
             note_weights=note_weights,
-            partial_hints=partial_harmony_hints(
-                set(pitch_weights),
-                bass_pitch % 12,
-                required_pitch_classes=required_pitch_classes,
-                excluded_pitch_classes=excluded_pitch_classes,
-            ),
         )
     return _analyze_weighted_pitch_classes(
         pitch_weights,
-        bass_pitch % 12,
+        bass,
         active_note_names,
         note_weights,
         required_pitch_classes=required_pitch_classes,
         excluded_pitch_classes=excluded_pitch_classes,
+    )
+
+
+def _drop_weak_notes(
+    pitch_weights: dict[int, float],
+    exact_pitch_weights: dict[int, float],
+    weak_note_floor: float,
+    required_pitch_classes: set[int] | None,
+) -> tuple[dict[int, float], dict[int, float]]:
+    floor = max(pitch_weights.values()) * weak_note_floor
+    kept = {pitch_class for pitch_class, weight in pitch_weights.items() if weight >= floor}
+    if required_pitch_classes:
+        kept |= required_pitch_classes
+    return (
+        {pitch_class: weight for pitch_class, weight in pitch_weights.items() if pitch_class in kept},
+        {pitch: weight for pitch, weight in exact_pitch_weights.items() if pitch % 12 in kept},
     )
 
 
@@ -348,19 +236,12 @@ def analyze_chord(
         effective_pitch_classes |= required_pitch_classes
     pitch_classes = sorted(effective_pitch_classes)
     if len(effective_pitch_classes) < 3:
-        bass = min(pitches) % 12 if pitches else None
-        return ChordAnalysis(
-            None,
-            0.0,
+        return _unresolved(
             active_note_names,
             sorted(observed_pitch_classes),
-            bass=bass,
-            partial_hints=partial_harmony_hints(
-                set(observed_pitch_classes),
-                bass,
-                required_pitch_classes=required_pitch_classes,
-                excluded_pitch_classes=excluded_pitch_classes,
-            ),
+            min(pitches) % 12 if pitches else None,
+            required_pitch_classes,
+            excluded_pitch_classes,
         )
 
     bass = min(pitches) % 12 if pitches else min(effective_pitch_classes)
@@ -377,22 +258,26 @@ def analyze_chord(
             label, score, explanation, rank_key = scored
             scored_roots.append((label, score, root, explanation, rank_key))
     if not scored_roots:
-        return ChordAnalysis(
-            None,
-            0.0,
+        return _unresolved(
             active_note_names,
             pitch_classes,
-            bass=bass,
-            partial_hints=partial_harmony_hints(
-                set(pitch_classes),
-                bass,
-                required_pitch_classes=required_pitch_classes,
-                excluded_pitch_classes=excluded_pitch_classes,
-            ),
+            bass,
+            required_pitch_classes,
+            excluded_pitch_classes,
         )
 
     scored_roots.sort(key=lambda item: item[4], reverse=True)
     best_label, best_score, best_root, _best_explanation, _best_rank_key = scored_roots[0]
+    if best_label is None or best_score < PLAIN_CHORD_THRESHOLD:
+        return _unresolved(
+            active_note_names,
+            pitch_classes,
+            bass,
+            required_pitch_classes,
+            excluded_pitch_classes,
+            confidence=best_score,
+            root=best_root,
+        )
     candidates = _candidate_labels(
         scored_roots,
         threshold=PLAIN_CHORD_THRESHOLD,
@@ -400,35 +285,9 @@ def analyze_chord(
         best_score=best_score,
         pitch_classes=set(pitch_classes),
     )
-    candidate_notes = {
-        label: chord_tones_for_label(label)
-        for label, _score in candidates
+    explanations = {
+        (label, score): explanation for label, score, _root, explanation, _key in scored_roots
     }
-    candidate_aliases = {
-        label: alternate_chord_names_for_label(label, bass)
-        for label, _score in candidates
-    }
-    candidate_explanations = {
-        label: explanation
-        for label, score, _root, explanation, _rank_key in scored_roots
-        if (label, score) in candidates
-    }
-
-    if best_label is None or best_score < PLAIN_CHORD_THRESHOLD:
-        return ChordAnalysis(
-            None,
-            best_score,
-            active_note_names,
-            pitch_classes,
-            best_root,
-            bass,
-            partial_hints=partial_harmony_hints(
-                set(pitch_classes),
-                bass,
-                required_pitch_classes=required_pitch_classes,
-                excluded_pitch_classes=excluded_pitch_classes,
-            ),
-        )
     return ChordAnalysis(
         best_label,
         best_score,
@@ -436,10 +295,7 @@ def analyze_chord(
         pitch_classes,
         best_root,
         bass,
-        candidates,
-        candidate_notes,
-        candidate_aliases,
-        candidate_explanations,
+        **_candidate_fields(candidates, explanations, bass),
     )
 
 
@@ -463,38 +319,14 @@ def _analyze_weighted_pitch_classes(
         ):
             scored_roots.append((label, score, explanation, root, rank_key))
     if not scored_roots:
-        partial_candidates = _partial_shell_candidates_from_weights(
-            pitch_weights,
+        return _unresolved(
+            active_note_names,
+            pitch_classes,
             bass,
             required_pitch_classes,
             excluded_pitch_classes,
-        )
-        return ChordAnalysis(
-            None,
-            0.0,
-            active_note_names,
-            pitch_classes,
-            bass=bass,
             note_weights=note_weights,
-            partial_hints=partial_harmony_hints(
-                set(pitch_classes),
-                bass,
-                required_pitch_classes=required_pitch_classes,
-                excluded_pitch_classes=excluded_pitch_classes,
-            ),
-            partial_candidates=[(candidate.label, candidate.score) for candidate in partial_candidates],
-            partial_candidate_notes={
-                candidate.label: [PITCH_NAMES[pitch_class] for pitch_class in candidate.observed_tones]
-                for candidate in partial_candidates
-            },
-            partial_candidate_aliases={
-                candidate.label: []
-                for candidate in partial_candidates
-            },
-            partial_candidate_explanations={
-                candidate.label: candidate.explanation
-                for candidate in partial_candidates
-            },
+            partial_weights=pitch_weights,
         )
     scored_roots.sort(key=lambda item: item[4], reverse=True)
     best_label, best_score, _best_explanation, best_root, _best_rank_key = scored_roots[0]
@@ -505,57 +337,22 @@ def _analyze_weighted_pitch_classes(
         best_score=best_score,
         pitch_classes=set(pitch_classes),
     )
-    candidate_notes = {
-        label: chord_tones_for_label(label)
-        for label, _score in candidates
+    explanations = {
+        (label, score): explanation for label, score, explanation, _root, _key in scored_roots
     }
-    candidate_aliases = {
-        label: alternate_chord_names_for_label(label, bass)
-        for label, _score in candidates
-    }
-    candidate_explanations = {
-        label: explanation
-        for label, score, explanation, _root, _rank_key in scored_roots
-        if (label, score) in candidates
-    }
+    candidate_fields = _candidate_fields(candidates, explanations, bass)
     if best_score < WEIGHTED_CHORD_THRESHOLD:
-        partial_candidates = _partial_shell_candidates_from_weights(
-            pitch_weights,
+        return _unresolved(
+            active_note_names,
+            pitch_classes,
             bass,
             required_pitch_classes,
             excluded_pitch_classes,
-        )
-        return ChordAnalysis(
-            None,
-            best_score,
-            active_note_names,
-            pitch_classes,
-            best_root,
-            bass,
-            candidates,
-            candidate_notes,
-            candidate_aliases,
-            candidate_explanations,
-            note_weights,
-            partial_harmony_hints(
-                set(pitch_classes),
-                bass,
-                required_pitch_classes=required_pitch_classes,
-                excluded_pitch_classes=excluded_pitch_classes,
-            ),
-            [(candidate.label, candidate.score) for candidate in partial_candidates],
-            {
-                candidate.label: [PITCH_NAMES[pitch_class] for pitch_class in candidate.observed_tones]
-                for candidate in partial_candidates
-            },
-            {
-                candidate.label: []
-                for candidate in partial_candidates
-            },
-            {
-                candidate.label: candidate.explanation
-                for candidate in partial_candidates
-            },
+            confidence=best_score,
+            root=best_root,
+            note_weights=note_weights,
+            partial_weights=pitch_weights,
+            **candidate_fields,
         )
     return ChordAnalysis(
         best_label,
@@ -564,18 +361,74 @@ def _analyze_weighted_pitch_classes(
         pitch_classes,
         best_root,
         bass,
-        candidates,
-        candidate_notes,
-        candidate_aliases,
-        candidate_explanations,
-        note_weights,
+        note_weights=note_weights,
+        **candidate_fields,
     )
 
 
-def identify_chord(pitches: list[int]) -> tuple[str | None, float]:
-    analysis = analyze_chord(pitches)
-    return analysis.label, analysis.confidence
+def _candidate_fields(
+    candidates: list[tuple[str, float]],
+    explanations: dict[tuple[str, float], list[str]],
+    bass: int,
+) -> dict[str, Any]:
+    return {
+        "candidates": candidates,
+        "candidate_notes": {label: chord_tones_for_label(label) for label, _score in candidates},
+        "candidate_aliases": {
+            label: alternate_chord_names_for_label(label, bass) for label, _score in candidates
+        },
+        "candidate_explanations": {
+            label: explanations[(label, score)]
+            for label, score in candidates
+            if (label, score) in explanations
+        },
+    }
 
 
-def midi_note_name(pitch: int, spelling_preference: str | None = "auto") -> str:
-    return spell_midi_note_name(pitch, spelling_preference)
+def _unresolved(
+    active_note_names: list[str],
+    pitch_classes: list[int],
+    bass: int | None,
+    required_pitch_classes: set[int] | None,
+    excluded_pitch_classes: set[int] | None,
+    *,
+    confidence: float = 0.0,
+    root: int | None = None,
+    note_weights: list[tuple[str, float]] | None = None,
+    partial_weights: dict[int, float] | None = None,
+    **candidate_fields: Any,
+) -> ChordAnalysis:
+    """Build a no-label analysis that still carries partial-harmony hints."""
+    partial: list[PartialChordCandidate] = []
+    if partial_weights is not None and bass is not None:
+        partial = _partial_shell_candidates_from_weights(
+            partial_weights,
+            bass,
+            required_pitch_classes,
+            excluded_pitch_classes,
+        )
+    return ChordAnalysis(
+        None,
+        confidence,
+        active_note_names,
+        pitch_classes,
+        root,
+        bass,
+        note_weights=note_weights or [],
+        partial_hints=partial_harmony_hints(
+            set(pitch_classes),
+            bass,
+            required_pitch_classes=required_pitch_classes,
+            excluded_pitch_classes=excluded_pitch_classes,
+        ),
+        partial_candidates=[(candidate.label, candidate.score) for candidate in partial],
+        partial_candidate_notes={
+            candidate.label: [PITCH_NAMES[pitch_class] for pitch_class in candidate.observed_tones]
+            for candidate in partial
+        },
+        partial_candidate_aliases={candidate.label: [] for candidate in partial},
+        partial_candidate_explanations={
+            candidate.label: candidate.explanation for candidate in partial
+        },
+        **candidate_fields,
+    )

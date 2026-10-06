@@ -9,7 +9,9 @@ from PySide6.QtGui import QColor, QBrush, QFontMetrics, QImage, QPainter, QPen, 
 from PySide6.QtWidgets import QApplication, QGraphicsScene, QGraphicsView
 
 from pitchstems.editor_chord_navigation import review_navigation_chord
-from pitchstems.editor_project import ChordRegion, EditorProject, NoteEvent, midi_note_name
+from pitchstems.editor_models import ChordRegion, NoteEvent
+from pitchstems.editor_project import EditorProject
+from pitchstems.notation import midi_note_name
 from pitchstems.gui_theme import TRACK_COLORS
 from pitchstems.gui_track_controls import TRACK_CONTROL_MIN_HEIGHT
 from pitchstems.timeline_chord_geometry import (

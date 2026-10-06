@@ -4,25 +4,23 @@ import wave
 from mido import Message, MetaMessage, MidiFile, MidiTrack
 import pytest
 
+from pitchstems.editor_models import ChordRegion, NoteEvent
+from pitchstems.chord_scoring import ChordScoringOptions
 from pitchstems.editor_project import (
-    ChordRegion,
-    ChordScoringOptions,
     EditorProject,
     EditorTrack,
-    NoteEvent,
-    active_notes_at,
+    build_editor_project,
+    read_midi_notes,
+)
+from pitchstems.midi_energy import active_notes_at, midi_velocity_energy
+from pitchstems.chord_analysis import (
     analyze_chord,
     analyze_chord_at,
     analyze_chord_region,
-    build_editor_project,
-    chord_tones_for_label,
     detect_chords,
-    exact_chord_names_for_pitch_classes,
-    identify_chord,
-    midi_velocity_energy,
-    midi_note_name,
-    read_midi_notes,
 )
+from pitchstems.chord_naming import chord_tones_for_label, exact_chord_names_for_pitch_classes
+from pitchstems.notation import midi_note_name
 from pitchstems.pipeline_models import MidiResult, PipelineResult, StemResult
 
 
@@ -211,10 +209,10 @@ def test_read_midi_notes_applies_tempo_changes_across_note_tracks(tmp_path: Path
     assert notes[0].end == 1.5
 
 
-def test_identify_chord_names_common_triads() -> None:
-    assert identify_chord([60, 64, 67])[0] == "C"
-    assert identify_chord([57, 60, 64])[0] == "Am"
-    assert identify_chord([62, 65, 68])[0] == "Ddim"
+def test_analyze_chord_names_common_triads() -> None:
+    assert analyze_chord([60, 64, 67]).label == "C"
+    assert analyze_chord([57, 60, 64]).label == "Am"
+    assert analyze_chord([62, 65, 68]).label == "Ddim"
 
 
 def test_analyze_chord_names_extensions_and_inversions() -> None:
@@ -566,7 +564,7 @@ def test_midi_note_name_formats_octaves() -> None:
 def test_editor_project_reexports_shared_music_models() -> None:
     from pitchstems.editor_models import ChordRegion as SharedChordRegion
     from pitchstems.editor_models import NoteEvent as SharedNoteEvent
-    from pitchstems.editor_project import ChordRegion, NoteEvent
+    from pitchstems.editor_models import ChordRegion, NoteEvent
 
     assert ChordRegion is SharedChordRegion
     assert NoteEvent is SharedNoteEvent

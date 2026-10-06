@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from pitchstems.chord_regions import merge_or_selected_chord_range
-from pitchstems.editor_project import ChordRegion
+from pitchstems.editor_models import ChordRegion
 from pitchstems.time_format import format_time
 
 ReviewTargetMode = Literal["playhead", "selected_chord", "selection", "multi_selection"]

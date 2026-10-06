@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QListWidgetItem
 
 from pitchstems.chord_regions import merge_or_selected_chord_range as chord_assignment_ranges
-from pitchstems.editor_project import ChordRegion
+from pitchstems.editor_models import ChordRegion
 from pitchstems.notation import percent_text
 from pitchstems.chord_explanation import partial_harmony_note_order
 from pitchstems.time_format import format_time

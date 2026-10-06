@@ -2,20 +2,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from pitchstems.editor_models import NoteEvent
+
 from pitchstems.editor_review_target import (
     ReviewTarget,
     review_ranges_brief_text,
     review_target,
     single_review_range,
 )
-from pitchstems.editor_project import analyze_chord_at, analyze_chord_regions
+from pitchstems.chord_analysis import analyze_chord_at, analyze_chord_regions
 from pitchstems.chord_gap_analysis import analyze_chord_gap
 from pitchstems.harmony_inspector import (
-    chord_base_pitch_weights as inspector_chord_base_pitch_weights,
-    chord_note_constraints as inspector_chord_note_constraints,
-    chord_sample_text as inspector_chord_sample_text,
-    filtered_chord_analysis_notes as inspector_filtered_chord_analysis_notes,
-    harmony_context_key as inspector_harmony_context_key,
+    HarmonyContextKey,
+    chord_base_pitch_weights,
+    chord_note_constraints,
+    chord_sample_text,
+    filtered_chord_analysis_notes,
+    harmony_context_key,
     selected_chord_analysis_notes,
 )
 from pitchstems import harmony_panel
@@ -35,6 +38,31 @@ class HarmonyRefreshGate:
             self.last_refresh_seconds = now_seconds
             return True
         return False
+
+
+@dataclass(frozen=True)
+class ChordInputs:
+    source_notes: list[NoteEvent]
+    context: HarmonyContextKey
+    base_weights: dict[int, float]
+    analysis_notes: list[NoteEvent]
+    required: set[int]
+    excluded: set[int]
+
+
+def chord_inputs(window, seconds: float) -> ChordInputs:
+    """Notes, context and note constraints shared by the harmony panel and its report."""
+    source_notes = chord_analysis_notes(window)
+    context = chord_context_key(window, seconds)
+    required, excluded = chord_note_constraints(window.chord_note_overrides)
+    return ChordInputs(
+        source_notes=source_notes,
+        context=context,
+        base_weights=chord_base_pitch_weights(source_notes, context),
+        analysis_notes=filtered_chord_analysis_notes(source_notes, excluded),
+        required=required,
+        excluded=excluded,
+    )
 
 
 def refresh_current_harmony(window, seconds: float) -> None:
@@ -62,14 +90,15 @@ def refresh_current_harmony(window, seconds: float) -> None:
             window.chord_fretboard_view.set_note_constraints(window.chord_note_overrides)
         if hasattr(window, "theory_scale_view"):
             window.theory_scale_view.set_note_constraints(getattr(window, "theory_note_overrides", {}))
-    source_notes = chord_analysis_notes(window)
-    window.current_chord_base_weights = chord_base_pitch_weights(source_notes, context)
-    analysis_notes = filtered_chord_analysis_notes(window, source_notes, context)
-    sample_text = chord_sample_text(window, source_notes)
+    inputs = chord_inputs(window, seconds)
+    source_notes = inputs.source_notes
+    window.current_chord_base_weights = inputs.base_weights
+    analysis_notes = inputs.analysis_notes
+    required, excluded = inputs.required, inputs.excluded
+    sample_text = chord_sample_text(window.chord_analysis_track_names(), len(source_notes))
     scoring_options = window.chord_scoring_options()
     target = current_review_target(window, seconds)
     if target.ranges:
-        required, excluded = chord_note_constraints(window)
         region_analysis_notes = analysis_notes_overlapping_ranges(
             window.editor_project,
             analysis_notes,
@@ -109,7 +138,6 @@ def refresh_current_harmony(window, seconds: float) -> None:
             window.set_chord_context_text(f"{sample_text}\nNotes in {label.lower()}: -")
         return
 
-    required, excluded = chord_note_constraints(window)
     point_analysis_notes = analysis_notes_active_at(window.editor_project, analysis_notes, seconds)
     analysis = analyze_chord_at(
         point_analysis_notes,
@@ -151,7 +179,7 @@ def analysis_notes_active_at(editor_project, notes, seconds: float):
 
 def chord_context_key(window, seconds: float):
     ranges = list(current_review_target(window, seconds).ranges)
-    return inspector_harmony_context_key(
+    return harmony_context_key(
         seconds,
         single_review_range(ranges),
         ranges,
@@ -166,7 +194,7 @@ def refresh_current_theory(window, source_notes, seconds: float) -> None:
     if len(target.ranges) > 1:
         window.set_theory_analysis(None)
         return
-    required, excluded = theory_note_constraints(window)
+    required, excluded = chord_note_constraints(getattr(window, "theory_note_overrides", {}))
     selection = target.single_range
     if selection is not None:
         start, end = selection
@@ -249,12 +277,6 @@ def chord_analysis_notes(window):
     )
 
 
-def chord_sample_text(window, notes) -> str:
-    if window.editor_project is None:
-        return "Sample: -"
-    return inspector_chord_sample_text(window.chord_analysis_track_names(), len(notes))
-
-
 def selected_chord_analysis_tracks(window) -> set[str] | None:
     if not window.track_analysis_checks:
         return None
@@ -263,23 +285,6 @@ def selected_chord_analysis_tracks(window) -> set[str] | None:
         for stem_name, checkbox in window.track_analysis_checks.items()
         if checkbox.isChecked()
     }
-
-
-def chord_base_pitch_weights(notes, context) -> dict[int, float]:
-    return inspector_chord_base_pitch_weights(notes, context)
-
-
-def filtered_chord_analysis_notes(window, notes, _context):
-    _required, excluded_pitch_classes = chord_note_constraints(window)
-    return inspector_filtered_chord_analysis_notes(notes, excluded_pitch_classes)
-
-
-def chord_note_constraints(window) -> tuple[set[int], set[int]]:
-    return inspector_chord_note_constraints(window.chord_note_overrides)
-
-
-def theory_note_constraints(window) -> tuple[set[int], set[int]]:
-    return inspector_chord_note_constraints(getattr(window, "theory_note_overrides", {}))
 
 
 def populate_note_filter_list(window, weights: dict[int, float]) -> None:

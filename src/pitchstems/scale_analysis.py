@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from pitchstems.chord_analysis import chord_sounding_pitch_classes_for_label
+from pitchstems.chord_naming import chord_sounding_pitch_classes_for_label
 from pitchstems.chord_naming import ChordSymbol, parse_chord_symbol
 from pitchstems.editor_models import ChordRegion, NoteEvent
 from pitchstems.midi_energy import (
@@ -20,35 +20,7 @@ from pitchstems.notation import (
     spelling_preference_from_label,
     split_chord_label,
 )
-from pitchstems.theory_helpers import (
-    candidate_common_tones as _candidate_common_tones,
-    candidate_pitch_class_movement as _candidate_pitch_class_movement,
-    candidate_theory_fit as _candidate_theory_fit,
-    diatonic_chord_labels as _diatonic_chord_labels,
-    fit_clamp,
-    next_chord as _next_chord,
-    previous_chord as _previous_chord,
-    region_energy as _region_energy,
-)
-from pitchstems.time_format import format_time as _report_time
-
-__all__ = [
-    "ScaleCandidate",
-    "ScaleDefinition",
-    "TheoryAnalysis",
-    "_candidate_common_tones",
-    "_candidate_pitch_class_movement",
-    "_candidate_theory_fit",
-    "_diatonic_chord_labels",
-    "_next_chord",
-    "_previous_chord",
-    "_region_energy",
-    "_report_time",
-    "analyze_theory_at",
-    "analyze_theory_region",
-    "fit_clamp",
-    "theory_analysis_report",
-]
+from pitchstems.theory_helpers import fit_clamp
 
 
 @dataclass(frozen=True)
@@ -370,7 +342,7 @@ def _analyze_evidence(
     total_energy = sum(totals.values())
     if total_energy <= 0:
         return TheoryAnalysis(None, 0.0, [], [])
-    note_weights = _normalized_note_weights(totals)
+    note_weights = normalized_pitch_class_weights(totals)
     chord_root_totals = _chord_root_totals(chords)
     candidates = _scale_candidates(
         totals,
@@ -724,7 +696,7 @@ def _suggested_note_groups(
     scale_spellings = spell_scale(candidate.root, candidate.scale.intervals)
     core_note_set = set(core_pitch_classes)
     core_notes = [
-        pitch_class_name(pitch_class, spelling_preference_from_scale_label(candidate.label))
+        pitch_class_name(pitch_class, spelling_preference_from_label(candidate.label))
         for pitch_class in core_pitch_classes
     ]
     scale_notes = [
@@ -733,15 +705,11 @@ def _suggested_note_groups(
         if pitch_class not in core_note_set
     ]
     outside_notes = [
-        pitch_class_name(pitch_class, spelling_preference_from_scale_label(candidate.label))
+        pitch_class_name(pitch_class, spelling_preference_from_label(candidate.label))
         for pitch_class in range(12)
         if pitch_class not in set(scale_pitch_classes)
     ]
     return core_notes, scale_notes, outside_notes
-
-
-def _normalized_note_weights(totals: dict[int, float]) -> list[tuple[str, float]]:
-    return normalized_pitch_class_weights(totals)
 
 
 def _chord_root_totals(chords: list[ChordRegion]) -> dict[int, float]:
@@ -760,10 +728,6 @@ def _chord_root(label: str) -> int | None:
 
 def _minor_or_diminished_suffix(suffix: str) -> bool:
     return (suffix.startswith("m") and not suffix.startswith("maj")) or "dim" in suffix
-
-
-def spelling_preference_from_scale_label(label: str) -> str:
-    return spelling_preference_from_label(label)
 
 
 def _add_pitch_weight(totals: dict[int, float], pitch_class: int, weight: float) -> None:

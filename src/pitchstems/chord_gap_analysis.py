@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from pitchstems.chord_analysis import ChordAnalysis, analyze_chord_region, chord_sounding_pitch_classes_for_label
+from pitchstems.chord_analysis import ChordAnalysis, analyze_chord_region
+from pitchstems.chord_naming import chord_sounding_pitch_classes_for_label
 from pitchstems.chord_scoring import ChordScoringOptions
 from pitchstems.editor_models import ChordRegion, NoteEvent
 from pitchstems.scale_analysis import TheoryAnalysis, analyze_theory_region
@@ -12,11 +13,10 @@ from pitchstems.theory_helpers import (
     candidate_theory_fit,
     diatonic_chord_labels,
     fit_clamp,
-    next_chord as find_next_chord,
-    previous_chord as find_previous_chord,
-    region_energy,
 )
-from pitchstems.time_format import format_time as report_time
+from pitchstems.editor_query import ChordIndex
+from pitchstems.midi_energy import total_region_energy
+from pitchstems.time_format import format_time
 
 @dataclass(frozen=True)
 class ChordGapSuggestion:
@@ -51,8 +51,9 @@ def analyze_chord_gap(
     scoring_options: ChordScoringOptions | None = None,
 ) -> ChordGapAnalysis:
     start, end = sorted((start, end))
-    previous_chord = find_previous_chord(chords, start)
-    next_chord = find_next_chord(chords, end)
+    chord_index = ChordIndex(chords, duration=end)
+    previous_chord = chord_index.previous_before(start)
+    next_chord = chord_index.next_after(end)
     if end <= start:
         return ChordGapAnalysis(start, end, previous_chord, next_chord, [])
 
@@ -89,7 +90,7 @@ def chord_gap_report(analysis: ChordGapAnalysis) -> str:
     lines = [
         "Chord Gap Suggestions",
         "=====================",
-        f"Gap: {report_time(analysis.start)} - {report_time(analysis.end)}",
+        f"Gap: {format_time(analysis.start)} - {format_time(analysis.end)}",
         f"Previous chord: {analysis.previous_chord.label if analysis.previous_chord else '-'}",
         f"Next chord: {analysis.next_chord.label if analysis.next_chord else '-'}",
         "",
@@ -142,7 +143,7 @@ def _gap_suggestions(
         candidates.setdefault(label, ("insert", 0.0))
 
     suggestions = []
-    gap_note_energy = region_energy(notes, start, end)
+    gap_note_energy = total_region_energy(notes, start, end)
     no_local_evidence = 1.0 if gap_note_energy <= 0 else 0.0
     local_scores = dict(local_chord_analysis.candidates)
     for label, (action, generated_local_score) in candidates.items():

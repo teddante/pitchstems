@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pitchstems.gui_harmony_flow as gui_harmony_flow
-from pitchstems.editor_project import ChordRegion
+from pitchstems.editor_models import ChordRegion
 from pitchstems.gui_harmony_flow import (
     HarmonyRefreshGate,
     analysis_notes_active_at,
