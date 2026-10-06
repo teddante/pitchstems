@@ -206,5 +206,3 @@ def test_editor_load_state_invalidates_and_marks_closing() -> None:
     assert state.closing
     assert state.token > first
     assert state.worker is None
-
-

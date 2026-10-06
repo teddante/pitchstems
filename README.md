@@ -191,42 +191,12 @@ The curated model catalog lives in `src/pitchstems/model_catalog.py`; the native
 
 ## Development
 
-```powershell
-py -3.10 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -U pip
-python -m pip install -e ".[dev,cpu,gui]"
-python -m ruff check src tests
-python -m pytest
-python -m compileall src
-python -m pip check
-git diff --check main...HEAD
-```
-
-For reproducible Windows installs, use the constraints files in `constraints/`
-with the matching extra. Refresh constraints only after
-`.\scripts\check.ps1 -GuiSmoke -Build` and `python -m pip check` pass.
-
-Validation tiers:
-
-- Fast source check with the local runtime stack: `.\scripts\check.ps1`
-- Source-only check for dev environments without the ML/GUI runtime stack: `.\scripts\check.ps1 -SkipDoctor`
-- GUI/package check: `.\scripts\check.ps1 -GuiSmoke -Build`
-- GPU/runtime check after setup or ML dependency changes: `.\scripts\check.ps1 -Gpu`
-- Dependency security audit: `python -m pip_audit`
-- Manual real-audio smoke when changing separation/transcription or editor review/export behavior:
-
-The configured coverage percentage is a focused core-module gate. It is not a
-whole-package coverage claim; risk-heavy modules are added as focused tests
-stabilise.
+Setup, the check tiers, constraints refresh, and the real-audio smoke test are
+documented in [CONTRIBUTING.md](CONTRIBUTING.md). The usual gate is:
 
 ```powershell
-.\scripts\real_audio_smoke.ps1 -AudioPath "C:\path\to\short-audio.mp3"
+.\scripts\check.ps1
 ```
-
-Use a short local audio fixture, not a committed song or generated stem output. The smoke script runs the real CLI pipeline, reopens the generated `.pitchstems` project in the offscreen GUI, checks timeline review/playback, and copies selected export files to prove the import audio -> separate -> MIDI -> reopen project -> play/review -> export selected files path. A passing run prints the generated project folder and a `selected-export` folder containing selected stems and MIDI; source audio stays unchecked by default.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution notes.
 
 ## Native Settings
 

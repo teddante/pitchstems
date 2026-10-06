@@ -6,23 +6,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. "$PSScriptRoot\common.ps1"
 
-$venvPython = Join-Path $PSScriptRoot "..\.venv\Scripts\python.exe"
 $venvPitchstems = Join-Path $PSScriptRoot "..\.venv\Scripts\pitchstems.exe"
 
-if (Test-Path $venvPython) {
-    $python = $venvPython
-    $pythonArgs = @()
-} else {
-    $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
-    if ($null -ne $pythonCommand) {
-        $python = $pythonCommand.Source
-        $pythonArgs = @()
-    } else {
-        $python = "py"
-        $pythonArgs = @("-3.10")
-    }
-}
+$resolvedPython = Resolve-PitchStemsPython
+$python = $resolvedPython.Path
+$pythonArgs = $resolvedPython.Args
 
 if (Test-Path $venvPitchstems) {
     $pitchstems = $venvPitchstems
@@ -32,19 +22,6 @@ if (Test-Path $venvPitchstems) {
         $pitchstems = $pitchstemsCommand.Source
     } else {
         $pitchstems = $null
-    }
-}
-
-function Invoke-Checked {
-    param(
-        [string]$Label,
-        [scriptblock]$Command
-    )
-
-    Write-Host $Label
-    & $Command
-    if ($LASTEXITCODE -ne 0) {
-        throw "$Label failed with exit code $LASTEXITCODE"
     }
 }
 

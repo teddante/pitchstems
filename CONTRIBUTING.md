@@ -37,42 +37,50 @@ Run these before opening a pull request:
 .\scripts\check.ps1
 ```
 
-The project check also runs `python -m pip check` so broken installed
-dependency metadata is caught before review. It also runs Git whitespace checks
+Validation tiers:
+
+- Fast source check with the local runtime stack: `.\scripts\check.ps1`
+- Source-only check without the ML/GUI runtime stack: `.\scripts\check.ps1 -SkipDoctor`
+- GUI/package check: `.\scripts\check.ps1 -GuiSmoke -Build`
+- GPU/runtime check after GPU setup, acceleration, model runtime, launcher, or
+  packaging changes: `.\scripts\check.ps1 -Gpu`
+- Dependency security audit when dependency files change: `python -m pip_audit`
+
+The project check runs Ruff, Vulture, mypy, the tests with a focused core
+coverage gate, `compileall`, `python -m pip check`, and Git whitespace checks
 for the working tree, staged changes, and branch diff when `main` is available.
-When adding a module to mypy or coverage gates, keep the change small: add
-focused tests first, add the module to the gate, then run `.\scripts\check.ps1`.
-Do not lower coverage thresholds to make unrelated work pass.
-The coverage command is a focused core gate, not a whole-package percentage.
-Add risk-heavy modules incrementally after their focused tests are stable.
+The coverage percentage is a focused core-module gate, not a whole-package
+claim. When adding a module to mypy or coverage gates, keep the change small:
+add focused tests first, add the module to the gate, then run
+`.\scripts\check.ps1`. Do not lower coverage thresholds to make unrelated work
+pass.
 
-Regenerate Windows constraints from a clean Windows environment after changing
-dependencies:
-
-```powershell
-py -3.10 scripts\refresh_constraints.py dev
-py -3.10 scripts\refresh_constraints.py cpu
-```
-
-For a focused branch whitespace check, run:
+For reproducible Windows installs, use the constraints files in `constraints/`
+with the matching extra. Regenerate them from a clean Windows environment after
+changing dependencies, and only after `.\scripts\check.ps1 -GuiSmoke -Build`
+and `python -m pip check` pass:
 
 ```powershell
-git diff --check main...HEAD
+py -3.10 scripts
+efresh_constraints.py dev
+py -3.10 scripts
+efresh_constraints.py cpu
 ```
 
-Use the GPU check when changing GPU setup, acceleration code, model runtime,
-launcher behavior, or packaging:
+### Real-audio smoke
+
+When changing separation, transcription, project packaging, editor review, or
+export behavior, run the real-audio smoke with a short local audio file (never
+a committed song or generated stem output):
 
 ```powershell
-.\scripts\check.ps1 -Gpu
+.\scripts\real_audio_smoke.ps1 -AudioPath "C:\path\to\short-audio.mp3"
 ```
 
-When changing separation, transcription, project packaging, or editor timeline
-loading, run a short real-audio smoke through the CLI, reopen the generated
-`.pitchstems` project in the GUI, and confirm stems, MIDI, combined MIDI,
-manifest, timeline playback, and optional ZIP export are present.
-When dependency files change, run `python -m pip_audit` in the constrained dev
-environment before merging.
+It runs the real CLI pipeline, reopens the generated `.pitchstems` project in
+the offscreen GUI, checks timeline review/playback, and copies selected export
+files. A passing run prints the project folder and a `selected-export` folder
+containing selected stems and MIDI; source audio stays unchecked by default.
 
 See [AGENTS.md](AGENTS.md) for the solo-development branch, commit, pull
 request, release, and approval workflow used by AI-assisted development.

@@ -1,17 +1,5 @@
 $ErrorActionPreference = "Stop"
-
-function Invoke-Checked {
-    param(
-        [string]$Label,
-        [scriptblock]$Command
-    )
-
-    Write-Host $Label
-    & $Command
-    if ($LASTEXITCODE -ne 0) {
-        throw "$Label failed with exit code $LASTEXITCODE"
-    }
-}
+. "$PSScriptRoot\common.ps1"
 
 $gpuConstraints = Join-Path $PSScriptRoot "..\constraints\windows-gpu.txt"
 

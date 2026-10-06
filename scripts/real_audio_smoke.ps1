@@ -9,6 +9,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. "$PSScriptRoot\common.ps1"
 
 $previousPythonIoEncoding = $env:PYTHONIOENCODING
 $env:PYTHONIOENCODING = "utf-8"
@@ -23,20 +24,9 @@ New-Item -ItemType Directory -Force -Path $resolvedOutput | Out-Null
 $resolvedExport = Join-Path $resolvedOutput "selected-export"
 New-Item -ItemType Directory -Force -Path $resolvedExport | Out-Null
 
-$venvPython = Join-Path $PSScriptRoot "..\.venv\Scripts\python.exe"
-if (Test-Path $venvPython) {
-    $python = $venvPython
-    $pythonArgs = @()
-} else {
-    $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
-    if ($null -ne $pythonCommand) {
-        $python = $pythonCommand.Source
-        $pythonArgs = @()
-    } else {
-        $python = "py"
-        $pythonArgs = @("-3.10")
-    }
-}
+$resolvedPython = Resolve-PitchStemsPython
+$python = $resolvedPython.Path
+$pythonArgs = $resolvedPython.Args
 
 Write-Host "Running real-audio CLI smoke..."
 & $python @pythonArgs -m pitchstems.cli $resolvedAudio --output-dir $resolvedOutput --midi-policy $MidiPolicy --no-zip
