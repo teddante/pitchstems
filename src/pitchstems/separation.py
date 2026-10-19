@@ -112,7 +112,9 @@ def separate_stems(
             proc_folder(args)
 
     produced = sorted(path for path in output_dir.glob("*.wav") if path.resolve() not in before)
-    stems = _dedupe_stems([StemResult(name=_guess_stem_name(path), path=path) for path in produced])
+    stems = _unique_stems(
+        [StemResult(name=_stem_name(path, audio_path.stem), path=path) for path in produced]
+    )
     if not stems:
         raise RuntimeError(
             "BS-RoFormer did not produce any stems. "
@@ -203,25 +205,24 @@ def _redirect_output(log: Callable[[str], None] | None) -> Iterator[None]:
     writer.flush()
 
 
-def _guess_stem_name(path: Path) -> str:
-    lower = path.stem.lower()
-    known = [
-        "instrumental",
-        "vocals",
-        "drums",
-        "bass",
-        "guitar",
-        "piano",
-        "other",
-    ]
-    for stem in known:
-        if lower.endswith(f"_{stem}") or lower == stem or f"_{stem}_" in lower:
-            return stem
+def _stem_name(path: Path, input_stem: str) -> str:
+    # The native backend writes "<input stem>_<instrument>.wav". Strip the known
+    # input prefix instead of searching for instrument words, so an input named
+    # like "Drums & Bass" cannot make every stem look like "drums" or "bass".
+    prefix = f"{input_stem}_"
+    if path.stem.startswith(prefix) and len(path.stem) > len(prefix):
+        return path.stem[len(prefix) :].lower()
     return path.stem
 
 
-def _dedupe_stems(stems: list[StemResult]) -> list[StemResult]:
-    by_name: dict[str, StemResult] = {}
+def _unique_stems(stems: list[StemResult]) -> list[StemResult]:
+    seen: dict[str, Path] = {}
     for stem in stems:
-        by_name[stem.name] = stem
-    return list(by_name.values())
+        key = stem.name.lower()
+        if key in seen:
+            raise RuntimeError(
+                f"BS-RoFormer produced two outputs for stem {stem.name!r}: "
+                f"{seen[key].name} and {stem.path.name}"
+            )
+        seen[key] = stem.path
+    return stems
