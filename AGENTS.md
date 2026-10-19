@@ -42,6 +42,8 @@ When acting autonomously, summarize what was done, checks run, branch/PR/release
 
 Use the project venv when available.
 
+There is no hosted CI by design: the local check is the gate. Do not add GitHub Actions workflows unless asked.
+
 ```powershell
 .\scripts\check.ps1
 ```
