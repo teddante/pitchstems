@@ -103,3 +103,13 @@ def test_multi_range_chord_analysis_combines_only_selected_regions() -> None:
     assert combined.label == "C"
     assert dict(combined.note_weights).get("B") is None
     assert dict(bounded.note_weights)["B"] > 0
+
+
+def test_detect_chords_ignores_notes_that_collapse_to_zero_length() -> None:
+    triad = [NoteEvent("piano", 0.0, 1.0, pitch, 90) for pitch in (60, 64, 67)]
+    later_triad = [NoteEvent("piano", 2.0, 3.0, pitch, 90) for pitch in (65, 69, 72)]
+    blip = NoteEvent("piano", 0.5, 0.5 + 1e-8, 61, 90)
+
+    chords = detect_chords([*triad, blip, *later_triad])
+
+    assert [chord.label for chord in chords] == ["C", "F"]

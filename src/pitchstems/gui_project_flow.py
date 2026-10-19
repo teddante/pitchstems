@@ -10,6 +10,7 @@ from pitchstems.gui_helpers import blocked_signals, clear_layout
 from pitchstems.gui_import_clip import waveform_preview_for_path
 from pitchstems.gui_track_controls import reset_track_control_widgets
 from pitchstems.input_validation import validate_audio_input
+from pitchstems.pipeline import recover_interrupted_midi_update
 from pitchstems.project_store import PROJECT_FILENAME, load_pipeline_result
 from pitchstems.recent_projects import (
     normalize_recent_project_paths,
@@ -143,6 +144,7 @@ def open_project_manifest(window, manifest_path: Path) -> None:
     window.begin_activity("Opening project...")
     try:
         window.logger.info("Opening project manifest: %s", manifest_path)
+        _recover_interrupted_midi_update(window, manifest_path)
         result = load_pipeline_result(manifest_path)
     except Exception as exc:
         window.logger.exception("Could not open project manifest")
@@ -323,3 +325,13 @@ def _qt_open_folder(path: Path) -> bool:
     from PySide6.QtGui import QDesktopServices
 
     return QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
+
+
+def _recover_interrupted_midi_update(window, manifest_path: Path) -> None:
+    project_dir = manifest_path if manifest_path.is_dir() else manifest_path.parent
+    try:
+        if recover_interrupted_midi_update(project_dir):
+            window.append_log("Rolled back an interrupted MIDI rerun; the previous MIDI was restored.")
+    except Exception as exc:
+        window.logger.exception("Could not recover interrupted MIDI rerun")
+        window.append_log(f"Could not recover an interrupted MIDI rerun: {exc}")

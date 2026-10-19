@@ -1039,3 +1039,150 @@ def _write_midi(path: Path, note: int) -> None:
     midi.tracks.append(track)
     path.parent.mkdir(parents=True, exist_ok=True)
     midi.save(path)
+
+
+def _seed_rerun_project(tmp_path: Path, stem_names: list[str]) -> tuple[Path, list[StemResult]]:
+    project_dir = tmp_path / "song.pitchstems"
+    stems = [StemResult(name, _write_file(project_dir / "stems" / f"song_{name}.wav")) for name in stem_names]
+    old_midi = []
+    for name in stem_names:
+        midi_path = project_dir / "midi" / name / "old.mid"
+        _write_midi(midi_path, 50)
+        old_midi.append(MidiResult(name, midi_path))
+    save_project_manifest(
+        PipelineResult(
+            project_dir=project_dir,
+            normalized_audio=project_dir / "work" / "song.wav",
+            stems=stems,
+            midi_files=old_midi,
+            combined_midi=None,
+            zip_path=None,
+        ),
+        midi_options=MidiOptions(onset_threshold=0.4),
+    )
+    return project_dir, stems
+
+
+def _manifest(project_dir: Path) -> dict:
+    return json.loads((project_dir / "pitchstems.project.json").read_text(encoding="utf-8"))
+
+
+def test_killed_midi_rerun_after_manifest_write_rolls_back_files_and_manifest(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project_dir, stems = _seed_rerun_project(tmp_path, ["bass"])
+    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", _fake_transcribe)
+
+    class SimulatedKill(BaseException):
+        pass
+
+    def killed_commit(_workspace) -> None:
+        raise SimulatedKill()
+
+    real_recover = pipeline._recover_midi_transaction
+    monkeypatch.setattr(pipeline, "_commit_midi_transaction", killed_commit)
+    # A hard kill runs no Python cleanup, so in-process recovery must not happen.
+    monkeypatch.setattr(pipeline, "_recover_midi_transaction", lambda _workspace: None)
+
+    with pytest.raises(SimulatedKill):
+        process_midi_from_stems(
+            project_dir=project_dir,
+            input_stem="song",
+            normalized_audio=None,
+            stems=stems,
+            midi_stems={"bass"},
+            midi_options=MidiOptions(onset_threshold=0.7),
+            create_zip=False,
+        )
+    assert _manifest(project_dir)["settings"]["midi"]["onset_threshold"] == 0.7
+
+    monkeypatch.setattr(pipeline, "_recover_midi_transaction", real_recover)
+    assert pipeline.recover_interrupted_midi_update(project_dir) is True
+
+    manifest = _manifest(project_dir)
+    assert manifest["settings"]["midi"]["onset_threshold"] == 0.4
+    assert manifest["midi_files"][0]["path"] == "midi/bass/old.mid"
+    assert (project_dir / "midi" / "bass" / "old.mid").exists()
+    assert not (project_dir / "midi" / "bass" / "bass.mid").exists()
+    assert not (project_dir / ".midi-transaction.json").exists()
+    assert not (project_dir / ".midi-transaction.manifest.json").exists()
+    assert pipeline.recover_interrupted_midi_update(project_dir) is False
+
+
+def test_recovery_restores_midi_dir_after_kill_mid_swap(tmp_path: Path, monkeypatch) -> None:
+    project_dir, stems = _seed_rerun_project(tmp_path, ["bass"])
+    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", _fake_transcribe)
+
+    class SimulatedKill(BaseException):
+        pass
+
+    real_move = pipeline.shutil.move
+
+    def move_then_die(source: str, destination: str):
+        if Path(source).name == "midi.tmp":
+            raise SimulatedKill()
+        return real_move(source, destination)
+
+    monkeypatch.setattr(pipeline.shutil, "move", move_then_die)
+    monkeypatch.setattr(pipeline, "_recover_midi_transaction", lambda _workspace: None)
+    with pytest.raises(SimulatedKill):
+        process_midi_from_stems(
+            project_dir=project_dir,
+            input_stem="song",
+            normalized_audio=None,
+            stems=stems,
+            midi_stems={"bass"},
+            create_zip=False,
+        )
+    assert not (project_dir / "midi").exists()
+
+    monkeypatch.undo()
+    assert pipeline.recover_interrupted_midi_update(project_dir) is True
+    assert (project_dir / "midi" / "bass" / "old.mid").exists()
+
+
+def test_recovery_skips_project_held_by_another_writer(tmp_path: Path) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    (project_dir / "midi.backup.tmp").mkdir(parents=True)
+
+    with pipeline.project_mutation_lock(project_dir):
+        assert pipeline.recover_interrupted_midi_update(project_dir) is False
+    assert (project_dir / "midi.backup.tmp").exists()
+
+
+def test_midi_rerun_with_subset_replaces_full_midi_selection(tmp_path: Path, monkeypatch) -> None:
+    project_dir, stems = _seed_rerun_project(tmp_path, ["bass", "vocals"])
+    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", _fake_transcribe)
+
+    result = process_midi_from_stems(
+        project_dir=project_dir,
+        input_stem="song",
+        normalized_audio=None,
+        stems=stems,
+        midi_stems={"bass"},
+        create_zip=False,
+    )
+
+    # The ticked stems are the new MIDI set: unticked stems lose their old MIDI.
+    assert [midi.stem for midi in result.midi_files] == ["bass"]
+    assert not (project_dir / "midi" / "vocals").exists()
+    assert [entry["stem"] for entry in _manifest(project_dir)["midi_files"]] == ["bass"]
+
+
+def test_full_pipeline_keyboard_interrupt_removes_partial_new_project(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    input_path = _write_file(tmp_path / "source.mp3", b"audio")
+
+    def interrupted_separate(*_args, **_kwargs):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(pipeline, "normalize_to_wav", _fake_normalize)
+    monkeypatch.setattr(pipeline, "separate_stems", interrupted_separate)
+
+    with pytest.raises(KeyboardInterrupt):
+        process_audio_file(input_path, tmp_path / "out", generate_midi=False, create_zip=False)
+
+    assert not list((tmp_path / "out").glob("*.pitchstems"))

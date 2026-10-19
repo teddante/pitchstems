@@ -7,6 +7,7 @@ import sys
 import threading
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from types import TracebackType
 
 
 _ORIGINAL_EXCEPTHOOK = sys.excepthook
@@ -51,7 +52,11 @@ def setup_app_logging() -> Path:
     _FAULT_STREAM = fault_path.open("a", encoding="utf-8")
     faulthandler.enable(file=_FAULT_STREAM, all_threads=True)
 
-    def log_exception(exc_type, exc_value, exc_traceback) -> None:
+    def log_exception(
+        exc_type: type[BaseException],
+        exc_value: BaseException,
+        exc_traceback: TracebackType | None,
+    ) -> None:
         logger.critical(
             "Uncaught exception",
             exc_info=(exc_type, exc_value, exc_traceback),
@@ -62,7 +67,11 @@ def setup_app_logging() -> Path:
         logger.critical(
             "Uncaught thread exception in %s",
             args.thread.name if args.thread else "unknown thread",
-            exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+            exc_info=(
+                (args.exc_type, args.exc_value, args.exc_traceback)
+                if args.exc_value is not None
+                else True
+            ),
         )
         _ORIGINAL_THREADING_EXCEPTHOOK(args)
 

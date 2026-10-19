@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from typing import Any
 
-from pitchstems.chord_naming import PITCH_NAMES, _chord_qualities, chord_pitch_classes_for_label
+from pitchstems.chord_naming import PITCH_NAMES, chord_qualities, chord_pitch_classes_for_label
 from pitchstems.notation import split_chord_label
 
 MIN_WEIGHTED_TONE_SUPPORT = 0.005
@@ -24,13 +26,13 @@ class PartialChordCandidate:
     explanation: list[str]
 
 
-def _ordered_pitch_classes(pitch_classes: set[int], root: int | None = None) -> list[int]:
+def ordered_pitch_classes(pitch_classes: set[int], root: int | None = None) -> list[int]:
     if root is None or root not in pitch_classes:
         return sorted(pitch_classes)
     return sorted(pitch_classes, key=lambda pitch_class: (pitch_class - root) % 12)
 
 
-def _interval_quality_name(interval: int) -> str:
+def interval_quality_name(interval: int) -> str:
     return {
         0: "unison",
         1: "minor second",
@@ -47,11 +49,11 @@ def _interval_quality_name(interval: int) -> str:
     }[interval % 12]
 
 
-def _interval_names(root: int, intervals) -> list[str]:
+def interval_names(root: int, intervals: Iterable[int]) -> list[str]:
     return [PITCH_NAMES[(root + interval) % 12] for interval in intervals]
 
 
-def _score_root(
+def score_root(
     root: int,
     pitch_classes: set[int],
     bass: int,
@@ -63,7 +65,7 @@ def _score_root(
     best_score = 0.0
     best_explanation: list[str] = []
     best_rank_key: tuple[float, ...] = ()
-    for suffix, required in _chord_qualities():
+    for suffix, required in chord_qualities():
         label = f"{PITCH_NAMES[root]}{suffix}"
         if bass != root:
             label = f"{label}/{PITCH_NAMES[bass]}"
@@ -107,7 +109,7 @@ def _score_root(
     return label, max(0.0, min(1.0, best_score)), best_explanation, best_rank_key
 
 
-def _score_weighted_root_candidates(
+def score_weighted_root_candidates(
     root: int,
     pitch_weights: dict[int, float],
     bass: int,
@@ -121,7 +123,7 @@ def _score_weighted_root_candidates(
     total_weight = max(0.0001, sum(interval_weights.values()))
     max_weight = max(interval_weights.values())
     candidates: list[tuple[str, float, list[str], tuple[float, ...]]] = []
-    for suffix, required in _chord_qualities():
+    for suffix, required in chord_qualities():
         label = f"{PITCH_NAMES[root]}{suffix}"
         if bass != root:
             label = f"{label}/{PITCH_NAMES[bass]}"
@@ -212,8 +214,8 @@ def _weighted_chord_rank_key(
     )
 
 
-def _candidate_labels(
-    scored_roots,
+def candidate_labels(
+    scored_roots: Iterable[Sequence[Any]],
     threshold: float,
     margin: float,
     best_score: float,
@@ -235,7 +237,7 @@ def _candidate_labels(
     return candidates[:8]
 
 
-def _partial_shell_candidates_from_weights(
+def partial_shell_candidates_from_weights(
     pitch_weights: dict[int, float],
     bass: int | None = None,
     required_pitch_classes: set[int] | None = None,
@@ -257,7 +259,7 @@ def _partial_shell_candidates_from_weights(
     suggestions: list[tuple[int, int, int, int, tuple[int, ...], PartialChordCandidate]] = []
     seen_labels: set[str] = set()
     for root in range(12):
-        for quality_index, (suffix, intervals) in enumerate(_chord_qualities()):
+        for quality_index, (suffix, intervals) in enumerate(chord_qualities()):
             if "(no" in suffix or len(intervals) < 4:
                 continue
             full_tones = [(root + interval) % 12 for interval in intervals]
@@ -334,7 +336,7 @@ def _omitted_tone_suffix(omitted_interval: int) -> str | None:
     return None
 
 
-def _partial_chord_completions(
+def partial_chord_completions(
     observed: set[int],
     bass: int | None = None,
     required_pitch_classes: set[int] | None = None,
@@ -344,7 +346,7 @@ def _partial_chord_completions(
     excluded_pitch_classes = excluded_pitch_classes or set()
     suggestions: list[tuple[int, int, int, int, int, tuple[int, ...], frozenset[int], str]] = []
     for root in range(12):
-        for quality_index, (suffix, intervals) in enumerate(_chord_qualities()):
+        for quality_index, (suffix, intervals) in enumerate(chord_qualities()):
             tones = {(root + interval) % 12 for interval in intervals}
             if not observed <= tones:
                 continue
@@ -361,7 +363,7 @@ def _partial_chord_completions(
                 label = f"{label}/{PITCH_NAMES[bass]}"
             missing_text = "add " + "-".join(
                 PITCH_NAMES[pitch_class]
-                for pitch_class in _ordered_pitch_classes(missing, root)
+                for pitch_class in ordered_pitch_classes(missing, root)
             )
             root_priority = 0 if bass is not None and root == bass else 1
             observed_root_priority = 0 if root in observed else 1
@@ -411,7 +413,7 @@ def _partial_quality_priority(suffix: str, fallback: int) -> int:
     return priorities.get(suffix, 100 + fallback)
 
 
-def _perfect_fifth_root(pitch_classes: set[int], preferred_root: int) -> int | None:
+def perfect_fifth_root(pitch_classes: set[int], preferred_root: int) -> int | None:
     if len(pitch_classes) != 2:
         return None
     if (preferred_root + 7) % 12 in pitch_classes:
@@ -444,12 +446,12 @@ def _plain_score_explanation(
     score: float,
 ) -> list[str]:
     required_set = set(required)
-    matched_notes = _interval_names(root, sorted(intervals & required_set))
-    missing_notes = _interval_names(root, sorted(required_set - intervals))
-    extra_notes = _interval_names(root, sorted(intervals - required_set))
+    matched_notes = interval_names(root, sorted(intervals & required_set))
+    missing_notes = interval_names(root, sorted(required_set - intervals))
+    extra_notes = interval_names(root, sorted(intervals - required_set))
     return [
         f"{label}: scored from the notes active at the playhead.",
-        f"Chord tones expected: {' - '.join(_interval_names(root, required))}.",
+        f"Chord tones expected: {' - '.join(interval_names(root, required))}.",
         f"Matched tones: {', '.join(matched_notes) or 'none'} ({matched}/{len(required_set)}).",
         f"Missing tones: {', '.join(missing_notes) or 'none'}. Extra active tones: {', '.join(extra_notes) or 'none'}.",
         f"Evidence terms: coverage {coverage:.0%}, purity {purity:.0%}.",
@@ -476,7 +478,7 @@ def _weighted_score_explanation(
         for interval in required
         if interval in interval_weights
     ]
-    missing_notes = _interval_names(root, sorted(required_set - set(interval_weights)))
+    missing_notes = interval_names(root, sorted(required_set - set(interval_weights)))
     extra_notes = [
         f"{PITCH_NAMES[(root + interval) % 12]} {weight / total_weight:.0%}"
         for interval, weight in sorted(interval_weights.items())
@@ -484,7 +486,7 @@ def _weighted_score_explanation(
     ]
     return [
         f"{label}: scored from weighted notes across the selected time range.",
-        f"Chord tones expected: {' - '.join(_interval_names(root, required))}.",
+        f"Chord tones expected: {' - '.join(interval_names(root, required))}.",
         f"Matched weighted tones: {', '.join(matched_notes) or 'none'}; candidate-tone energy {required_weight:.0%}.",
         f"Missing tones: {', '.join(missing_notes) or 'none'}. Extra weighted tones: {', '.join(extra_notes) or 'none'} ({extra_weight:.0%}).",
         f"Evidence terms: coverage {coverage:.0%}, purity {required_weight:.0%}.",

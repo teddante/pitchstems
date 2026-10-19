@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import importlib
+import logging
 import math
 import warnings
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterator
 
 from pitchstems.pipeline_models import MidiResult
 
@@ -229,7 +231,8 @@ def transcribe_stem_to_midi(
 
     try:
         model, runtime = load_basic_pitch_runtime()
-        predict_and_save = importlib.import_module("basic_pitch.inference").predict_and_save
+        with _quiet_basic_pitch_import():
+            predict_and_save = importlib.import_module("basic_pitch.inference").predict_and_save
     except ImportError as exc:
         raise TranscriptionDependencyError(
             "basic-pitch is not installed. Install with `pip install -e .[cpu,gui]` "
@@ -277,21 +280,38 @@ def transcribe_stem_to_midi(
     return MidiResult(stem=stem_name, path=midi_candidates[-1])
 
 
+@contextmanager
+def _quiet_basic_pitch_import() -> Iterator[None]:
+    """Hide import-time noise that does not apply to the ONNX runtime PitchStems uses.
+
+    Basic Pitch logs root-logger warnings about optional CoreML/TFLite/TensorFlow
+    backends, and its resampy dependency warns about ``pkg_resources``. Both go to
+    stderr, which makes ``--doctor`` look broken and trips PowerShell checks that
+    treat native stderr as failure.
+    """
+    previous_disable = logging.root.manager.disable
+    logging.disable(logging.WARNING)
+    try:
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="pkg_resources is deprecated as an API.*",
+                category=UserWarning,
+            )
+            yield
+    finally:
+        logging.disable(previous_disable)
+
+
 @lru_cache(maxsize=1)
 def _load_basic_pitch_model(model_path: str) -> object:
-    model_class = importlib.import_module("basic_pitch.inference").Model
-
+    with _quiet_basic_pitch_import():
+        model_class = importlib.import_module("basic_pitch.inference").Model
     return model_class(model_path)
 
 
 def load_basic_pitch_runtime() -> tuple[object, str]:
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            message="pkg_resources is deprecated as an API.*",
-            category=UserWarning,
-            module="resampy.filters",
-        )
+    with _quiet_basic_pitch_import():
         basic_pitch = importlib.import_module("basic_pitch")
 
     model_path = basic_pitch.build_icassp_2022_model_path(basic_pitch.FilenameSuffix.onnx)

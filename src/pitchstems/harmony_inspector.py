@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 from pitchstems.editor_project import EditorProject
 from pitchstems.editor_models import NoteEvent
 from pitchstems.midi_energy import point_pitch_energy, ranges_pitch_energy, region_pitch_energy
@@ -110,13 +112,13 @@ def chord_base_pitch_weights(
     if not notes:
         return {}
     if context[0] == "selection-ranges":
-        _kind, ranges = context
+        _kind, ranges = cast("tuple[str, tuple[tuple[float, float], ...]]", context)
         weights, _exact_pitch_weights = ranges_pitch_energy(notes, ranges)
     elif context[0] == "selection":
-        _kind, start, end = context
+        _kind, start, end = cast("tuple[str, float, float]", context)
         weights, _exact_pitch_weights = region_pitch_energy(notes, start, end)
     else:
-        _kind, seconds = context
+        _kind, seconds = cast("tuple[str, float]", context)
         weights, _exact_pitch_weights = point_pitch_energy(notes, seconds)
     if not weights:
         return {}

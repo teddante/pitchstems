@@ -11,6 +11,7 @@ from pitchstems.project_store import (
     load_project_manifest,
     save_failed_project_manifest,
     save_project_manifest,
+    update_project_editor_state,
     _manifest_source_audio,
     _midi_results_from_manifest,
     _midi_results_manifest,
@@ -728,3 +729,40 @@ def test_load_project_manifest_migrates_v1_editor_defaults(tmp_path: Path) -> No
     assert manifest["format_version"] == 2
     assert manifest["editor"]["notation_spelling"] == "auto"
     assert manifest["editor"]["chord_overrides"] == []
+
+
+def test_editor_state_patch_never_rewrites_assets_or_pipeline_settings(tmp_path: Path) -> None:
+    project_dir = tmp_path / "song.pitchstems"
+    stale = PipelineResult(
+        project_dir=project_dir,
+        normalized_audio=project_dir / "work" / "song.wav",
+        stems=[StemResult("bass", project_dir / "stems" / "bass.wav")],
+        midi_files=[MidiResult("bass", project_dir / "midi" / "bass" / "old.mid")],
+        combined_midi=None,
+        zip_path=None,
+    )
+    save_project_manifest(stale, midi_options=MidiOptions(onset_threshold=0.4))
+    # A worker process finishes a MIDI rerun and writes new outputs.
+    fresh = PipelineResult(
+        project_dir=project_dir,
+        normalized_audio=stale.normalized_audio,
+        stems=stale.stems,
+        midi_files=[MidiResult("bass", project_dir / "midi" / "bass" / "new.mid")],
+        combined_midi=None,
+        zip_path=None,
+    )
+    save_project_manifest(fresh, midi_options=MidiOptions(onset_threshold=0.7))
+
+    update_project_editor_state(project_dir, playhead_seconds=12.5, generate_chord_suggestions=False)
+
+    manifest = load_project_manifest(project_dir)
+    assert manifest["midi_files"][0]["path"] == "midi/bass/new.mid"
+    assert manifest["settings"]["midi"]["onset_threshold"] == 0.7
+    assert manifest["settings"]["generate_chord_suggestions"] is False
+    assert manifest["editor"]["playhead_seconds"] == 12.5
+
+
+def test_editor_state_patch_requires_existing_manifest(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        update_project_editor_state(tmp_path / "missing.pitchstems", playhead_seconds=1.0)
+    assert not (tmp_path / "missing.pitchstems").exists()

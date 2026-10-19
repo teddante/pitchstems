@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from typing import Callable, Literal, Protocol
 
 from pitchstems.editor_models import ChordRegion
@@ -22,13 +22,13 @@ class TimelineTrackGeometry:
     low_pitch: int
     high_pitch: int
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[float]:
         yield self.y
         yield self.height
         yield self.low_pitch
         yield self.high_pitch
 
-    def __getitem__(self, index: int):
+    def __getitem__(self, index: int) -> float:
         return tuple(self)[index]
 
 

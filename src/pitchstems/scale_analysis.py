@@ -224,7 +224,7 @@ def analyze_theory_at(
     active_chords = [chord for chord in chords if chord.start <= seconds < chord.end]
     totals, _exact_pitch_weights = point_pitch_energy(notes, seconds)
     totals = _constrained_totals(totals, required_pitch_classes, excluded_pitch_classes)
-    bass_totals = {}
+    bass_totals: dict[int, float] = {}
     for note in active_notes:
         weight = midi_velocity_energy(note.velocity)
         if note.pitch < 60:
@@ -246,7 +246,7 @@ def analyze_theory_region(
         return _analyze_evidence({}, {}, [], required_pitch_classes, excluded_pitch_classes)
     totals, _exact_pitch_weights = region_pitch_energy(notes, start, end)
     totals = _constrained_totals(totals, required_pitch_classes, excluded_pitch_classes)
-    bass_totals = {}
+    bass_totals: dict[int, float] = {}
     for note in notes:
         overlap = note_overlap_seconds(note, start, end)
         if overlap <= 0:

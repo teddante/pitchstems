@@ -68,7 +68,7 @@ Invoke-Checked "Running Vulture..." { & $python @pythonArgs -m vulture src tests
 
 Invoke-Checked "Running mypy..." { & $python @pythonArgs -m mypy }
 
-Invoke-Checked "Running tests with focused core coverage..." {
+Invoke-Checked "Running tests with core and theory coverage..." {
     & $python @pythonArgs -m pytest `
         --cov=pitchstems.editor_models `
         --cov=pitchstems.export_files `
@@ -80,6 +80,26 @@ Invoke-Checked "Running tests with focused core coverage..." {
         --cov=pitchstems.project_store `
         --cov=pitchstems.recent_projects `
         --cov=pitchstems.time_format `
+        --cov=pitchstems.project_lock `
+        --cov=pitchstems.atomic_files `
+        --cov=pitchstems.midi `
+        --cov=pitchstems.midi_energy `
+        --cov=pitchstems.chord_analysis `
+        --cov=pitchstems.chord_scoring `
+        --cov=pitchstems.chord_naming `
+        --cov=pitchstems.chord_explanation `
+        --cov=pitchstems.chord_gap_analysis `
+        --cov=pitchstems.notation `
+        --cov=pitchstems.scale_analysis `
+        --cov=pitchstems.scale_chords `
+        --cov=pitchstems.theory_helpers `
+        --cov=pitchstems.editor_project `
+        --cov=pitchstems.editor_loader `
+        --cov=pitchstems.editor_query `
+        --cov=pitchstems.editor_state `
+        --cov=pitchstems.review_ranges `
+        --cov=pitchstems.timeline_chord_geometry `
+        --cov=pitchstems.harmony_inspector `
         --cov-report=term-missing `
         --cov-fail-under=90
 }

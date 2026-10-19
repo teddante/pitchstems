@@ -1,0 +1,42 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-cpu:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            constraints/*.txt
+
+      - name: Install FFmpeg
+        run: choco install ffmpeg --no-progress -y
+
+      - name: Install PitchStems (CPU runtime, GUI, dev tools)
+        run: |
+          python -m pip install -U pip
+          python -m pip install -c constraints\windows-cpu.txt -e ".[cpu,gui]"
+          python -m pip install -c constraints\windows-dev.txt -e ".[dev]"
+
+      - name: Run project check
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: .\scripts\check.ps1 -SkipDoctor -GuiSmoke

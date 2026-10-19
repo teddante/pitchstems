@@ -26,7 +26,7 @@ def contained_chords_for_scale(
     spelling_preference: str | None = "auto",
 ) -> list[ScaleChord]:
     scale_tones = set(scale_pitch_classes(root, scale))
-    chords: list[tuple[tuple[int, int, int, str], ScaleChord]] = []
+    chords: list[tuple[tuple[int, int, int, int], ScaleChord]] = []
     seen: set[tuple[int, tuple[int, ...], str]] = set()
     for chord_root in scale_pitch_classes(root, scale):
         degree_index = _degree_index(root, scale, chord_root)

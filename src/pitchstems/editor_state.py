@@ -7,7 +7,7 @@ from typing import Any, Mapping
 
 from pitchstems.editor_models import ChordRegion
 from pitchstems.pipeline_models import PipelineResult
-from pitchstems.project_store import PROJECT_FILENAME, load_project_manifest, save_project_manifest
+from pitchstems.project_store import PROJECT_FILENAME, load_project_manifest, update_project_editor_state
 
 
 @dataclass(frozen=True)
@@ -92,13 +92,13 @@ def _clamp_confidence(confidence: float) -> float:
     return max(0.0, min(1.0, confidence))
 
 
-def editor_bool(value, default: bool) -> bool:
+def editor_bool(value: object, default: bool) -> bool:
     if isinstance(value, bool):
         return value
     return default
 
 
-def editor_int(value, default: int, low: int, high: int) -> int:
+def editor_int(value: Any, default: int, low: int, high: int) -> int:
     try:
         number = int(value)
     except (TypeError, ValueError):
@@ -106,7 +106,7 @@ def editor_int(value, default: int, low: int, high: int) -> int:
     return max(low, min(high, number))
 
 
-def editor_float(value, default: float, low: float | None = None, high: float | None = None) -> float:
+def editor_float(value: Any, default: float, low: float | None = None, high: float | None = None) -> float:
     try:
         number = float(value)
     except (TypeError, ValueError):
@@ -169,8 +169,8 @@ def _value_map(widgets: Mapping[str, Any]) -> dict[str, int]:
 
 
 def save_editor_state_snapshot(result: PipelineResult, snapshot: EditorStateSnapshot) -> Path:
-    return save_project_manifest(
-        result,
+    return update_project_editor_state(
+        result.project_dir,
         track_visibility=snapshot.track_visibility,
         track_analysis_enabled=snapshot.track_analysis_enabled,
         track_audio_enabled=snapshot.track_audio_enabled,

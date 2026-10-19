@@ -9,17 +9,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, TypedDict
 
-from pitchstems.atomic_files import write_json_atomic
+from pitchstems.atomic_files import atomic_replace, write_json_atomic
 from pitchstems.audio import normalize_to_wav
 from pitchstems.audio_clip import AudioClipRange
 from pitchstems.filename_safety import safe_file_stem
 from pitchstems.midi import combine_midi_tracks
 from pitchstems.pipeline_models import MidiResult, PipelineResult, StemResult
 from pitchstems.runtime_checks import run_preflight
-from pitchstems.project_lock import project_mutation_lock
+from pitchstems.project_lock import project_mutation_lock, try_project_mutation_lock
 from pitchstems.project_store import (
     PROJECT_FILENAME,
     load_pipeline_result,
+    restore_project_manifest_backup,
     save_failed_project_manifest,
     save_project_manifest,
 )
@@ -99,6 +100,7 @@ class _MidiWorkspace(_ProjectPaths):
     backup_midi_dir: Path
     backup_export_dir: Path
     transaction_path: Path
+    manifest_backup_path: Path
 
     @classmethod
     def from_project(cls, project_dir: Path, input_stem: str) -> "_MidiWorkspace":
@@ -113,6 +115,18 @@ class _MidiWorkspace(_ProjectPaths):
             backup_midi_dir=project_dir / "midi.backup.tmp",
             backup_export_dir=project_dir / "export.backup.tmp",
             transaction_path=project_dir / ".midi-transaction.json",
+            manifest_backup_path=project_dir / ".midi-transaction.manifest.json",
+        )
+
+    def has_interrupted_update(self) -> bool:
+        return any(
+            path.exists()
+            for path in (
+                self.transaction_path,
+                self.backup_midi_dir,
+                self.backup_export_dir,
+                self.manifest_backup_path,
+            )
         )
 
 
@@ -242,7 +256,7 @@ def process_audio_file(
         if log:
             log(f"Done: {zip_path or workspace.project_dir}")
         return result
-    except PipelineCancelledError:
+    except (PipelineCancelledError, KeyboardInterrupt):
         _remove_new_project_dir(workspace.project_dir, output_root)
         raise
     except Exception as exc:
@@ -374,7 +388,7 @@ def _process_midi_from_stems_unlocked(
         )
         _remove_export_stem_copies(workspace.export_dir, stems)
         midi_files = final_midi_files
-    except Exception:
+    except BaseException:
         _recover_midi_transaction(workspace)
         raise
 
@@ -402,11 +416,28 @@ def _process_midi_from_stems_unlocked(
             create_zip=create_zip,
         )
         _commit_midi_transaction(workspace)
-        _package_pipeline_outputs(result)
-    except Exception:
+    except BaseException:
         _recover_midi_transaction(workspace)
         raise
+    _package_pipeline_outputs(result)
     return result
+
+
+def recover_interrupted_midi_update(project_dir: Path) -> bool:
+    """Roll back a MIDI rerun that was killed mid-swap, if one is pending.
+
+    Returns True when recovery ran. Skips (returns False) when nothing is pending
+    or another process currently holds the project mutation lock.
+    """
+    project_dir = project_dir.expanduser().resolve()
+    workspace = _MidiWorkspace.from_project(project_dir, project_dir.stem)
+    if not workspace.has_interrupted_update():
+        return False
+    with try_project_mutation_lock(project_dir) as acquired:
+        if not acquired or not workspace.has_interrupted_update():
+            return False
+        _recover_midi_transaction(workspace)
+        return True
 
 
 def _save_pipeline_manifest(
@@ -517,7 +548,9 @@ def _zip_project_outputs(
     combined_midi: Path | None,
     zip_path: Path,
 ) -> Path:
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
+    with atomic_replace(zip_path) as temporary, zipfile.ZipFile(
+        temporary, "w", zipfile.ZIP_DEFLATED
+    ) as archive:
         for stem in stems:
             if stem.path.is_file():
                 archive.write(
@@ -553,10 +586,16 @@ def _replace_midi_outputs(
         ("MIDI backup", workspace.backup_midi_dir),
         ("export backup", workspace.backup_export_dir),
         ("MIDI transaction", workspace.transaction_path),
+        ("manifest backup", workspace.manifest_backup_path),
     ]:
         _assert_project_child(project_dir, path, label)
     generated_names = {name.lower() for name in generated_export_midi}
     had_midi_dir = workspace.midi_dir.exists()
+    manifest_path = project_dir / PROJECT_FILENAME
+    workspace.manifest_backup_path.unlink(missing_ok=True)
+    if manifest_path.is_file():
+        with atomic_replace(workspace.manifest_backup_path) as temporary:
+            shutil.copy2(manifest_path, temporary)
     _write_midi_transaction(workspace, "prepared", generated_names, had_midi_dir)
     try:
         if workspace.midi_dir.exists():
@@ -626,6 +665,8 @@ def _recover_midi_transaction(workspace: _MidiWorkspace) -> None:
             _assert_project_child(workspace.project_dir, destination, "generated MIDI export")
             if destination.is_file() or destination.is_symlink():
                 destination.unlink()
+        if workspace.manifest_backup_path.is_file():
+            restore_project_manifest_backup(workspace.project_dir, workspace.manifest_backup_path)
     elif workspace.backup_midi_dir.exists():
         if workspace.midi_dir.exists():
             _remove_project_dir(workspace.midi_dir, workspace.project_dir, "partial MIDI output")
@@ -680,6 +721,7 @@ def _cleanup_midi_transaction(workspace: _MidiWorkspace) -> None:
         workspace.backup_export_dir,
     ):
         _remove_staging_dir(path, workspace.project_dir)
+    workspace.manifest_backup_path.unlink(missing_ok=True)
     workspace.transaction_path.unlink(missing_ok=True)
 
 

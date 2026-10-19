@@ -8,7 +8,7 @@ from pitchstems.editor_models import ChordRegion
 from pitchstems.chord_analysis import detect_chords
 from pitchstems.editor_state import build_editor_state_snapshot, save_editor_state_snapshot
 from pitchstems.gui_helpers import blocked_signals
-from pitchstems.project_store import save_project_manifest
+from pitchstems.project_store import update_project_editor_state
 from pitchstems.time_format import format_time
 
 EMPTY_EDITOR_SUMMARY = "Run separation + MIDI to build an editor timeline."
@@ -90,8 +90,8 @@ def generate_detected_chords(window) -> None:
         return
     chords = detect_chords(window.base_editor_project.notes)
     try:
-        save_project_manifest(
-            window.current_result,
+        update_project_editor_state(
+            window.current_result.project_dir,
             generate_chord_suggestions=True,
         )
     except Exception as exc:

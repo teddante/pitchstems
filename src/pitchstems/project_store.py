@@ -12,6 +12,7 @@ from pitchstems.atomic_files import write_json_atomic
 from pitchstems.audio_clip import AudioClipRange, clip_range_from_manifest
 from pitchstems.filename_safety import safe_stem_key
 from pitchstems.pipeline_models import MidiResult, PipelineResult, StemResult
+from pitchstems.project_lock import project_manifest_lock
 from pitchstems.separation import SeparationOptions
 from pitchstems.transcription import MidiOptions
 
@@ -59,7 +60,7 @@ def save_project_manifest(
     project_dir = result.project_dir.expanduser().resolve()
     project_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = project_manifest_path(project_dir)
-    with _MANIFEST_LOCK:
+    with _MANIFEST_LOCK, project_manifest_lock(project_dir):
         existing = _read_existing_manifest(manifest_path)
         created_at = existing.get("created_at") or _now()
         source_audio = _manifest_source_audio(project_dir, result, existing)
@@ -104,6 +105,67 @@ def save_project_manifest(
     return manifest_path
 
 
+def update_project_editor_state(
+    project_dir: Path,
+    *,
+    track_visibility: dict[str, bool] | None = None,
+    track_analysis_enabled: dict[str, bool] | None = None,
+    track_audio_enabled: dict[str, bool] | None = None,
+    track_audio_volume: dict[str, int] | None = None,
+    track_midi_enabled: dict[str, bool] | None = None,
+    track_midi_volume: dict[str, int] | None = None,
+    notation_spelling: str | None = None,
+    playhead_seconds: float | None = None,
+    chord_overrides: list[dict[str, Any]] | None = None,
+    chord_removals: list[dict[str, Any]] | None = None,
+    generate_chord_suggestions: bool | None = None,
+) -> Path:
+    """Patch only editor state (and editor-owned settings) in an existing manifest.
+
+    Asset lists and pipeline settings are left exactly as they are on disk, so a
+    GUI save can never revert outputs written by a concurrent worker process.
+    """
+    manifest_path = find_project_manifest(project_manifest_path(project_dir))
+    project_dir = manifest_path.parent
+    with _MANIFEST_LOCK, project_manifest_lock(project_dir):
+        manifest = load_project_manifest(manifest_path)
+        manifest["editor"] = _editor_state_manifest(
+            _existing_manifest_section(manifest, "editor"),
+            track_visibility=track_visibility,
+            track_analysis_enabled=track_analysis_enabled,
+            track_audio_enabled=track_audio_enabled,
+            track_audio_volume=track_audio_volume,
+            track_midi_enabled=track_midi_enabled,
+            track_midi_volume=track_midi_volume,
+            notation_spelling=notation_spelling,
+            playhead_seconds=playhead_seconds,
+            chord_overrides=chord_overrides,
+            chord_removals=chord_removals,
+        )
+        if generate_chord_suggestions is not None:
+            settings = _existing_manifest_section(manifest, "settings")
+            manifest["settings"] = {**settings, "generate_chord_suggestions": generate_chord_suggestions}
+        manifest["updated_at"] = _now()
+        write_json_atomic(manifest_path, manifest)
+    return manifest_path
+
+
+def restore_project_manifest_backup(project_dir: Path, backup_path: Path) -> Path:
+    """Restore a manifest snapshot taken before a MIDI swap, keeping current editor state."""
+    project_dir = project_dir.expanduser().resolve()
+    manifest_path = project_manifest_path(project_dir)
+    with _MANIFEST_LOCK, project_manifest_lock(project_dir):
+        restored = _read_json(backup_path)
+        if not isinstance(restored, dict):
+            raise ValueError(f"Invalid manifest backup: {backup_path}")
+        current = _read_existing_manifest(manifest_path)
+        editor = current.get("editor")
+        if isinstance(editor, dict):
+            restored["editor"] = editor
+        write_json_atomic(manifest_path, restored)
+    return manifest_path
+
+
 def save_failed_project_manifest(
     project_dir: Path,
     source_audio: Path | None,
@@ -126,7 +188,8 @@ def save_failed_project_manifest(
         "settings": {},
         "editor": {},
     }
-    write_json_atomic(manifest_path, manifest)
+    with _MANIFEST_LOCK, project_manifest_lock(project_dir):
+        write_json_atomic(manifest_path, manifest)
     return manifest_path
 
 

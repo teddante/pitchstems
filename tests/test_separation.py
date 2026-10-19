@@ -85,3 +85,37 @@ def test_retain_selected_stem_removes_other_new_outputs(tmp_path: Path) -> None:
     assert selected == [StemResult("bass", bass)]
     assert bass.exists()
     assert not drums.exists()
+
+
+def test_separation_passes_native_backend_a_folder_with_only_the_input(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    work = tmp_path / "work"
+    work.mkdir()
+    audio = work / "song.wav"
+    audio.write_bytes(b"wav")
+    (work / "leftover.wav").write_bytes(b"other")
+    native_model = SimpleNamespace(slug="", checkpoint="model.ckpt", config="model.yaml")
+    seen: list[list[str]] = []
+
+    def fake_proc_folder(args) -> None:
+        seen.append(sorted(path.name for path in Path(args.input_folder).iterdir()))
+        (Path(args.store_dir) / "song_bass.wav").write_bytes(b"stem")
+
+    bs_roformer = ModuleType("bs_roformer")
+    bs_roformer.MODEL_REGISTRY = {}
+    inference = ModuleType("bs_roformer.inference")
+    inference.proc_folder = fake_proc_folder
+    monkeypatch.setattr(separation, "download_model", lambda *_args, **_kwargs: tmp_path)
+    monkeypatch.setattr(separation, "_registry_model", lambda *_args: native_model)
+    monkeypatch.setitem(sys.modules, "bs_roformer", bs_roformer)
+    monkeypatch.setitem(sys.modules, "bs_roformer.inference", inference)
+    (tmp_path / "model.ckpt").write_text("weights", encoding="utf-8")
+    (tmp_path / "model.yaml").write_text("config", encoding="utf-8")
+
+    stems = separation.separate_stems(audio, tmp_path / "out")
+
+    assert seen == [["song.wav"]]
+    assert [stem.name for stem in stems] == ["bass"]
+    assert sorted(path.name for path in work.iterdir()) == ["leftover.wav", "song.wav"]

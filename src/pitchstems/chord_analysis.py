@@ -14,10 +14,10 @@ from pitchstems.chord_naming import (
 from pitchstems.chord_scoring import (
     ChordScoringOptions,
     PartialChordCandidate,
-    _candidate_labels,
-    _partial_shell_candidates_from_weights,
-    _score_root,
-    _score_weighted_root_candidates,
+    candidate_labels,
+    partial_shell_candidates_from_weights,
+    score_root,
+    score_weighted_root_candidates,
 )
 from pitchstems.editor_models import ChordRegion, NoteEvent
 from pitchstems.midi_energy import point_pitch_energy, ranges_pitch_energy, region_pitch_energy
@@ -59,8 +59,13 @@ def detect_chords(notes: list[NoteEvent], minimum_region: float = 0.18) -> list[
     starts: dict[float, list[NoteEvent]] = {}
     ends: dict[float, list[NoteEvent]] = {}
     for note in notes:
-        starts.setdefault(round(note.start, 6), []).append(note)
-        ends.setdefault(round(note.end, 6), []).append(note)
+        start, end = round(note.start, 6), round(note.end, 6)
+        if end <= start:
+            # Ends are applied before starts at each boundary, so a note that
+            # collapses to zero length here would otherwise never be released.
+            continue
+        starts.setdefault(start, []).append(note)
+        ends.setdefault(end, []).append(note)
     times = sorted(set(starts) | set(ends))
     atomic_regions: list[ChordRegion] = []
     active: list[NoteEvent] = []
@@ -247,7 +252,7 @@ def analyze_chord(
     bass = min(pitches) % 12 if pitches else min(effective_pitch_classes)
     scored_roots: list[tuple[str, float, int, list[str], tuple[float, ...]]] = []
     for root in range(12):
-        scored = _score_root(
+        scored = score_root(
             root,
             effective_pitch_classes,
             bass,
@@ -278,7 +283,7 @@ def analyze_chord(
             confidence=best_score,
             root=best_root,
         )
-    candidates = _candidate_labels(
+    candidates = candidate_labels(
         scored_roots,
         threshold=PLAIN_CHORD_THRESHOLD,
         margin=PLAIN_CANDIDATE_MARGIN,
@@ -310,7 +315,7 @@ def _analyze_weighted_pitch_classes(
     pitch_classes = sorted(pitch_weights)
     scored_roots = []
     for root in range(12):
-        for label, score, explanation, rank_key in _score_weighted_root_candidates(
+        for label, score, explanation, rank_key in score_weighted_root_candidates(
             root,
             pitch_weights,
             bass,
@@ -330,7 +335,7 @@ def _analyze_weighted_pitch_classes(
         )
     scored_roots.sort(key=lambda item: item[4], reverse=True)
     best_label, best_score, _best_explanation, best_root, _best_rank_key = scored_roots[0]
-    candidates = _candidate_labels(
+    candidates = candidate_labels(
         scored_roots,
         threshold=WEIGHTED_CHORD_THRESHOLD,
         margin=WEIGHTED_CANDIDATE_MARGIN,
@@ -401,7 +406,7 @@ def _unresolved(
     """Build a no-label analysis that still carries partial-harmony hints."""
     partial: list[PartialChordCandidate] = []
     if partial_weights is not None and bass is not None:
-        partial = _partial_shell_candidates_from_weights(
+        partial = partial_shell_candidates_from_weights(
             partial_weights,
             bass,
             required_pitch_classes,

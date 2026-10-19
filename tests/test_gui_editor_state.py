@@ -181,14 +181,14 @@ def test_generate_detected_chords_populates_blank_base_project(monkeypatch) -> N
     monkeypatch.setattr(gui_editor_state, "detect_chords", lambda _notes: [chord])
     monkeypatch.setattr(
         gui_editor_state,
-        "save_project_manifest",
-        lambda result, *, generate_chord_suggestions: saved.append(
-            (result, generate_chord_suggestions)
+        "update_project_editor_state",
+        lambda project_dir, *, generate_chord_suggestions: saved.append(
+            (project_dir, generate_chord_suggestions)
         ),
     )
     button = SimpleNamespace(enabled=False, setEnabled=lambda enabled: setattr(button, "enabled", enabled))
     window = SimpleNamespace(
-        current_result=object(),
+        current_result=SimpleNamespace(project_dir=Path("project")),
         base_editor_project=project,
         editor_project=project,
         previous_chord_button=button,
@@ -211,7 +211,7 @@ def test_generate_detected_chords_populates_blank_base_project(monkeypatch) -> N
     gui_editor_state.generate_detected_chords(window)
 
     assert window.base_editor_project.chords == [chord]
-    assert saved == [(window.current_result, True)]
+    assert saved == [(Path("project"), True)]
     assert window.suggestions_checked is True
     assert button.enabled is True
     assert window.status.messages == ["Generated 1 chord suggestions."]

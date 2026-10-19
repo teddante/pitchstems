@@ -4,19 +4,19 @@ from __future__ import annotations
 
 from pitchstems.chord_naming import PITCH_NAMES
 from pitchstems.chord_scoring import (
-    _interval_names,
-    _interval_quality_name,
-    _ordered_pitch_classes,
-    _partial_chord_completions,
-    _perfect_fifth_root,
+    interval_names,
+    interval_quality_name,
+    ordered_pitch_classes,
+    partial_chord_completions,
+    perfect_fifth_root,
 )
 
 __all__ = [
     "partial_harmony_note_order",
     "partial_harmony_hints",
-    "_interval_names",
-    "_interval_quality_name",
-    "_ordered_pitch_classes",
+    "interval_names",
+    "interval_quality_name",
+    "ordered_pitch_classes",
 ]
 
 
@@ -31,7 +31,7 @@ def partial_harmony_note_order(
         observed |= required_pitch_classes
     if excluded_pitch_classes:
         observed -= excluded_pitch_classes
-    return _ordered_pitch_classes(observed, bass)
+    return ordered_pitch_classes(observed, bass)
 
 
 def partial_harmony_hints(
@@ -59,16 +59,16 @@ def partial_harmony_hints(
         interval = (other - root) % 12
         hints.append(
             f"Two-note interval: {PITCH_NAMES[root]} - {PITCH_NAMES[other]} "
-            f"({_interval_quality_name(interval)} above {PITCH_NAMES[root]})."
+            f"({interval_quality_name(interval)} above {PITCH_NAMES[root]})."
         )
-        fifth_root = _perfect_fifth_root(observed, root)
+        fifth_root = perfect_fifth_root(observed, root)
         if fifth_root is not None:
             hints.append(
                 f"Power-chord shell: {PITCH_NAMES[fifth_root]}5 "
                 f"({PITCH_NAMES[fifth_root]} - {PITCH_NAMES[(fifth_root + 7) % 12]})."
             )
 
-    completions = _partial_chord_completions(
+    completions = partial_chord_completions(
         observed,
         bass,
         required_pitch_classes=required_pitch_classes,

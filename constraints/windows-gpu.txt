@@ -5,3 +5,4 @@ onnxruntime>=1.23.2,<1.24
 onnxruntime-gpu>=1.23.2,<1.24
 huggingface-hub==1.22.0
 hf-xet==1.5.1
+setuptools<82

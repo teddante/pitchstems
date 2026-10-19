@@ -28,14 +28,16 @@ def main() -> int:
         venv.EnvBuilder(with_pip=True).create(environment)
         python = environment / "Scripts" / "python.exe"
         extras = ",".join(PROFILES[args.profile])
-        subprocess.run([python, "-m", "pip", "install", "-U", "pip", "setuptools"], check=True)
+        subprocess.run([python, "-m", "pip", "install", "-U", "pip", "setuptools<82"], check=True)
         subprocess.run([python, "-m", "pip", "install", f"{root}[{extras}]"], check=True)
         freeze = subprocess.run(
-            [python, "-m", "pip", "freeze", "--exclude-editable"],
+            [python, "-m", "pip", "freeze", "--all", "--exclude-editable"],
             check=True,
             capture_output=True,
             text=True,
         ).stdout.splitlines()
+    # --all keeps setuptools (needed at runtime for pkg_resources); pip itself is not pinned.
+    freeze = [line for line in freeze if not line.lower().startswith(("pip==", "wheel=="))]
     header = f"# Generated on Windows with: py -3.10 scripts/refresh_constraints.py {args.profile}"
     output.write_text("\n".join([header, *sorted(freeze, key=str.casefold), ""]), encoding="utf-8")
     print(output)

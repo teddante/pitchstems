@@ -41,6 +41,7 @@ Validation tiers:
 
 - Fast source check with the local runtime stack: `.\scripts\check.ps1`
 - Source-only check without the ML/GUI runtime stack: `.\scripts\check.ps1 -SkipDoctor`
+- CI (`.github/workflows/check.yml`) runs `.\scripts\check.ps1 -SkipDoctor -GuiSmoke` on Windows with the CPU stack for every push to `main` and every pull request.
 - GUI/package check: `.\scripts\check.ps1 -GuiSmoke -Build`
 - GPU/runtime check after GPU setup, acceleration, model runtime, launcher, or
   packaging changes: `.\scripts\check.ps1 -Gpu`

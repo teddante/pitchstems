@@ -16,10 +16,12 @@ authors = [
 keywords = ["audio", "midi", "source-separation", "music-information-retrieval", "basic-pitch", "bs-roformer"]
 classifiers = [
   "Development Status :: 3 - Alpha",
+  "Environment :: MacOS X",
   "Environment :: Win32 (MS Windows)",
   "Intended Audience :: End Users/Desktop",
   "Intended Audience :: Science/Research",
   "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS",
   "Operating System :: Microsoft :: Windows",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
@@ -41,12 +43,16 @@ win-gpu = [
   "basic-pitch>=0.4.0",
   "huggingface-hub[hf_xet]>=1.22,<2",
   "onnxruntime-gpu[cuda,cudnn]>=1.23.2,<1.24",
+  # Basic Pitch -> resampy imports pkg_resources, which setuptools 82 removed.
+  "setuptools<82",
   "torch>=2.12.1,<2.13",
 ]
 cpu = [
   "bs-roformer-infer>=0.1.1,<0.2",
   "basic-pitch[onnx]>=0.4.0",
   "huggingface-hub[hf_xet]>=1.22,<2",
+  # Basic Pitch -> resampy imports pkg_resources, which setuptools 82 removed.
+  "setuptools<82",
 ]
 dev = [
   "build>=1.2",
@@ -78,25 +84,10 @@ addopts = "-q"
 
 [tool.mypy]
 python_version = "3.10"
-files = [
-  "src/pitchstems/audio_clip.py",
-  "src/pitchstems/cli.py",
-  "src/pitchstems/review_ranges.py",
-  "src/pitchstems/editor_models.py",
-  "src/pitchstems/export_files.py",
-  "src/pitchstems/filename_safety.py",
-  "src/pitchstems/gui_editor_actions.py",
-  "src/pitchstems/gui_jobs.py",
-  "src/pitchstems/input_validation.py",
-  "src/pitchstems/pipeline.py",
-  "src/pitchstems/pipeline_models.py",
-  "src/pitchstems/runtime_checks.py",
-  "src/pitchstems/project_store.py",
-  "src/pitchstems/project_lock.py",
-  "src/pitchstems/recent_projects.py",
-  "src/pitchstems/time_format.py",
-  "src/pitchstems/transcription.py",
-]
+files = ["src/pitchstems"]
+# Qt-bound GUI modules take an untyped MainWindow and are covered by tests and
+# the GUI smoke run instead; everything else is type-checked.
+exclude = '(^|/)(gui_[a-z_]+|app|harmony_panel|harmony_report)\.py$'
 warn_unused_configs = true
 disallow_untyped_defs = true
 check_untyped_defs = true
@@ -108,3 +99,7 @@ branch = true
 [tool.coverage.report]
 show_missing = true
 skip_covered = true
+
+[[tool.mypy.overrides]]
+module = ["mido", "onnxruntime", "bs_roformer", "bs_roformer.*"]
+ignore_missing_imports = true

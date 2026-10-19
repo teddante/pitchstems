@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from mido import Message, MidiFile, MidiTrack
+from mido import Message, MetaMessage, MidiFile, MidiTrack
 
 from pitchstems.midi import _rescaled_messages, combine_midi_tracks
 from pitchstems.pipeline_models import MidiResult
@@ -61,3 +61,41 @@ def test_rescaled_messages_preserve_cumulative_fractional_ticks() -> None:
     result = _rescaled_messages(track, source_ticks=960, target_ticks=480)
 
     assert sum(message.time for message in result) == 1
+
+
+def _write_basic_pitch_style_midi(path: Path, note: int) -> None:
+    midi = MidiFile(type=1, ticks_per_beat=480)
+    tempo_track = MidiTrack()
+    tempo_track.append(MetaMessage("set_tempo", tempo=500000, time=0))
+    tempo_track.append(MetaMessage("time_signature", numerator=4, denominator=4, time=0))
+    notes = MidiTrack()
+    notes.append(MetaMessage("track_name", name="Acoustic Grand Piano", time=0))
+    notes.append(Message("program_change", program=4, channel=0, time=0))
+    notes.append(Message("note_on", note=note, velocity=64, channel=0, time=240))
+    notes.append(Message("note_off", note=note, velocity=0, channel=0, time=240))
+    midi.tracks.extend([tempo_track, notes])
+    midi.save(path)
+
+
+def test_combine_midi_tracks_gives_each_stem_its_own_channel_and_one_tempo_track(
+    tmp_path: Path,
+) -> None:
+    paths = {name: tmp_path / f"{name}.mid" for name in ("vocals", "bass", "drums")}
+    for offset, path in enumerate(paths.values()):
+        _write_basic_pitch_style_midi(path, 40 + offset)
+
+    output = tmp_path / "combined.mid"
+    combine_midi_tracks([MidiResult(name, path) for name, path in paths.items()], output)
+
+    combined = MidiFile(output)
+    assert [track.name for track in combined.tracks] == ["Tempo", "vocals 2", "bass 2", "drums 2"]
+    tempo_events = [m for track in combined.tracks for m in track if m.type == "set_tempo"]
+    assert len(tempo_events) == 1
+    channels = [
+        {m.channel for m in track if hasattr(m, "channel")}
+        for track in combined.tracks[1:]
+    ]
+    assert channels == [{0}, {1}, {9}]
+    note_on = next(m for m in combined.tracks[1] if m.type == "note_on")
+    assert note_on.time == 240
+    assert sum(1 for m in combined.tracks[1] if m.type == "track_name") == 1

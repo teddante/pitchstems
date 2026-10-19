@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from pitchstems.notation import (
@@ -73,7 +74,7 @@ def alternate_chord_names_for_label(label: str, bass: int | None = None) -> list
 def exact_chord_names_for_pitch_classes(pitch_classes: set[int], bass: int | None = None) -> list[str]:
     names: list[str] = []
     for root in range(12):
-        for suffix, intervals in _chord_qualities():
+        for suffix, intervals in chord_qualities():
             tones = {(root + interval) % 12 for interval in intervals}
             if tones != pitch_classes:
                 continue
@@ -85,7 +86,7 @@ def exact_chord_names_for_pitch_classes(pitch_classes: set[int], bass: int | Non
 
 
 def chord_quality_templates() -> tuple[tuple[str, tuple[int, ...]], ...]:
-    return tuple(_chord_qualities())
+    return tuple(chord_qualities())
 
 
 def parse_chord_symbol(label: str) -> ChordSymbol | None:
@@ -145,14 +146,14 @@ def _exact_quality_intervals(suffix: str) -> tuple[int, ...] | None:
     return next(
         (
             intervals
-            for quality_suffix, intervals in _chord_qualities()
+            for quality_suffix, intervals in chord_qualities()
             if quality_suffix == suffix
         ),
         None,
     )
 
 
-def _dedupe(values) -> list[int]:
+def _dedupe(values: Iterable[int]) -> list[int]:
     tones: list[int] = []
     for interval in values:
         pitch_class = interval % 12
@@ -253,7 +254,7 @@ def _split_omitted_suffix(suffix: str) -> tuple[str, set[int]]:
     return base, omitted_intervals
 
 
-def _chord_qualities() -> list[tuple[str, tuple[int, ...]]]:
+def chord_qualities() -> list[tuple[str, tuple[int, ...]]]:
     return [
         ("maj13", (0, 4, 7, 11, 2, 9)),
         ("13", (0, 4, 7, 10, 2, 9)),
@@ -296,7 +297,7 @@ def _alterable_quality_bases() -> tuple[tuple[str, tuple[int, ...]], ...]:
         sorted(
             (
                 (suffix, intervals)
-                for suffix, intervals in _chord_qualities()
+                for suffix, intervals in chord_qualities()
                 if suffix and "(no" not in suffix
             ),
             key=lambda item: len(item[0]),

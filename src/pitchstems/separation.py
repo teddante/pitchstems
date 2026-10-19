@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import shutil
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable, Iterator, Mapping
 
 from pitchstems.filename_safety import safe_stem_key as safe_stem_key
 from pitchstems.model_assets import ensure_model_assets, model_asset_dir, model_cache_dir
@@ -96,17 +98,18 @@ def separate_stems(
             log(f"GPU ids: {', '.join(str(device_id) for device_id in options.device_ids)}")
         log(f"Acceleration: {choice.gpu_note}")
 
-    args = argparse.Namespace(
-        model_type="bs_roformer",
-        config_path=config_path,
-        model_path=model_path,
-        input_folder=audio_path.parent,
-        store_dir=output_dir,
-        device=options.device,
-        device_ids=list(options.device_ids) if options.device_ids else None,
-    )
-    with _redirect_output(log):
-        proc_folder(args)
+    with _isolated_input_folder(audio_path) as input_folder:
+        args = argparse.Namespace(
+            model_type="bs_roformer",
+            config_path=config_path,
+            model_path=model_path,
+            input_folder=input_folder,
+            store_dir=output_dir,
+            device=options.device,
+            device_ids=list(options.device_ids) if options.device_ids else None,
+        )
+        with _redirect_output(log):
+            proc_folder(args)
 
     produced = sorted(path for path in output_dir.glob("*.wav") if path.resolve() not in before)
     stems = _dedupe_stems([StemResult(name=_guess_stem_name(path), path=path) for path in produced])
@@ -118,6 +121,18 @@ def separate_stems(
     if options.selected_stem:
         stems = _retain_selected_stem(stems, options.selected_stem)
     return stems
+
+
+@contextlib.contextmanager
+def _isolated_input_folder(audio_path: Path) -> Iterator[Path]:
+    """Give the folder-based native backend a folder that holds only this one file."""
+    with tempfile.TemporaryDirectory(prefix=".separation-input-", dir=audio_path.parent) as folder:
+        staged = Path(folder) / audio_path.name
+        try:
+            staged.hardlink_to(audio_path)
+        except OSError:
+            shutil.copy2(audio_path, staged)
+        yield Path(folder)
 
 
 def _retain_selected_stem(stems: list[StemResult], selected_stem: str) -> list[StemResult]:
@@ -140,7 +155,7 @@ def profile_keys() -> list[str]:
     return [DEFAULT_PROFILE_KEY]
 
 
-def _registry_model(registry, choice: ModelChoice):
+def _registry_model(registry: Mapping[str, Any], choice: ModelChoice) -> Any:
     native_model = registry.get(choice.native_model_id)
     if native_model is None:
         raise RuntimeError(
@@ -151,7 +166,10 @@ def _registry_model(registry, choice: ModelChoice):
 
 
 @contextlib.contextmanager
-def _redirect_output(log: Callable[[str], None] | None):
+def _redirect_output(log: Callable[[str], None] | None) -> Iterator[None]:
+    # Swaps the process-wide sys.stdout/sys.stderr. That is safe because the GUI
+    # runs separation in its own spawned worker process and the CLI is single
+    # threaded; do not call this from the GUI process itself.
     if log is None:
         yield
         return
