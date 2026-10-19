@@ -144,7 +144,8 @@ def test_preflight_can_require_separation_without_transcription(monkeypatch) -> 
 
 def test_model_registry_check_imports_and_validates_requested_model(monkeypatch) -> None:
     monkeypatch.setattr(
-        "pitchstems.runtime_checks.importlib.import_module",
+        runtime_checks.importlib,
+        "import_module",
         lambda _name: SimpleNamespace(
             MODEL_REGISTRY={"roformer-model-bs-roformer-sw-by-jarredou": object()}
         ),
@@ -270,7 +271,8 @@ def test_run_checks_adds_gpu_checks_and_formats_status(monkeypatch) -> None:
 
 def test_model_registry_check_reports_unknown_model_and_import_failure(monkeypatch) -> None:
     monkeypatch.setattr(
-        "pitchstems.runtime_checks.importlib.import_module",
+        runtime_checks.importlib,
+        "import_module",
         lambda _name: SimpleNamespace(MODEL_REGISTRY={}),
     )
     assert not model_registry_check("bs_roformer_sw").ok
@@ -278,7 +280,7 @@ def test_model_registry_check_reports_unknown_model_and_import_failure(monkeypat
     def fail(_name):
         raise ImportError("no backend")
 
-    monkeypatch.setattr("pitchstems.runtime_checks.importlib.import_module", fail)
+    monkeypatch.setattr(runtime_checks.importlib, "import_module", fail)
     check = model_registry_check("bs_roformer_sw")
     assert not check.ok and check.detail == "no backend"
 
