@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import queue
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -1587,8 +1588,9 @@ def main() -> int:
                 visual_audit_dir = os.environ.get("PITCHSTEMS_VISUAL_AUDIT_DIR")
                 if visual_audit_dir:
                     capture_visual_audit(window, Path(visual_audit_dir))
-            except Exception:
+            except Exception as exc:
                 logger.exception("GUI startup smoke failed")
+                print(f"{exc} (details: {log_path})", file=sys.stderr)
                 app.exit(1)
                 return
             app.exit(0)

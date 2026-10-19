@@ -88,7 +88,7 @@ def test_combine_midi_tracks_gives_each_stem_its_own_channel_and_one_tempo_track
     combine_midi_tracks([MidiResult(name, path) for name, path in paths.items()], output)
 
     combined = MidiFile(output)
-    assert [track.name for track in combined.tracks] == ["Tempo", "vocals 2", "bass 2", "drums 2"]
+    assert [track.name for track in combined.tracks] == ["Tempo", "vocals", "bass", "drums"]
     tempo_events = [m for track in combined.tracks for m in track if m.type == "set_tempo"]
     assert len(tempo_events) == 1
     channels = [

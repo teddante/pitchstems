@@ -43,6 +43,7 @@ def combine_midi_tracks(midi_results: list[MidiResult], output_path: Path) -> Pa
             channel = MELODIC_CHANNELS[melodic_index % len(MELODIC_CHANNELS)]
             melodic_index += 1
         take_conductor = not conductor
+        file_tracks: list[tuple[int, list[Any]]] = []
 
         for index, source_track in enumerate(source.tracks):
             timed = _absolute_messages(
@@ -61,9 +62,13 @@ def combine_midi_tracks(midi_results: list[MidiResult], output_path: Path) -> Pa
                 kept.append((tick, message))
             if not any(not message.is_meta for _tick, message in kept):
                 continue
+            file_tracks.append((index, _relative_messages(kept)))
+
+        for index, messages in file_tracks:
+            name = result.stem if len(file_tracks) == 1 else f"{result.stem} {index + 1}"
             track = MidiTrack()
-            track.append(MetaMessage("track_name", name=f"{result.stem} {index + 1}", time=0))
-            track.extend(_relative_messages(kept))
+            track.append(MetaMessage("track_name", name=name, time=0))
+            track.extend(messages)
             stem_tracks.append(track)
 
     if conductor:

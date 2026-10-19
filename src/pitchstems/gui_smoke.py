@@ -327,7 +327,6 @@ def run_real_audio_project_smoke(window, manifest_path: Path) -> None:
     _assert(items, "real-audio selected export items")
     default_items = [item for item in items if item.default_selected]
     default_categories = {item.category for item in default_items}
-    _assert("Project" in default_categories, "real-audio selected export includes project manifest")
     _assert("Stems" in default_categories, "real-audio selected export includes stems")
     _assert(
         bool(default_categories & {"MIDI", "Combined MIDI"}),
@@ -345,7 +344,10 @@ def run_real_audio_project_smoke(window, manifest_path: Path) -> None:
     _assert(summary.file_count > 0, "real-audio selected export copied files")
     _assert(any(summary.destination.rglob("*")), "real-audio selected export artifacts exist")
     copied_paths = {path.as_posix() for path in summary.relative_paths}
-    _assert("pitchstems.project.json" in copied_paths, "real-audio copied project manifest")
+    _assert(
+        "pitchstems.project.json" not in copied_paths,
+        "real-audio export leaves the project manifest in the project folder",
+    )
     _assert(any(path.startswith("stems/") for path in copied_paths), "real-audio copied stem export")
     _assert(any(path.startswith("midi/") for path in copied_paths), "real-audio copied MIDI export")
     _assert(

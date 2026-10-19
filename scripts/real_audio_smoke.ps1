@@ -29,7 +29,7 @@ $python = $resolvedPython.Path
 $pythonArgs = $resolvedPython.Args
 
 Write-Host "Running real-audio CLI smoke..."
-& $python @pythonArgs -m pitchstems.cli $resolvedAudio --output-dir $resolvedOutput --midi-policy $MidiPolicy --no-zip
+& $python @pythonArgs -m pitchstems.cli $resolvedAudio --output-dir $resolvedOutput --midi-policy $MidiPolicy
 if ($LASTEXITCODE -ne 0) {
     throw "CLI real-audio smoke failed with exit code $LASTEXITCODE"
 }
