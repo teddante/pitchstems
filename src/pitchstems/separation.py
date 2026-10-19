@@ -15,8 +15,6 @@ from pitchstems.model_catalog import DEFAULT_MODEL_KEY, ModelChoice, model_choic
 from pitchstems.pipeline_models import StemResult
 
 
-DEFAULT_PROFILE_KEY = "song-6-stem"
-
 
 @dataclass(frozen=True)
 class SeparationOptions:
@@ -56,7 +54,6 @@ def download_model(model_key: str, log: Callable[[str], None] | None = None) -> 
 def separate_stems(
     audio_path: Path,
     output_dir: Path,
-    profile: str = "song-6-stem",
     options: SeparationOptions | None = None,
     log: Callable[[str], None] | None = None,
 ) -> list[StemResult]:
@@ -70,7 +67,7 @@ def separate_stems(
         ) from exc
 
     if options is None:
-        options = SeparationOptions(model_key=model_key_for_profile(profile))
+        options = SeparationOptions()
 
     choice = options.choice
     model_dir = download_model(choice.key, log=log)
@@ -147,14 +144,6 @@ def _retain_selected_stem(stems: list[StemResult], selected_stem: str) -> list[S
         if stem.path.resolve() not in selected_paths:
             stem.path.unlink(missing_ok=True)
     return selected
-
-
-def model_key_for_profile(profile: str) -> str:
-    return DEFAULT_MODEL_KEY
-
-
-def profile_keys() -> list[str]:
-    return [DEFAULT_PROFILE_KEY]
 
 
 def _registry_model(registry: Mapping[str, Any], choice: ModelChoice) -> Any:

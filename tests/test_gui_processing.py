@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import queue
+import threading
+import time
 from pathlib import Path
 
 import pitchstems.gui_processing as gui_processing
 from pitchstems.audio_clip import AudioClipRange
-from pitchstems.gui_jobs import EditorLoadJobState, WorkerJobState
+from pitchstems.gui_jobs import EditorLoadJobState, ProcessWorker, WorkerJobState
 from pitchstems.pipeline_models import PipelineResult, StemResult
 from pitchstems.separation import SeparationOptions
 from pitchstems.transcription import MidiOptions
@@ -157,6 +159,9 @@ class _CaptureProcessWorker:
 
 class _FinishedProcess:
     exitcode = -15
+
+    def is_alive(self) -> bool:
+        return False
 
     def join(self, timeout=0) -> None:
         del timeout
@@ -384,14 +389,13 @@ def test_worker_message_kind_reads_tuple_worker_message_names() -> None:
     assert gui_processing.worker_message_kind("RESULT") is None
 
 
-def test_cancel_processing_requests_active_worker_and_updates_activity() -> None:
+def test_cancel_processing_before_worker_attaches_keeps_job_active() -> None:
     window = DummyWindow()
     token = window.worker_jobs.start()
 
-    assert gui_processing.cancel_processing(window) is True
+    assert gui_processing.cancel_processing(window) is False
     assert window.worker_jobs.is_active(token)
-    assert window.activities[-1] == "Cancelling after the current model stage..."
-    assert "Cancellation requested." in window.logs[-1]
+    assert window.logs[-1] == "Processing is still starting; try cancelling again."
 
 
 def test_cancel_processing_terminates_active_process_worker() -> None:
@@ -420,6 +424,23 @@ def test_supervise_process_job_reports_cancel_cleanup_warning() -> None:
     )
     assert window.messages.get_nowait() == ("WORKER_LOG", 3, "Processing cancelled.")
     assert window.messages.get_nowait() == ("ENABLE_PROCESS", 3, "cancelled")
+
+
+def test_supervise_process_job_waits_for_requested_terminate() -> None:
+    window = _Window()
+    process_worker = ProcessWorker(_FinishedProcess(), queue.Queue())
+    process_worker.cancel_requested = True
+
+    def finish_terminate_late() -> None:
+        time.sleep(0.05)
+        process_worker.terminated = True
+        process_worker._terminate_done.set()
+
+    threading.Thread(target=finish_terminate_late).start()
+    gui_processing.supervise_process_job(window, 4, process_worker)
+
+    assert window.messages.get_nowait() == ("WORKER_LOG", 4, "Processing cancelled.")
+    assert window.messages.get_nowait() == ("ENABLE_PROCESS", 4, "cancelled")
 
 
 def test_cancel_processing_reports_no_active_worker() -> None:
@@ -550,7 +571,10 @@ class _ShutdownWindow:
     def __init__(self, alive: bool) -> None:
         self.worker = _ShutdownWorker(alive)
         self.worker_jobs = WorkerJobState()
-        self.worker_jobs.start()
+        token = self.worker_jobs.start()
+        self.process_worker = _CaptureProcessWorker(None, ())
+        self.process_worker.process.start()
+        self.worker_jobs.attach_process(token, self.process_worker)
         self.logs: list[str] = []
         self.activities: list[str] = []
         self.close_after_worker = False
@@ -579,7 +603,7 @@ def test_request_window_close_cancels_active_worker_and_defers_close() -> None:
     assert gui_processing.request_window_close(window) is False
     assert window.worker_jobs.is_active(1)
     assert window.close_after_worker
-    assert window.activities[-1] == "Cancelling after the current model stage..."
+    assert window.activities[-1] == "Cancelling worker process..."
 
 
 def test_request_window_close_allows_close_when_worker_state_is_retired() -> None:

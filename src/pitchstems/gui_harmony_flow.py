@@ -75,7 +75,6 @@ def refresh_current_harmony(window, seconds: float) -> None:
         window.refresh_chord_keyboard()
         window.set_theory_analysis(None)
         window.set_gap_analysis(None)
-        window.current_harmony_context = None
         window.note_filter_list.clear()
         window.inspect_chord_button.setEnabled(False)
         return
@@ -118,7 +117,6 @@ def refresh_current_harmony(window, seconds: float) -> None:
         )
         harmony_panel.set_chord_candidates(window, analysis)
         window.refresh_current_gap_suggestions(source_notes)
-        window.update_harmony_context("selection")
         populate_note_filter_list(window, window.current_chord_base_weights)
         if analysis.note_weights:
             note_text = ", ".join(
@@ -149,7 +147,6 @@ def refresh_current_harmony(window, seconds: float) -> None:
     window.current_chord.setText(f"Harmony: {chord}  (score {analysis.confidence:.0%})")
     harmony_panel.set_chord_candidates(window, analysis)
     window.refresh_current_gap_suggestions(source_notes)
-    window.update_harmony_context("playhead")
     populate_note_filter_list(window, window.current_chord_base_weights)
     if active_notes:
         unique_pitches = sorted({note.pitch for note in active_notes})
@@ -196,7 +193,7 @@ def refresh_current_theory(window, source_notes, seconds: float) -> None:
     if selection is not None:
         start, end = selection
         analysis = analyze_theory_region(
-            source_notes,
+            analysis_notes_overlapping_ranges(window.editor_project, source_notes, [selection]),
             window.editor_project.chords,
             start,
             end,
@@ -205,7 +202,7 @@ def refresh_current_theory(window, source_notes, seconds: float) -> None:
         )
     else:
         analysis = analyze_theory_at(
-            source_notes,
+            analysis_notes_active_at(window.editor_project, source_notes, seconds),
             window.editor_project.chords,
             seconds,
             required_pitch_classes=required,

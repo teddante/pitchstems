@@ -106,7 +106,6 @@ def test_reset_loaded_project_state_clears_editor_domain_state() -> None:
         chord_note_overrides={"bass": object()},
         chord_note_filter_context=object(),
         current_chord_base_weights={"C": 1.0},
-        current_harmony_context=object(),
         current_theory_analysis=object(),
         current_chord_gap_analysis=object(),
     )
@@ -123,7 +122,6 @@ def test_reset_loaded_project_state_clears_editor_domain_state() -> None:
     assert window.chord_note_overrides == {}
     assert window.chord_note_filter_context is None
     assert window.current_chord_base_weights == {}
-    assert window.current_harmony_context is None
     assert window.current_theory_analysis is None
     assert window.current_chord_gap_analysis is None
 

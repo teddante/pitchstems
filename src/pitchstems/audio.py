@@ -9,10 +9,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pitchstems.audio_clip import AudioClipRange
+from pitchstems.subprocess_flags import NO_CONSOLE_WINDOW
 
 
 class FFmpegNotFoundError(RuntimeError):
     """Raised when FFmpeg is not available on PATH."""
+
+
+class AudioToolError(RuntimeError):
+    """Raised when FFmpeg or FFprobe exits with an error."""
 
 
 def require_ffmpeg() -> str:
@@ -47,21 +52,15 @@ def normalize_to_wav(
 ) -> Path:
     """Convert any FFmpeg-readable audio file into a stereo PCM WAV."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        build_normalize_command(require_ffmpeg(), input_path, output_path, sample_rate, clip_range),
-        check=True,
+    _run_audio_tool(
+        build_normalize_command(require_ffmpeg(), input_path, output_path, sample_rate, clip_range)
     )
     return output_path
 
 
 def probe_audio_duration(input_path: Path) -> float:
-    completed = subprocess.run(
-        build_duration_command(require_ffprobe(), input_path),
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    data = json.loads(completed.stdout or "{}")
+    completed = _run_audio_tool(build_duration_command(require_ffprobe(), input_path))
+    data = json.loads(completed.stdout.decode("utf-8", "replace") or "{}")
     duration = data.get("format", {}).get("duration")
     if duration is None:
         raise ValueError(f"Could not read audio duration for {input_path}")
@@ -73,11 +72,7 @@ def load_waveform_preview(input_path: Path, max_points: int = 900) -> AudioWavef
     if duration <= 0:
         return AudioWaveformPreview(duration, ())
     sample_rate = _waveform_sample_rate(duration, max_points)
-    completed = subprocess.run(
-        build_waveform_command(require_ffmpeg(), input_path, sample_rate),
-        check=True,
-        capture_output=True,
-    )
+    completed = _run_audio_tool(build_waveform_command(require_ffmpeg(), input_path, sample_rate))
     samples = array("h")
     samples.frombytes(completed.stdout)
     if not samples:
@@ -91,6 +86,21 @@ def load_waveform_preview(input_path: Path, max_points: int = 900) -> AudioWavef
         bucket = samples[index : index + bucket_size]
         peaks.append(min(1.0, max(abs(value) for value in bucket) / peak_ceiling))
     return AudioWaveformPreview(duration, tuple(peaks[:max_points]))
+
+
+def _run_audio_tool(command: list[str]) -> subprocess.CompletedProcess[bytes]:
+    """Run FFmpeg/FFprobe without a console window, surfacing its stderr on failure."""
+    completed = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        creationflags=NO_CONSOLE_WINDOW,
+    )
+    if completed.returncode != 0:
+        stderr_lines = completed.stderr.decode("utf-8", "replace").strip().splitlines()
+        detail = " ".join(line.strip() for line in stderr_lines[-3:]) or "no error output"
+        raise AudioToolError(f"{Path(command[0]).stem} failed (exit {completed.returncode}): {detail}")
+    return completed
 
 
 def build_normalize_command(

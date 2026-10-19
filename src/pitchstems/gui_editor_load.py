@@ -6,7 +6,7 @@ from pathlib import Path
 from pitchstems.editor_loader import build_editor_load_result
 from pitchstems.editor_state import editor_float
 from pitchstems.notation import percent_text
-from pitchstems.gui_editor_state import EditorSummaryModel
+from pitchstems.gui_editor_state import EditorSummaryModel, flush_pending_editor_save
 from pitchstems.gui_helpers import blocked_signals
 from pitchstems.gui_project_flow import remember_recent_project
 from pitchstems.time_format import format_time
@@ -14,6 +14,7 @@ from pitchstems.time_format import format_time
 
 def set_current_result(window, result, open_output: bool = True) -> None:
     window.logger.info("Setting current result: %s", result.project_dir)
+    flush_pending_editor_save(window)
     window.stop_transport()
     window.set_activity_message("Loading result...")
     token = window.editor_load_jobs.next()

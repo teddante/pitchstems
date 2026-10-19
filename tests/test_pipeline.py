@@ -1,5 +1,4 @@
 import json
-import os
 from pathlib import Path
 from types import SimpleNamespace
 from zipfile import ZipFile
@@ -15,7 +14,6 @@ from pitchstems.pipeline import (
     _package_pipeline_outputs,
     _prepare_source_audio_input,
     _project_dir,
-    _remove_export_stem_copies,
     _remove_staging_dir,
     _safe_stem,
     _selected_midi_stem_keys,
@@ -115,7 +113,7 @@ def _fake_transcribe(stem_name, _audio_path, output_dir, **_kwargs):
     return MidiResult(stem_name, midi_path)
 
 
-def test_zip_project_outputs_packages_canonical_assets_without_export_copies(tmp_path: Path) -> None:
+def test_zip_project_outputs_packages_canonical_assets(tmp_path: Path) -> None:
     project_dir = tmp_path / "song.pitchstems"
     stems_dir = project_dir / "stems"
     midi_dir = project_dir / "midi" / "bass"
@@ -142,11 +140,10 @@ def test_zip_project_outputs_packages_canonical_assets_without_export_copies(tmp
     )
 
     assert zip_path.is_file()
-    assert not (export_dir / stem_path.name).exists()
     with ZipFile(zip_path) as archive:
         assert sorted(archive.namelist()) == [
             "midi/bass.mid",
-            "midi/song_combined.mid",
+            "midi/song-combined.mid",
             "stems/bass.wav",
         ]
 
@@ -193,50 +190,6 @@ def test_midi_rerun_sanitizes_stem_output_names(tmp_path: Path, monkeypatch) -> 
     with ZipFile(result.zip_path) as archive:
         assert "midi/vocals-lead.mid" in archive.namelist()
         assert all(".." not in Path(name).parts for name in archive.namelist())
-
-
-def test_remove_export_stem_copies_only_deletes_known_duplicate_stems(tmp_path: Path) -> None:
-    project_dir = tmp_path / "song.pitchstems"
-    stems_dir = project_dir / "stems"
-    export_dir = project_dir / "export"
-    stems_dir.mkdir(parents=True)
-    export_dir.mkdir()
-
-    stem_path = stems_dir / "song_bass.wav"
-    duplicate_path = export_dir / stem_path.name
-    unrelated_wav = export_dir / "manual_export.wav"
-    stem_path.write_bytes(b"canonical")
-    duplicate_path.write_bytes(b"duplicate")
-    unrelated_wav.write_bytes(b"keep")
-    duplicate_path.write_bytes(stem_path.read_bytes())
-    duplicate_stat = stem_path.stat()
-    duplicate_path.touch()
-
-    os.utime(duplicate_path, ns=(duplicate_stat.st_atime_ns, duplicate_stat.st_mtime_ns))
-
-    _remove_export_stem_copies(export_dir, [StemResult("bass", stem_path)])
-
-    assert stem_path.is_file()
-    assert not duplicate_path.exists()
-    assert unrelated_wav.is_file()
-
-
-def test_remove_export_stem_copies_keeps_modified_same_name_export(tmp_path: Path) -> None:
-    project_dir = tmp_path / "song.pitchstems"
-    stems_dir = project_dir / "stems"
-    export_dir = project_dir / "export"
-    stems_dir.mkdir(parents=True)
-    export_dir.mkdir()
-
-    stem_path = stems_dir / "song_bass.wav"
-    edited_export = export_dir / stem_path.name
-    stem_path.write_bytes(b"canonical")
-    edited_export.write_bytes(b"manual-edit")
-
-    _remove_export_stem_copies(export_dir, [StemResult("bass", stem_path)])
-
-    assert stem_path.is_file()
-    assert edited_export.is_file()
 
 
 def test_midi_rerun_zip_includes_current_manifest(tmp_path: Path, monkeypatch) -> None:
@@ -521,7 +474,7 @@ def test_midi_rerun_keeps_unrelated_export_midi_files(tmp_path: Path, monkeypatc
     assert old_generated.read_bytes() != b"old"
 
 
-def test_midi_rerun_cancellation_preserves_existing_outputs(tmp_path: Path, monkeypatch) -> None:
+def test_midi_rerun_interrupt_preserves_existing_outputs(tmp_path: Path, monkeypatch) -> None:
     project_dir = tmp_path / "song.pitchstems"
     stem_path = project_dir / "stems" / "song_bass.wav"
     old_midi = project_dir / "midi" / "bass" / "old.mid"
@@ -530,9 +483,12 @@ def test_midi_rerun_cancellation_preserves_existing_outputs(tmp_path: Path, monk
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"old")
 
-    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", _fake_transcribe)
+    def interrupted_transcribe(*_args, **_kwargs):
+        raise KeyboardInterrupt
 
-    with pytest.raises(pipeline.PipelineCancelledError):
+    monkeypatch.setattr(pipeline, "transcribe_stem_to_midi", interrupted_transcribe)
+
+    with pytest.raises(KeyboardInterrupt):
         process_midi_from_stems(
             project_dir=project_dir,
             input_stem="source",
@@ -540,7 +496,6 @@ def test_midi_rerun_cancellation_preserves_existing_outputs(tmp_path: Path, monk
             stems=[StemResult("bass", stem_path)],
             midi_stems={"bass"},
             create_zip=False,
-            cancelled=lambda: True,
         )
 
     assert old_midi.read_bytes() == b"old"
@@ -723,30 +678,26 @@ def test_failed_full_pipeline_writes_failed_manifest(tmp_path: Path, monkeypatch
     assert "native failed" in manifest["last_error"]
 
 
-def test_full_pipeline_cancellation_removes_partial_new_project(
+def test_full_pipeline_interrupt_removes_partial_new_project(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     input_path = tmp_path / "source.mp3"
     input_path.write_bytes(b"audio")
-    should_cancel = False
 
     def fake_separate(_audio_path, output_dir, **_kwargs):
-        nonlocal should_cancel
-        stem_path = _write_file(output_dir / "source_bass.wav", b"stem")
-        should_cancel = True
-        return [StemResult("bass", stem_path)]
+        _write_file(output_dir / "source_bass.wav", b"stem")
+        raise KeyboardInterrupt
 
     monkeypatch.setattr(pipeline, "normalize_to_wav", _fake_normalize)
     monkeypatch.setattr(pipeline, "separate_stems", fake_separate)
 
-    with pytest.raises(pipeline.PipelineCancelledError):
+    with pytest.raises(KeyboardInterrupt):
         process_audio_file(
             input_path,
             tmp_path / "out",
             generate_midi=False,
             create_zip=False,
-            cancelled=lambda: should_cancel,
         )
 
     assert not list((tmp_path / "out").glob("*.pitchstems"))
@@ -814,29 +765,6 @@ def test_full_pipeline_clip_processes_small_wav_and_records_provenance(
     assert "original_source_audio" not in manifest["settings"]["source_clip"]
     assert manifest["settings"]["source_clip"]["start_seconds"] == 12.0
     assert manifest["settings"]["source_clip"]["end_seconds"] == 24.5
-
-
-def test_full_pipeline_logs_deferred_cancellation_boundary(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    input_path = tmp_path / "source.mp3"
-    input_path.write_bytes(b"audio")
-    messages: list[str] = []
-
-    monkeypatch.setattr(pipeline, "normalize_to_wav", _fake_normalize)
-    monkeypatch.setattr(pipeline, "separate_stems", _fake_separate)
-
-    process_audio_file(
-        input_path,
-        tmp_path / "out",
-        generate_midi=False,
-        create_zip=False,
-        log=messages.append,
-        cancelled=lambda: False,
-    )
-
-    assert "Cancellation will take effect between native model stages." in messages
 
 
 def test_project_dir_avoids_same_second_name_collision(tmp_path: Path) -> None:

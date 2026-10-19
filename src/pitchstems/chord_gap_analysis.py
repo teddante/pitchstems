@@ -56,14 +56,16 @@ def analyze_chord_gap(
     if end <= start:
         return ChordGapAnalysis(start, end, previous_chord, next_chord, [])
 
+    context_start = previous_chord.start if previous_chord else start
+    context_end = next_chord.end if next_chord else end
+    # Everything below only looks inside the context span, so filter once.
+    notes = [note for note in notes if note.end > context_start and note.start < context_end]
     local_chord_analysis = analyze_chord_region(
         notes,
         start,
         end,
         scoring_options=scoring_options,
     )
-    context_start = previous_chord.start if previous_chord else start
-    context_end = next_chord.end if next_chord else end
     theory_analysis = analyze_theory_region(notes, chords, context_start, context_end)
     suggestions = _gap_suggestions(
         notes,

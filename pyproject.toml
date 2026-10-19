@@ -86,8 +86,9 @@ addopts = "-q"
 python_version = "3.10"
 files = ["src/pitchstems"]
 # Qt-bound GUI modules take an untyped MainWindow and are covered by tests and
-# the GUI smoke run instead; everything else is type-checked.
-exclude = '(^|/)(gui_[a-z_]+|app|harmony_panel|harmony_report)\.py$'
+# the GUI smoke run instead; everything else, including the typed GUI helpers
+# named in the lookahead, is type-checked.
+exclude = '(^|/)(gui_(?!editor_actions|entry|jobs|theme)[a-z_]+|app|harmony_panel|harmony_report)\.py$'
 warn_unused_configs = true
 disallow_untyped_defs = true
 check_untyped_defs = true

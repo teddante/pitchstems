@@ -1,3 +1,4 @@
+import queue
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -200,6 +201,10 @@ def test_generate_detected_chords_populates_blank_base_project(monkeypatch) -> N
         ),
         status=_StatusBar(),
         suggestions_checked=False,
+        messages=queue.Queue(),
+        detect_chords_button=SimpleNamespace(setEnabled=lambda _enabled: None),
+        begin_activity=lambda _message: None,
+        end_activity=lambda _message="Ready": None,
     )
     window.statusBar = lambda: window.status
 
@@ -209,9 +214,36 @@ def test_generate_detected_chords_populates_blank_base_project(monkeypatch) -> N
     window.refresh_editor_project_from_chord_edits = refresh
 
     gui_editor_state.generate_detected_chords(window)
+    window.chord_detection_worker.join(timeout=5)
+    kind, base_project, chords, error = window.messages.get_nowait()
+    assert (kind, base_project, error) == ("CHORDS_DETECTED", project, None)
+    gui_editor_state.finish_detected_chords(window, base_project, chords, error)
 
     assert window.base_editor_project.chords == [chord]
     assert saved == [(Path("project"), True)]
     assert window.suggestions_checked is True
     assert button.enabled is True
     assert window.status.messages == ["Generated 1 chord suggestions."]
+
+
+def test_finish_detected_chords_ignores_result_for_replaced_project() -> None:
+    project = EditorProject(
+        project_dir=Path("project"),
+        source_audio=Path("song.wav"),
+        tracks=[],
+        notes=[],
+        chords=[],
+        duration=1.0,
+    )
+    ended: list[str] = []
+    window = SimpleNamespace(
+        current_result=SimpleNamespace(project_dir=Path("project")),
+        base_editor_project=None,
+        logger=SimpleNamespace(info=lambda *_args: None),
+        end_activity=lambda message="Ready": ended.append(message),
+    )
+
+    gui_editor_state.finish_detected_chords(window, project, [ChordRegion(0.0, 1.0, "C", 0.8)], None)
+
+    assert window.base_editor_project is None
+    assert ended == ["Ready"]

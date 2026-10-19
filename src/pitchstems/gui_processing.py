@@ -8,17 +8,11 @@ from pathlib import Path
 
 from pitchstems.audio_clip import AudioClipRange
 from pitchstems.gui_jobs import ProcessWorker, create_process_worker, thread_is_alive
-from pitchstems.pipeline import (
-    PipelineCancelledError,
-    process_audio_file,
-    process_midi_from_stems,
-)
+from pitchstems.pipeline import process_audio_file, process_midi_from_stems
 from pitchstems.pipeline_models import PipelineResult, StemResult
 from pitchstems.separation import SeparationOptions
 from pitchstems.input_validation import validate_audio_input
 from pitchstems.transcription import MidiOptions
-
-CANCELLING_AFTER_STAGE_MESSAGE = "Cancelling after the current model stage..."
 
 
 
@@ -178,6 +172,8 @@ def supervise_process_job(window, token: int, process_worker: ProcessWorker) -> 
     while process_worker.is_alive():
         forward_process_messages(window, process_worker)
         time.sleep(0.05)
+    if getattr(process_worker, "cancel_requested", False):
+        process_worker.wait_for_terminate()
     process_worker.process.join(timeout=0)
     forward_process_messages(window, process_worker)
     if process_worker.terminated:
@@ -220,15 +216,16 @@ def cancel_processing(window) -> bool:
         window.append_log("No active processing job to cancel.")
         return False
     process_worker = window.worker_jobs.request_active_cancel()
-    if process_worker is not None:
-        threading.Thread(
-            target=process_worker.terminate,
-            name="PitchStemsWorkerCancellation",
-            daemon=True,
-        ).start()
-        window.set_activity_message("Cancelling worker process...")
-    else:
-        window.set_activity_message(CANCELLING_AFTER_STAGE_MESSAGE)
+    if process_worker is None:
+        # The token is taken just before the process is attached, in the same call.
+        window.append_log("Processing is still starting; try cancelling again.")
+        return False
+    threading.Thread(
+        target=process_worker.terminate,
+        name="PitchStemsWorkerCancellation",
+        daemon=True,
+    ).start()
+    window.set_activity_message("Cancelling worker process...")
     window.append_log("Cancellation requested.")
     return True
 
@@ -258,16 +255,12 @@ def run_full_pipeline_process(token: int, request: FullProcessRunRequest, messag
             midi_stems=request.midi_stems,
             create_zip=request.create_zip,
             log=lambda message: put_worker_log(messages, token, message),
-            cancelled=None,
             project_created=lambda project_dir: put_project_dir_message(messages, token, project_dir),
             source_clip=request.source_clip,
             generate_chord_suggestions=request.generate_chord_suggestions,
         )
         put_worker_result(messages, token, result)
         put_worker_log(messages, token, f"Project ready: {result.project_dir}")
-    except PipelineCancelledError:
-        put_worker_log(messages, token, "Processing cancelled.")
-        raise
     except Exception as exc:
         put_worker_log(messages, token, f"Error: {exc}")
         raise
@@ -287,13 +280,9 @@ def run_midi_stage_process(token: int, request: MidiProcessRunRequest, messages)
             midi_stems=request.midi_stems,
             create_zip=request.create_zip,
             log=lambda message: put_worker_log(messages, token, message),
-            cancelled=None,
         )
         put_worker_result(messages, token, result)
         put_worker_log(messages, token, f"Updated project MIDI: {result.project_dir}")
-    except PipelineCancelledError:
-        put_worker_log(messages, token, "Processing cancelled.")
-        raise
     except Exception as exc:
         put_worker_log(messages, token, f"Error: {exc}")
         raise
@@ -366,6 +355,11 @@ def flush_messages(window) -> None:
             from pitchstems.gui_export import finish_export
 
             finish_export(window, summary, error)
+        elif kind == "CHORDS_DETECTED":
+            _kind, base_project, chords, error = message
+            from pitchstems.gui_editor_state import finish_detected_chords
+
+            finish_detected_chords(window, base_project, chords, error)
         elif kind == "WAVEFORM_PREVIEW":
             _kind, token, path, preview, error = message
             from pitchstems.gui_project_flow import finish_waveform_preview

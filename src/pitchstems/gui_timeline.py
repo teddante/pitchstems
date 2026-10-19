@@ -73,7 +73,7 @@ class TimelineView(QGraphicsView):
         self.chord_height = self.ruler_height + self.chord_lane_height
         self.minimum_track_height = TRACK_CONTROL_MIN_HEIGHT
         self.visible_tracks: set[str] = set()
-        self.layout_geometry: TimelineLayoutGeometry | None = None
+        self._drawn_scene_rect = None
         self.track_geometries: dict[str, TimelineTrackGeometry] = {}
         self.notes_by_track: dict[str, list] = {}
         self.note_starts_by_track: dict[str, list[float]] = {}
@@ -203,11 +203,28 @@ class TimelineView(QGraphicsView):
 
     def set_note_name_formatter(self, formatter) -> None:
         self.note_name_formatter = formatter
-        self.redraw()
+        self.request_redraw()
 
     def set_chord_label_formatter(self, formatter) -> None:
         self.chord_label_formatter = formatter
-        self.redraw()
+        self.request_redraw()
+
+    def replace_project_keeping_view(
+        self,
+        project: EditorProject,
+        visible_tracks: set[str],
+        selected_chord: ChordRegion | None,
+        manual_chords: list[ChordRegion],
+    ) -> None:
+        """Swap in a chord-edited project without resetting playhead, zoom, or selection."""
+        notes_changed = self.project is None or project.notes is not self.project.notes
+        self.project = project
+        if notes_changed:
+            self._index_project()
+        self.visible_tracks = {track.lower() for track in visible_tracks}
+        self.position = max(0.0, min(self.position, max(project.duration, 0.0)))
+        self.selected_chord = selected_chord
+        self.set_manual_chords(manual_chords)
 
     def zoom_horizontal(self, factor: float) -> None:
         if self.project is None:
@@ -332,6 +349,9 @@ class TimelineView(QGraphicsView):
     def request_view_redraw(self, _value: int | None = None) -> None:
         if self.project is None:
             return
+        # Redraw draws a margin around the viewport; skip scrolls that stay inside it.
+        if self._drawn_scene_rect is not None and self._drawn_scene_rect.contains(self._visible_scene_rect()):
+            return
         self.view_redraw_timer.start(35)
 
     def _update_scene_rect_for_current_zoom(self) -> None:
@@ -339,7 +359,7 @@ class TimelineView(QGraphicsView):
             return
         duration = max(self.project.duration, 10.0)
         layout = self._build_layout_geometry(duration)
-        self.layout_geometry = layout
+        self._drawn_scene_rect = None
         self.track_geometries = layout.track_geometries
         self.scene.setSceneRect(0, 0, layout.content_width, layout.content_height)
 
@@ -358,7 +378,7 @@ class TimelineView(QGraphicsView):
             self.scene.clear()
             self.playhead = None
             self.selection_rects = []
-            self.layout_geometry = None
+            self._drawn_scene_rect = None
             self.track_geometries = {}
             self.sticky_x_items = []
             self.sticky_y_items = []
@@ -370,13 +390,13 @@ class TimelineView(QGraphicsView):
 
             duration = max(self.project.duration, 10.0)
             layout = self._build_layout_geometry(duration)
-            self.layout_geometry = layout
             self.track_geometries = layout.track_geometries
             width = layout.content_width
             height = layout.content_height
             self.scene.setSceneRect(0, 0, width, height)
             self.scene.addRect(0, 0, width, height, QPen(Qt.NoPen), QBrush(QColor("#f8fafc")))
             visible_rect = self._visible_scene_rect().adjusted(-160, -90, 220, 90)
+            self._drawn_scene_rect = visible_rect
             visible_start = timeline_seconds_for_x(
                 visible_rect.left(),
                 label_width=self.label_width,

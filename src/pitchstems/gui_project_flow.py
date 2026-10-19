@@ -5,7 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from pitchstems.app_logging import logs_dir
-from pitchstems.gui_editor_state import EMPTY_EDITOR_SUMMARY
+from pitchstems.gui_editor_state import EMPTY_EDITOR_SUMMARY, flush_pending_editor_save
 from pitchstems.gui_helpers import blocked_signals, clear_layout
 from pitchstems.gui_import_clip import waveform_preview_for_path
 from pitchstems.gui_track_controls import reset_track_control_widgets
@@ -167,6 +167,7 @@ def open_project_manifest(window, manifest_path: Path) -> None:
 
 
 def reset_stage_state(window, path: Path | None = None) -> None:
+    flush_pending_editor_save(window)
     if hasattr(window, "stop_import_clip_preview"):
         window.stop_import_clip_preview()
     if hasattr(window, "import_clip_picker"):
@@ -277,7 +278,6 @@ def _reset_loaded_project_state(window) -> None:
         window.theory_note_overrides = {}
     window.chord_note_filter_context = None
     window.current_chord_base_weights = {}
-    window.current_harmony_context = None
     window.current_theory_analysis = None
     window.current_chord_gap_analysis = None
 

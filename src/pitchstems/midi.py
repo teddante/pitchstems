@@ -6,13 +6,12 @@ from typing import Any, Iterable
 
 from mido import MidiFile, MidiTrack, MetaMessage
 
-from pitchstems.pipeline_models import MidiResult
+from pitchstems.pipeline_models import MidiResult, is_percussive_stem
 
 
 CONDUCTOR_META_TYPES = {"set_tempo", "time_signature", "key_signature"}
 DRUM_CHANNEL = 9
 MELODIC_CHANNELS = tuple(channel for channel in range(16) if channel != DRUM_CHANNEL)
-PERCUSSIVE_STEM_NAMES = {"drums", "drum", "percussion"}
 
 
 def combine_midi_tracks(midi_results: list[MidiResult], output_path: Path) -> Path | None:
@@ -37,7 +36,7 @@ def combine_midi_tracks(midi_results: list[MidiResult], output_path: Path) -> Pa
         if ticks_per_beat is None:
             ticks_per_beat = source.ticks_per_beat
             combined.ticks_per_beat = ticks_per_beat
-        if result.stem.lower() in PERCUSSIVE_STEM_NAMES:
+        if is_percussive_stem(result.stem):
             channel = DRUM_CHANNEL
         else:
             channel = MELODIC_CHANNELS[melodic_index % len(MELODIC_CHANNELS)]

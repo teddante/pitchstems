@@ -169,6 +169,7 @@ def test_refresh_current_theory_clears_multiple_review_ranges() -> None:
 def test_refresh_current_theory_uses_selected_region(monkeypatch) -> None:
     window = _TheoryWindow(ranges=[(1.0, 2.0)])
     source_notes = [object()]
+    window.editor_project.note_index.notes = source_notes
     calls = []
 
     def fake_analyze_theory_region(notes, chords, start, end, **kwargs):
@@ -194,6 +195,7 @@ def test_refresh_current_theory_uses_selected_region(monkeypatch) -> None:
 def test_refresh_current_theory_uses_playhead_without_selection(monkeypatch) -> None:
     window = _TheoryWindow(ranges=[])
     source_notes = [object()]
+    window.editor_project.note_index.notes = source_notes
     calls = []
 
     def fake_analyze_theory_at(notes, chords, seconds, **kwargs):
@@ -325,9 +327,21 @@ class _GapWindow:
         self.gap_analyses.append(analysis)
 
 
+class _PassThroughNoteIndex:
+    def __init__(self) -> None:
+        self.notes: list = []
+
+    def active_at(self, _seconds: float) -> list:
+        return self.notes
+
+    def overlapping(self, _start: float, _end: float) -> list:
+        return self.notes
+
+
 class _TheoryProject:
     def __init__(self) -> None:
         self.chords = [ChordRegion(0.0, 1.0, "C", 0.8)]
+        self.note_index = _PassThroughNoteIndex()
 
 
 class _TheoryWindow:

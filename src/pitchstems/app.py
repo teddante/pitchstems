@@ -5,7 +5,6 @@ import queue
 import sys
 import threading
 import time
-from dataclasses import dataclass
 from pathlib import Path
 
 from pitchstems.gui_helpers import blocked_signals, text_label, wrapping_list
@@ -72,12 +71,6 @@ from pitchstems.chord_gap_analysis import ChordGapAnalysis
 from pitchstems.scale_analysis import TheoryAnalysis
 from pitchstems.time_format import format_time
 from pitchstems.transcription import midi_option_spec
-
-@dataclass(frozen=True)
-class HarmonyContext:
-    mode: str
-    sampled_tracks: tuple[str, ...]
-
 
 def main() -> int:
     log_path = setup_app_logging()
@@ -182,6 +175,7 @@ def main() -> int:
             self.close_after_export = False
             self.waveform_token = 0
             self.waveform_worker: threading.Thread | None = None
+            self.chord_detection_worker: threading.Thread | None = None
             self.activity_depth = 0
             self.manual_chords: list[ChordRegion] = []
             self.removed_chord_ranges: list[tuple[float, float]] = []
@@ -191,7 +185,6 @@ def main() -> int:
             self.scale_preview_range: tuple[int, int] = (60, 72)
             self.chord_note_filter_context = None
             self.current_chord_base_weights: dict[int, float] = {}
-            self.current_harmony_context: HarmonyContext | None = None
             self.harmony_refresh_gate = gui_harmony_flow.HarmonyRefreshGate()
             self.pending_harmony_seconds: float | None = None
             self.current_theory_analysis: TheoryAnalysis | None = None
@@ -424,7 +417,6 @@ def main() -> int:
             self.playback_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             self.playback_scroll.setStyleSheet("QScrollArea { border: 1px solid #e2e8f0; background: #f8fafc; }")
             self.track_visibility_checks: dict[str, QCheckBox] = {}
-            self.track_analysis_checks: dict[str, QCheckBox] = {}
             self.track_control_panels: dict[str, QWidget] = {}
             self.track_control_detail_rows: dict[str, tuple[QWidget, QWidget, QWidget]] = {}
             self.track_control_top_spacer: QWidget | None = None
@@ -836,16 +828,19 @@ def main() -> int:
             )
             zoom_time_in.setShortcuts([QKeySequence("Ctrl++"), QKeySequence("Ctrl+=")])
             self._add_action(view_menu, "Zoom Time Out", "Ctrl+-", lambda: self.timeline.zoom_horizontal(1 / 1.18))
-            self._add_action(
+            # Pitch zoom uses Alt so it cannot collide with UI zoom on Ctrl+Shift+=/-
+            # (Ctrl+Shift+= is also reported as Ctrl+Shift++ on US layouts).
+            zoom_pitch_in = self._add_action(
                 view_menu,
                 "Zoom Pitch In",
-                "Ctrl+Shift++",
+                None,
                 lambda: self.timeline.zoom_vertical(1.18),
             )
+            zoom_pitch_in.setShortcuts([QKeySequence("Alt+="), QKeySequence("Alt++")])
             self._add_action(
                 view_menu,
                 "Zoom Pitch Out",
-                "Ctrl+Shift+-",
+                "Alt+-",
                 lambda: self.timeline.zoom_vertical(1 / 1.18),
             )
             self._add_action(view_menu, "Reset Timeline Zoom", "Ctrl+0", self.timeline.reset_zoom)
@@ -1083,7 +1078,7 @@ def main() -> int:
             if seek_players:
                 self.seek_audio_players(seconds)
             if save:
-                gui_editor_state.request_editor_state_save(self)
+                self.request_editor_state_save()
 
         def clear_editor_selection(self) -> None:
             self.timeline.clear_selection()
@@ -1233,8 +1228,9 @@ def main() -> int:
             self.refresh_current_harmony(self.timeline.position, force=True)
 
         def handle_notation_spelling_changed(self, *_args) -> None:
-            self.timeline.set_note_name_formatter(self.display_note_name)
-            self.timeline.set_chord_label_formatter(self.display_chord)
+            with self.timeline.deferred_redraw():
+                self.timeline.set_note_name_formatter(self.display_note_name)
+                self.timeline.set_chord_label_formatter(self.display_chord)
             self.chord_note_maps.set_pitch_class_formatter(self.display_pitch_class_name)
             self.theory_note_maps.set_pitch_class_formatter(self.display_pitch_class_name)
             self.refresh_current_harmony(self.timeline.position, force=True)
@@ -1260,12 +1256,6 @@ def main() -> int:
             seconds = self.pending_harmony_seconds
             self.pending_harmony_seconds = None
             self.refresh_current_harmony(seconds, force=True)
-
-        def update_harmony_context(self, mode: str) -> None:
-            self.current_harmony_context = HarmonyContext(
-                mode=mode,
-                sampled_tracks=tuple(self.chord_analysis_track_names()),
-            )
 
         def chord_analysis_track_names(self) -> list[str]:
             return inspector_chord_analysis_track_names(
@@ -1403,12 +1393,9 @@ def main() -> int:
             roles: dict[int, set[str]] = {}
             if parts is not None:
                 roles.setdefault(parts.root_pitch_class, set()).add("root")
-            for note_name, role in ((bass_name, "bass"),):
-                if not note_name:
-                    continue
-                pitch_class = pitch_class_for_name(note_name)
-                if pitch_class is not None:
-                    roles.setdefault(pitch_class, set()).add(role)
+            bass_pitch_class = pitch_class_for_name(bass_name) if bass_name else None
+            if bass_pitch_class is not None:
+                roles.setdefault(bass_pitch_class, set()).add("bass")
             return roles
 
         def refresh_chord_actions(self) -> None:
@@ -1453,6 +1440,9 @@ def main() -> int:
 
         def save_editor_state(self) -> bool:
             return gui_editor_state.save_editor_state(self)
+
+        def request_editor_state_save(self) -> None:
+            gui_editor_state.request_editor_state_save(self)
 
         def reset_stage_state(self, _path: Path | None = None) -> None:
             gui_project_flow.reset_stage_state(self, _path)
@@ -1578,6 +1568,17 @@ def main() -> int:
             run_startup_smoke,
         )
 
+        # The timeout can fire inside processEvents() while the smoke is still
+        # running; remember it so the final exit code cannot mask it.
+        smoke_timed_out = False
+        smoke_timeout_ms = 120_000 if smoke_mode == "real-audio" else 10_000
+
+        def time_out_smoke() -> None:
+            nonlocal smoke_timed_out
+            smoke_timed_out = True
+            print(f"GUI smoke timed out after {smoke_timeout_ms // 1000}s.", file=sys.stderr)
+            app.exit(2)
+
         def run_smoke_and_exit() -> None:
             try:
                 run_startup_smoke(window)
@@ -1594,12 +1595,12 @@ def main() -> int:
             except Exception as exc:
                 logger.exception("GUI startup smoke failed")
                 print(f"{exc} (details: {log_path})", file=sys.stderr)
-                app.exit(1)
+                app.exit(2 if smoke_timed_out else 1)
                 return
-            app.exit(0)
+            app.exit(2 if smoke_timed_out else 0)
 
         QTimer.singleShot(0, run_smoke_and_exit)
-        QTimer.singleShot(10000, lambda: app.exit(2))
+        QTimer.singleShot(smoke_timeout_ms, time_out_smoke)
     return app.exec()
 
 

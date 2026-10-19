@@ -260,7 +260,7 @@ def add_track_control_row(window, track, editor_state: TrackControlEditorState) 
     audio_check.toggled.connect(lambda *_args: sync_track_control_panel(window))
     audio_check.toggled.connect(lambda *_args: refresh_track_master_toggles(window))
     audio_slider.valueChanged.connect(lambda *_args: window.refresh_playback_mix())
-    audio_slider.valueChanged.connect(lambda *_args: window.save_editor_state())
+    audio_slider.valueChanged.connect(lambda *_args: window.request_editor_state_save())
     audio_slider.sliderReleased.connect(lambda *_args: sync_track_control_panel(window))
     window.track_audio_checks[track.name] = audio_check
     window.track_audio_sliders[track.name] = audio_slider
@@ -282,7 +282,7 @@ def add_track_control_row(window, track, editor_state: TrackControlEditorState) 
     )
     midi_check.toggled.connect(lambda *_args: refresh_track_master_toggles(window))
     midi_slider.valueChanged.connect(lambda *_args: window.refresh_playback_mix())
-    midi_slider.valueChanged.connect(lambda *_args: window.save_editor_state())
+    midi_slider.valueChanged.connect(lambda *_args: window.request_editor_state_save())
     midi_slider.sliderReleased.connect(lambda *_args: sync_track_control_panel(window))
     window.track_midi_checks[track.name] = midi_check
     window.track_midi_sliders[track.name] = midi_slider

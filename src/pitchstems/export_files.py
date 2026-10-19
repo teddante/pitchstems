@@ -8,7 +8,7 @@ from typing import Callable
 
 from pitchstems.atomic_files import atomic_replace
 from pitchstems.filename_safety import safe_file_stem, slugify
-from pitchstems.pipeline_models import PipelineResult
+from pitchstems.pipeline_models import MidiResult, PipelineResult, StemResult
 
 
 @dataclass(frozen=True)
@@ -48,12 +48,11 @@ def build_export_items(result: PipelineResult) -> list[ExportItem]:
 
     for stem in result.stems:
         if stem.path.is_file():
-            relative_path = Path("stems") / f"{stem.safe_key}{stem.path.suffix.lower() or '.wav'}"
-            _append_item(items, seen, stem.name, "Stems", stem.path, relative_path)
+            _append_item(items, seen, stem.name, "Stems", stem.path, stem_archive_path(stem))
 
     for midi in result.midi_files:
         if midi.path.is_file():
-            _append_item(items, seen, midi.stem, "MIDI", midi.path, Path("midi") / f"{midi.safe_key}.mid")
+            _append_item(items, seen, midi.stem, "MIDI", midi.path, midi_archive_path(midi))
             note_csvs = sorted(path for path in midi.path.parent.glob("*.csv") if path.is_file())
             for relative_path, csv_path in _note_csv_paths(midi.safe_key, note_csvs):
                 _append_item(items, seen, f"{midi.stem} notes", "Notes CSV", csv_path, relative_path)
@@ -65,10 +64,23 @@ def build_export_items(result: PipelineResult) -> list[ExportItem]:
             "Combined MIDI",
             "Combined MIDI",
             result.combined_midi,
-            Path("midi") / _safe_filename(result.combined_midi.name),
+            combined_midi_archive_path(result.combined_midi),
         )
 
     return items
+
+
+# Shared layout for exported files and the CLI's --zip package.
+def stem_archive_path(stem: StemResult) -> Path:
+    return Path("stems") / f"{stem.safe_key}{stem.path.suffix.lower() or '.wav'}"
+
+
+def midi_archive_path(midi: MidiResult) -> Path:
+    return Path("midi") / f"{midi.safe_key}.mid"
+
+
+def combined_midi_archive_path(path: Path) -> Path:
+    return Path("midi") / _safe_filename(path.name)
 
 
 def export_collisions(items: list[ExportItem], destination: Path) -> tuple[Path, ...]:

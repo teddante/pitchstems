@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from pitchstems.runtime_checks import format_checks, run_checks
 from pitchstems.model_catalog import DEFAULT_MODEL_KEY, model_choice
 from pitchstems.pipeline import process_audio_file
-from pitchstems.separation import download_model, model_key_for_profile, profile_keys
+from pitchstems.separation import download_model
 from pitchstems.separation import SeparationOptions
 from pitchstems.runtime_checks import format_setup_result, run_setup
 from pitchstems.transcription import MIDI_OPTION_SPECS, MidiOptions, optional_frequency_limit
@@ -16,8 +17,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Separate audio into stems and transcribe MIDI locally.")
     parser.add_argument("audio_file", nargs="?", type=Path)
     parser.add_argument("--output-dir", type=Path, default=Path.cwd() / "pitchstems-output")
-    parser.add_argument("--quality", choices=profile_keys(), default="song-6-stem")
-    parser.add_argument("--model", choices=[DEFAULT_MODEL_KEY], help=argparse.SUPPRESS)
     parser.add_argument(
         "--download-model",
         nargs="?",
@@ -79,11 +78,10 @@ def main() -> int:
         parser.error("audio_file is required unless --doctor, --setup, or --download-model is used")
 
     separation_options = _separation_options(args)
-    model_key = separation_options.model_key if separation_options else model_key_for_profile(args.quality)
-    choice = model_choice(model_key)
+    choice = model_choice(DEFAULT_MODEL_KEY)
     selected_stem = args.stem
     if selected_stem and selected_stem.lower() not in {stem.lower() for stem in choice.stems}:
-        parser.error(f"--stem {selected_stem!r} is not supported by --model {model_key}. Valid stems: {', '.join(choice.stems)}")
+        parser.error(f"--stem {selected_stem!r} is not a {choice.label} stem. Valid stems: {', '.join(choice.stems)}")
     try:
         midi_options = MidiOptions(
             onset_threshold=args.onset_threshold,
@@ -102,17 +100,23 @@ def main() -> int:
     except ValueError as exc:
         parser.error(str(exc))
 
-    pipeline_result = process_audio_file(
-        args.audio_file,
-        args.output_dir,
-        quality=args.quality,
-        separation_options=separation_options,
-        generate_midi=not args.no_midi,
-        midi_policy="none" if args.no_midi else args.midi_policy,
-        midi_options=midi_options,
-        create_zip=args.zip,
-        log=print,
-    )
+    try:
+        pipeline_result = process_audio_file(
+            args.audio_file,
+            args.output_dir,
+            separation_options=separation_options,
+            generate_midi=not args.no_midi,
+            midi_policy="none" if args.no_midi else args.midi_policy,
+            midi_options=midi_options,
+            create_zip=args.zip,
+            log=print,
+        )
+    except KeyboardInterrupt:
+        print("Cancelled.", file=sys.stderr)
+        return 130
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
     print(pipeline_result.zip_path or pipeline_result.project_dir)
     return 0
 
@@ -138,10 +142,9 @@ def _bs_device(device: str) -> str | None:
 
 def _separation_options(args: argparse.Namespace) -> SeparationOptions | None:
     explicit_device = args.bs_device != "auto" or bool(args.bs_device_id)
-    if not (args.model or args.stem or explicit_device):
+    if not (args.stem or explicit_device):
         return None
     return SeparationOptions(
-        model_key=args.model or model_key_for_profile(args.quality),
         selected_stem=args.stem,
         device=_bs_device(args.bs_device),
         device_ids=tuple(args.bs_device_id) if args.bs_device_id else None,

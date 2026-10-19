@@ -11,7 +11,6 @@ from pitchstems.separation import (
     _redirect_output,
     _registry_model,
     _retain_selected_stem,
-    model_key_for_profile,
 )
 
 
@@ -60,12 +59,7 @@ def test_separation_fails_when_native_backend_produces_no_stems(
         separation.separate_stems(audio, tmp_path / "out")
 
 
-def test_model_key_for_profile_resolves_current_and_legacy_profiles() -> None:
-    assert model_key_for_profile("song-6-stem") == "bs_roformer_sw"
-    assert model_key_for_profile("best") == "bs_roformer_sw"
-
-
-def test_default_profile_reuses_model_catalog_stems_and_registry_id() -> None:
+def test_default_model_reuses_model_catalog_stems_and_registry_id() -> None:
     choice = model_choice("bs_roformer_sw")
     assert choice.stems == ["vocals", "drums", "bass", "guitar", "piano", "other", "instrumental"]
     assert choice.native_model_id == "roformer-model-bs-roformer-sw-by-jarredou"

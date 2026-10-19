@@ -10,14 +10,17 @@ class NoteIndex:
     def __init__(self, notes: list[NoteEvent]) -> None:
         self.notes = sorted(notes, key=lambda note: (note.start, note.end, note.stem, note.pitch))
         self.starts = [note.start for note in self.notes]
+        # No note can still sound later than its start plus the longest duration,
+        # so lookups only scan notes that started within that window.
+        self.max_duration = max((note.end - note.start for note in self.notes), default=0.0)
 
     def active_at(self, seconds: float) -> list[NoteEvent]:
-        end = bisect_right(self.starts, seconds)
-        return [note for note in self.notes[:end] if note.end > seconds]
+        return self.overlapping(seconds, seconds)
 
     def overlapping(self, start: float, end: float) -> list[NoteEvent]:
+        left = bisect_left(self.starts, start - self.max_duration)
         right = bisect_right(self.starts, end)
-        return [note for note in self.notes[:right] if note.end > start]
+        return [note for note in self.notes[left:right] if note.end > start]
 
 
 class ChordIndex:

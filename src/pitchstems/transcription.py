@@ -10,9 +10,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Iterator
 
-from pitchstems.pipeline_models import MidiResult
+from pitchstems.pipeline_models import MidiResult, is_percussive_stem
 
-PERCUSSIVE_STEMS = {"drums", "drum", "kick", "snare", "toms", "hh", "hats", "ride", "crash"}
 
 
 @dataclass(frozen=True)
@@ -224,7 +223,7 @@ def transcribe_stem_to_midi(
 ) -> MidiResult | None:
     """Run Basic Pitch on one separated stem and return the generated MIDI path."""
     options = options or MidiOptions()
-    if skip_percussion and stem_name.lower() in PERCUSSIVE_STEMS:
+    if skip_percussion and is_percussive_stem(stem_name):
         if log:
             log(f"Skipping percussive MIDI for {audio_path.name}.")
         return None

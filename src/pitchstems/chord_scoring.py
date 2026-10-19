@@ -63,7 +63,7 @@ def score_root(
     intervals = {(pitch - root) % 12 for pitch in pitch_classes}
     best_quality = ""
     best_score = 0.0
-    best_explanation: list[str] = []
+    best_explanation_args: dict[str, Any] | None = None
     best_rank_key: tuple[float, ...] = ()
     for suffix, required in chord_qualities():
         label = f"{PITCH_NAMES[root]}{suffix}"
@@ -91,21 +91,23 @@ def score_root(
             best_quality = suffix
             best_score = score
             best_rank_key = rank_key
-            best_explanation = _plain_score_explanation(
-                label=label,
-                root=root,
-                required=required,
-                intervals=intervals,
-                matched=matched,
-                coverage=coverage,
-                purity=purity,
-                score=score,
-            )
+            # Build the explanation text only for the winner, not every improvement.
+            best_explanation_args = {
+                "label": label,
+                "root": root,
+                "required": required,
+                "intervals": intervals,
+                "matched": matched,
+                "coverage": coverage,
+                "purity": purity,
+                "score": score,
+            }
     label = f"{PITCH_NAMES[root]}{best_quality}"
     if bass != root:
         label = f"{label}/{PITCH_NAMES[bass]}"
-    if not best_explanation:
+    if best_explanation_args is None:
         return None
+    best_explanation = _plain_score_explanation(**best_explanation_args)
     return label, max(0.0, min(1.0, best_score)), best_explanation, best_rank_key
 
 
@@ -429,6 +431,8 @@ def _label_matches_constraints(
     required_pitch_classes: set[int] | None,
     excluded_pitch_classes: set[int] | None,
 ) -> bool:
+    if not required_pitch_classes and not excluded_pitch_classes:
+        return True
     notes = set(chord_pitch_classes_for_label(label))
     if required_pitch_classes and not required_pitch_classes <= notes:
         return False

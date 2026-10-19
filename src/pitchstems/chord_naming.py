@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from functools import lru_cache
 
 from pitchstems.notation import (
     DEFAULT_PITCH_NAMES,
@@ -86,9 +87,12 @@ def exact_chord_names_for_pitch_classes(pitch_classes: set[int], bass: int | Non
 
 
 def chord_quality_templates() -> tuple[tuple[str, tuple[int, ...]], ...]:
-    return tuple(chord_qualities())
+    return chord_qualities()
 
 
+# Chord labels come from a small finite vocabulary and are re-parsed in scoring
+# loops, so cache the immutable parse result.
+@lru_cache(maxsize=4096)
 def parse_chord_symbol(label: str) -> ChordSymbol | None:
     parts = split_chord_label(label)
     if parts is None:
@@ -254,42 +258,45 @@ def _split_omitted_suffix(suffix: str) -> tuple[str, set[int]]:
     return base, omitted_intervals
 
 
-def chord_qualities() -> list[tuple[str, tuple[int, ...]]]:
-    return [
-        ("maj13", (0, 4, 7, 11, 2, 9)),
-        ("13", (0, 4, 7, 10, 2, 9)),
-        ("m13", (0, 3, 7, 10, 2, 5, 9)),
-        ("maj11", (0, 4, 7, 11, 2, 5)),
-        ("11", (0, 4, 7, 10, 2, 5)),
-        ("m11", (0, 3, 7, 10, 2, 5)),
-        ("maj9(no3)", (0, 7, 11, 2)),
-        ("9(no3)", (0, 7, 10, 2)),
-        ("maj9", (0, 4, 7, 11, 2)),
-        ("9", (0, 4, 7, 10, 2)),
-        ("m9", (0, 3, 7, 10, 2)),
-        ("maj7sus2", (0, 2, 7, 11)),
-        ("7sus2", (0, 2, 7, 10)),
-        ("maj7", (0, 4, 7, 11)),
-        ("7", (0, 4, 7, 10)),
-        ("m7", (0, 3, 7, 10)),
-        ("mMaj7", (0, 3, 7, 11)),
-        ("m7b5", (0, 3, 6, 10)),
-        ("dim7", (0, 3, 6, 9)),
-        ("6", (0, 4, 7, 9)),
-        ("m6", (0, 3, 7, 9)),
-        ("add9", (0, 4, 7, 2)),
-        ("madd9", (0, 3, 7, 2)),
-        ("add4", (0, 4, 5, 7)),
-        ("add11", (0, 4, 7, 5)),
-        ("7sus4", (0, 5, 7, 10)),
-        ("sus2", (0, 2, 7)),
-        ("add9(no3)", (0, 7, 2)),
-        ("sus4", (0, 5, 7)),
-        ("dim", (0, 3, 6)),
-        ("aug", (0, 4, 8)),
-        ("m", (0, 3, 7)),
-        ("", (0, 4, 7)),
-    ]
+def chord_qualities() -> tuple[tuple[str, tuple[int, ...]], ...]:
+    return _CHORD_QUALITIES
+
+
+_CHORD_QUALITIES: tuple[tuple[str, tuple[int, ...]], ...] = (
+    ("maj13", (0, 4, 7, 11, 2, 9)),
+    ("13", (0, 4, 7, 10, 2, 9)),
+    ("m13", (0, 3, 7, 10, 2, 5, 9)),
+    ("maj11", (0, 4, 7, 11, 2, 5)),
+    ("11", (0, 4, 7, 10, 2, 5)),
+    ("m11", (0, 3, 7, 10, 2, 5)),
+    ("maj9(no3)", (0, 7, 11, 2)),
+    ("9(no3)", (0, 7, 10, 2)),
+    ("maj9", (0, 4, 7, 11, 2)),
+    ("9", (0, 4, 7, 10, 2)),
+    ("m9", (0, 3, 7, 10, 2)),
+    ("maj7sus2", (0, 2, 7, 11)),
+    ("7sus2", (0, 2, 7, 10)),
+    ("maj7", (0, 4, 7, 11)),
+    ("7", (0, 4, 7, 10)),
+    ("m7", (0, 3, 7, 10)),
+    ("mMaj7", (0, 3, 7, 11)),
+    ("m7b5", (0, 3, 6, 10)),
+    ("dim7", (0, 3, 6, 9)),
+    ("6", (0, 4, 7, 9)),
+    ("m6", (0, 3, 7, 9)),
+    ("add9", (0, 4, 7, 2)),
+    ("madd9", (0, 3, 7, 2)),
+    ("add4", (0, 4, 5, 7)),
+    ("add11", (0, 4, 7, 5)),
+    ("7sus4", (0, 5, 7, 10)),
+    ("sus2", (0, 2, 7)),
+    ("add9(no3)", (0, 7, 2)),
+    ("sus4", (0, 5, 7)),
+    ("dim", (0, 3, 6)),
+    ("aug", (0, 4, 8)),
+    ("m", (0, 3, 7)),
+    ("", (0, 4, 7)),
+)
 
 
 def _alterable_quality_bases() -> tuple[tuple[str, tuple[int, ...]], ...]:

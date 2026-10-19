@@ -12,6 +12,7 @@ from typing import Callable, TypedDict
 from pitchstems.atomic_files import atomic_replace, write_json_atomic
 from pitchstems.audio import normalize_to_wav
 from pitchstems.audio_clip import AudioClipRange
+from pitchstems.export_files import combined_midi_archive_path, midi_archive_path, stem_archive_path
 from pitchstems.filename_safety import safe_file_stem
 from pitchstems.input_validation import validate_audio_input
 from pitchstems.midi import combine_midi_tracks
@@ -27,13 +28,6 @@ from pitchstems.project_store import (
 )
 from pitchstems.separation import SeparationOptions, separate_stems
 from pitchstems.transcription import MidiOptions, transcribe_stem_to_midi
-
-
-CancelCheck = Callable[[], bool]
-
-
-class PipelineCancelledError(RuntimeError):
-    """Raised when a user-requested cancellation stops pipeline orchestration."""
 
 
 class _MidiTransaction(TypedDict):
@@ -134,7 +128,6 @@ class _MidiWorkspace(_ProjectPaths):
 def process_audio_file(
     input_path: Path,
     output_root: Path,
-    quality: str = "song-6-stem",
     separation_options: SeparationOptions | None = None,
     generate_midi: bool = True,
     midi_policy: str = "pitched",
@@ -142,7 +135,6 @@ def process_audio_file(
     midi_stems: set[str] | None = None,
     create_zip: bool = True,
     log: Callable[[str], None] | None = None,
-    cancelled: CancelCheck | None = None,
     project_created: Callable[[Path], None] | None = None,
     source_clip: AudioClipRange | None = None,
     generate_chord_suggestions: bool = True,
@@ -180,7 +172,6 @@ def process_audio_file(
             workspace,
             source_clip,
         )
-        _raise_if_cancelled(cancelled)
         if log:
             log(f"Preparing {input_path.name}...")
             log("Audio prep: FFmpeg -> stereo 44.1 kHz PCM WAV for native BS-RoFormer.")
@@ -190,24 +181,19 @@ def process_audio_file(
                     f"{source_clip.start_seconds:.2f}s - {source_clip.end_seconds:.2f}s "
                     f"({source_clip.duration_seconds:.2f}s)."
                 )
-            if cancelled is not None:
-                log("Cancellation will take effect between native model stages.")
         normalized_audio = normalize_to_wav(normalize_input, normalized_audio, clip_range=source_clip)
         if source_clip is not None:
             try:
                 project_source_audio.hardlink_to(normalized_audio)
             except OSError:
                 shutil.copy2(normalized_audio, project_source_audio)
-        _raise_if_cancelled(cancelled)
 
         stems = separate_stems(
             normalized_audio,
             workspace.stems_dir,
-            profile=quality,
             options=separation_options,
             log=log,
         )
-        _raise_if_cancelled(cancelled)
 
         midi_files: list[MidiResult] = []
         combined_midi = None
@@ -224,7 +210,6 @@ def process_audio_file(
                 midi_stems=midi_stems,
                 create_zip=False,
                 log=log,
-                cancelled=cancelled,
             )
             midi_files = midi_result.midi_files
             combined_midi = midi_result.combined_midi
@@ -257,7 +242,7 @@ def process_audio_file(
         if log:
             log(f"Done: {zip_path or workspace.project_dir}")
         return result
-    except (PipelineCancelledError, KeyboardInterrupt):
+    except KeyboardInterrupt:
         remove_new_project_dir(workspace.project_dir, output_root)
         raise
     except Exception as exc:
@@ -283,7 +268,6 @@ def process_midi_from_stems(
     midi_stems: set[str] | None = None,
     create_zip: bool = True,
     log: Callable[[str], None] | None = None,
-    cancelled: CancelCheck | None = None,
 ) -> PipelineResult:
     """Run or rerun Basic Pitch from already separated stems."""
     project_dir = project_dir.expanduser().resolve()
@@ -300,7 +284,6 @@ def process_midi_from_stems(
             midi_stems=midi_stems,
             create_zip=create_zip,
             log=log,
-            cancelled=cancelled,
         )
 
 
@@ -316,7 +299,6 @@ def _process_midi_from_stems_unlocked(
     midi_stems: set[str] | None = None,
     create_zip: bool = True,
     log: Callable[[str], None] | None = None,
-    cancelled: CancelCheck | None = None,
 ) -> PipelineResult:
     existing_source_audio, existing_source_clip = _existing_source_metadata(project_dir)
     source_audio = source_audio or existing_source_audio
@@ -336,9 +318,7 @@ def _process_midi_from_stems_unlocked(
         log("Running Basic Pitch from existing separated stems.")
 
     try:
-        _raise_if_cancelled(cancelled)
         for stem in stems:
-            _raise_if_cancelled(cancelled)
             if selected_midi_stems is not None and stem.name.lower() not in selected_midi_stems:
                 if log:
                     log(f"Skipping MIDI for {stem.name}: not selected for Basic Pitch analysis.")
@@ -355,7 +335,6 @@ def _process_midi_from_stems_unlocked(
             )
             if midi:
                 midi_files.append(MidiResult(midi.stem, midi.path, stem.safe_key))
-            _raise_if_cancelled(cancelled)
 
         staged_combined_midi = combine_midi_tracks(
             midi_files,
@@ -381,13 +360,11 @@ def _process_midi_from_stems_unlocked(
             f"{stem.safe_key}.mid"
             for stem in stems
         }
-        _raise_if_cancelled(cancelled)
         _replace_midi_outputs(
             workspace,
             staged_export_paths,
             generated_export_midi,
         )
-        _remove_export_stem_copies(workspace.export_dir, stems)
         midi_files = final_midi_files
     except BaseException:
         _recover_midi_transaction(workspace)
@@ -477,11 +454,6 @@ def _reserve_project_dir(output_root: Path, input_path: Path) -> Path:
         return candidate
 
 
-def _raise_if_cancelled(cancelled: CancelCheck | None) -> None:
-    if cancelled is not None and cancelled():
-        raise PipelineCancelledError("Processing cancelled.")
-
-
 def _selected_midi_stem_keys(midi_stems: set[str] | None) -> set[str] | None:
     if midi_stems is None:
         return None
@@ -531,17 +503,12 @@ def _zip_project_outputs(
     ) as archive:
         for stem in stems:
             if stem.path.is_file():
-                archive.write(
-                    stem.path,
-                    _safe_archive_path(
-                        Path("stems") / f"{stem.safe_key}{stem.path.suffix.lower() or '.wav'}"
-                    ),
-                )
+                archive.write(stem.path, _safe_archive_path(stem_archive_path(stem)))
         for midi in midi_files:
             if midi.path.is_file():
-                archive.write(midi.path, _safe_archive_path(Path("midi") / f"{midi.safe_key}.mid"))
+                archive.write(midi.path, _safe_archive_path(midi_archive_path(midi)))
         if combined_midi and combined_midi.is_file():
-            archive.write(combined_midi, _safe_archive_path(Path("midi") / combined_midi.name))
+            archive.write(combined_midi, _safe_archive_path(combined_midi_archive_path(combined_midi)))
     return zip_path
 
 
@@ -756,24 +723,3 @@ def _assert_project_workspace(project_dir: Path) -> None:
         raise ValueError(f"project folder must not be a filesystem root: {root}")
     if root.suffix != ".pitchstems" and not (root / PROJECT_FILENAME).exists():
         raise ValueError(f"project folder must be a PitchStems project: {root}")
-
-
-def _remove_export_stem_copies(export_dir: Path, stems: list[StemResult]) -> None:
-    for stem in stems:
-        duplicate = export_dir / stem.path.name
-        if _looks_like_copied_file(stem.path, duplicate):
-            duplicate.unlink()
-
-
-def _looks_like_copied_file(source: Path, candidate: Path) -> bool:
-    if not source.is_file() or not candidate.is_file():
-        return False
-    try:
-        source_stat = source.stat()
-        candidate_stat = candidate.stat()
-    except OSError:
-        return False
-    return (
-        source_stat.st_size == candidate_stat.st_size
-        and source_stat.st_mtime_ns == candidate_stat.st_mtime_ns
-    )

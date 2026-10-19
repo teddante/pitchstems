@@ -2,10 +2,20 @@ from __future__ import annotations
 
 import math
 from array import array
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
+from typing import Any
 
 from pitchstems.editor_models import NoteEvent
+
+# The live synth runs in Qt's pull-mode audio callback on the GUI thread. NumPy
+# (installed with the ML extras) renders it ~18x faster than the per-sample
+# Python fallback, which stays for GUI-only installs.
+_np: Any
+try:
+    import numpy as _np
+except ImportError:  # pragma: no cover - exercised by forcing the fallback in tests
+    _np = None
 
 
 @dataclass(frozen=True)
@@ -25,6 +35,7 @@ class MidiSynthEngine:
         self.duration = max(0.0, duration)
         self._notes_by_stem: dict[str, list[SynthNote]] = {}
         self._starts_by_stem: dict[str, list[float]] = {}
+        self._max_duration_by_stem: dict[str, float] = {}
         for note in notes:
             if note.end <= note.start:
                 continue
@@ -42,6 +53,7 @@ class MidiSynthEngine:
         for stem, stem_notes in self._notes_by_stem.items():
             stem_notes.sort(key=lambda item: item.start)
             self._starts_by_stem[stem] = [item.start for item in stem_notes]
+            self._max_duration_by_stem[stem] = max(item.end - item.start for item in stem_notes)
 
     @property
     def has_notes(self) -> bool:
@@ -54,44 +66,60 @@ class MidiSynthEngine:
     def render(self, position_seconds: float, frame_count: int, track_volumes: dict[str, float]) -> bytes:
         if frame_count <= 0:
             return b""
-        return _pcm16(self.render_samples(position_seconds, frame_count, track_volumes))
+        if _np is not None:
+            buffer = self._render_numpy(position_seconds, frame_count, track_volumes)
+            return (_np.tanh(buffer * 0.95) * 32767).astype(_np.int16).tobytes()
+        return _pcm16(self._render_python(position_seconds, frame_count, track_volumes))
 
     def render_samples(self, position_seconds: float, frame_count: int, track_volumes: dict[str, float]) -> array:
-        samples = array("f", [0.0]) * max(0, frame_count)
-        buffer_start = max(0.0, position_seconds)
-        buffer_end = buffer_start + frame_count / self.sample_rate
-        for stem, volume in track_volumes.items():
-            if volume <= 0:
-                continue
-            self._add_stem(samples, stem, volume, buffer_start, buffer_end)
+        if _np is None:
+            return self._render_python(position_seconds, frame_count, track_volumes)
+        samples = array("f")
+        samples.frombytes(
+            self._render_numpy(position_seconds, frame_count, track_volumes).astype(_np.float32).tobytes()
+        )
         return samples
 
-    def _add_stem(
-        self,
-        samples: array,
-        stem: str,
-        volume: float,
-        buffer_start: float,
-        buffer_end: float,
-    ) -> None:
-        notes = self._notes_by_stem.get(stem)
-        starts = self._starts_by_stem.get(stem)
-        if not notes or not starts:
-            return
-        limit = bisect_right(starts, buffer_end)
-        for note_index in range(limit):
-            note = notes[note_index]
-            if note.end <= buffer_start:
-                continue
+    def _render_python(self, position_seconds: float, frame_count: int, track_volumes: dict[str, float]) -> array:
+        samples = array("f", [0.0]) * max(0, frame_count)
+        for note, volume, buffer_start in self._sounding_notes(position_seconds, frame_count, track_volumes):
             _add_note(samples, note, volume, buffer_start, self.sample_rate)
+        return samples
+
+    def _render_numpy(self, position_seconds: float, frame_count: int, track_volumes: dict[str, float]) -> Any:
+        samples = _np.zeros(max(0, frame_count), dtype=_np.float64)
+        for note, volume, buffer_start in self._sounding_notes(position_seconds, frame_count, track_volumes):
+            _add_note_numpy(samples, note, volume, buffer_start, self.sample_rate)
+        return samples
+
+    def _sounding_notes(
+        self,
+        position_seconds: float,
+        frame_count: int,
+        track_volumes: dict[str, float],
+    ) -> list[tuple[SynthNote, float, float]]:
+        buffer_start = max(0.0, position_seconds)
+        buffer_end = buffer_start + max(0, frame_count) / self.sample_rate
+        sounding: list[tuple[SynthNote, float, float]] = []
+        for stem, volume in track_volumes.items():
+            notes = self._notes_by_stem.get(stem)
+            starts = self._starts_by_stem.get(stem)
+            if volume <= 0 or not notes or not starts:
+                continue
+            # Notes that started before this window minus the longest note cannot overlap it.
+            first = bisect_left(starts, buffer_start - self._max_duration_by_stem[stem])
+            limit = bisect_right(starts, buffer_end)
+            for note in notes[first:limit]:
+                if note.end > buffer_start:
+                    sounding.append((note, volume, buffer_start))
+        return sounding
 
 
 def _add_note(samples: array, note: SynthNote, volume: float, buffer_start: float, sample_rate: int) -> None:
-    start = max(0, int((note.start - buffer_start) * sample_rate))
-    end = min(len(samples), max(start + 1, math.ceil((note.end - buffer_start) * sample_rate)))
-    if end <= 0 or start >= len(samples):
+    bounds = _note_bounds(len(samples), note, buffer_start, sample_rate)
+    if bounds is None:
         return
-    start = max(0, start)
+    start, end = bounds
     phase_step = (2 * math.pi * note.frequency) / sample_rate
     attack = max(1, int(0.01 * sample_rate))
     release = max(1, int(0.04 * sample_rate))
@@ -104,6 +132,33 @@ def _add_note(samples: array, note: SynthNote, volume: float, buffer_start: floa
             + math.sin(phase_step * 2 * note_frame) * 0.18
         )
         samples[index] += value * note.gain * volume * max(0.0, envelope)
+
+
+def _note_bounds(frame_count: int, note: SynthNote, buffer_start: float, sample_rate: int) -> tuple[int, int] | None:
+    start = max(0, int((note.start - buffer_start) * sample_rate))
+    end = min(frame_count, max(start + 1, math.ceil((note.end - buffer_start) * sample_rate)))
+    if end <= 0 or start >= frame_count:
+        return None
+    return start, end
+
+
+def _add_note_numpy(samples: Any, note: SynthNote, volume: float, buffer_start: float, sample_rate: int) -> None:
+    bounds = _note_bounds(len(samples), note, buffer_start, sample_rate)
+    if bounds is None:
+        return
+    start, end = bounds
+    phase_step = (2 * math.pi * note.frequency) / sample_rate
+    attack = max(1, int(0.01 * sample_rate))
+    release = max(1, int(0.04 * sample_rate))
+    index = _np.arange(start, end)
+    note_frame = int((buffer_start - note.start) * sample_rate) + index
+    remaining = int((note.end - buffer_start) * sample_rate) - index
+    envelope = _np.minimum(
+        _np.minimum(1.0, _np.maximum(0.0, note_frame / attack)),
+        _np.maximum(0.0, remaining / release),
+    )
+    value = _np.sin(phase_step * note_frame) * 0.82 + _np.sin(phase_step * 2 * note_frame) * 0.18
+    samples[start:end] += value * (note.gain * volume) * _np.maximum(0.0, envelope)
 
 
 def _pcm16(samples: array) -> bytes:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, replace
 
 from pitchstems.review_ranges import chord_assignment_target_text, merge_ranges, review_ranges
@@ -86,9 +87,41 @@ def revert_all_chord_edits(window) -> None:
 
 
 def generate_detected_chords(window) -> None:
+    """Detect chords on a background thread; dense songs can take many seconds."""
     if window.current_result is None or window.base_editor_project is None:
         return
-    chords = detect_chords(window.base_editor_project.notes)
+    base_project = window.base_editor_project
+    window.detect_chords_button.setEnabled(False)
+    window.begin_activity("Detecting chords...")
+
+    def worker() -> None:
+        try:
+            chords = detect_chords(base_project.notes)
+        except Exception as exc:
+            window.messages.put(("CHORDS_DETECTED", base_project, None, str(exc)))
+            return
+        window.messages.put(("CHORDS_DETECTED", base_project, chords, None))
+
+    window.chord_detection_worker = threading.Thread(
+        target=worker,
+        name="PitchStemsChordDetection",
+        daemon=True,
+    )
+    window.chord_detection_worker.start()
+
+
+def finish_detected_chords(window, base_project, chords: list[ChordRegion] | None, error: str | None) -> None:
+    window.chord_detection_worker = None
+    if window.base_editor_project is not base_project or window.current_result is None:
+        # The project was closed or reloaded while detection ran.
+        window.logger.info("Ignored stale chord detection result")
+        window.end_activity()
+        return
+    window.detect_chords_button.setEnabled(bool(base_project.notes))
+    if error is not None or chords is None:
+        window.end_activity("Chord detection failed")
+        window.statusBar().showMessage(f"Could not generate chord suggestions: {error}", 6000)
+        return
     try:
         update_project_editor_state(
             window.current_result.project_dir,
@@ -96,15 +129,17 @@ def generate_detected_chords(window) -> None:
         )
     except Exception as exc:
         window.logger.exception("Could not save chord suggestion setting")
+        window.end_activity("Chord detection failed")
         window.statusBar().showMessage(f"Could not generate chord suggestions: {exc}", 6000)
         return
     with blocked_signals(window.generate_chord_suggestions):
         window.generate_chord_suggestions.setChecked(True)
-    window.base_editor_project = replace(window.base_editor_project, chords=chords)
+    window.base_editor_project = replace(base_project, chords=chords)
     window.refresh_editor_project_from_chord_edits(None)
     has_chords = bool(window.editor_project.chords)
     window.previous_chord_button.setEnabled(has_chords)
     window.next_chord_button.setEnabled(has_chords)
+    window.end_activity()
     window.statusBar().showMessage(f"Generated {len(chords)} chord suggestions.", 5000)
 
 
@@ -114,23 +149,18 @@ def refresh_editor_project_from_chord_edits(
 ) -> None:
     if window.current_result is None or window.base_editor_project is None:
         return
-    position = window.timeline.position
-    selection_start = window.timeline.selection_start
-    selection_end = window.timeline.selection_end
     window.editor_project = window.base_editor_project
     window.apply_manual_chords()
-    window.timeline.project = window.editor_project
-    window.timeline._index_project()
-    window.timeline.visible_tracks = {
-        stem_name.lower()
-        for stem_name, checkbox in window.track_visibility_checks.items()
-        if checkbox.isChecked()
-    }
-    window.timeline.position = position
-    window.timeline.selection_start = selection_start
-    window.timeline.selection_end = selection_end
-    window.timeline.selected_chord = selected_chord
-    window.timeline.set_manual_chords(window.manual_chords)
+    window.timeline.replace_project_keeping_view(
+        window.editor_project,
+        {
+            stem_name
+            for stem_name, checkbox in window.track_visibility_checks.items()
+            if checkbox.isChecked()
+        },
+        selected_chord,
+        window.manual_chords,
+    )
     window.revert_chord_edits_button.setEnabled(
         bool(window.manual_chords or window.removed_chord_ranges)
     )
@@ -280,6 +310,13 @@ def request_editor_state_save(window, delay_ms: int = 750) -> None:
     if not _has_loaded_editor_project(window):
         return
     window.editor_save_timer.start(delay_ms)
+
+
+def flush_pending_editor_save(window) -> None:
+    """Write a debounced save now, before the loaded project is replaced or reset."""
+    timer = getattr(window, "editor_save_timer", None)
+    if timer is not None and timer.isActive():
+        window.save_editor_state()
 
 
 def _has_loaded_editor_project(window) -> bool:

@@ -18,7 +18,7 @@ UI_SCALE_STEP = 0.1
 
 def normalized_ui_scale(value: object) -> float:
     try:
-        scale = float(value)
+        scale = float(str(value))  # QSettings may hand back a str, float, or None
     except (TypeError, ValueError):
         scale = DEFAULT_UI_SCALE
     return round(min(MAX_UI_SCALE, max(MIN_UI_SCALE, scale)), 2)

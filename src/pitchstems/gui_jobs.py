@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from pitchstems.pipeline import remove_new_project_dir
+from pitchstems.subprocess_flags import NO_CONSOLE_WINDOW
 
 
 @dataclass
@@ -21,6 +22,10 @@ class ProcessWorker:
     cleanup_project_dir: Path | None = None
     cleanup_error: str | None = None
     started: bool = True
+    # Set before the kill so the supervisor reports "cancelled", not a crash,
+    # even when it notices the dead process before terminate() returns.
+    cancel_requested: bool = False
+    _terminate_done: threading.Event = field(default_factory=threading.Event, repr=False)
 
     def is_alive(self) -> bool:
         return bool(self.process.is_alive())
@@ -37,21 +42,29 @@ class ProcessWorker:
             drained.append(message)
 
     def terminate(self, timeout_seconds: float = 2.0) -> bool:
-        self.drain_messages()
-        if not self.started:
-            return False
-        if not self.process.is_alive():
-            self.process.join(timeout=0)
-            return False
-        if not _terminate_windows_process_tree(self.process):
-            self.process.terminate()
-        self.process.join(timeout=timeout_seconds)
-        if self.process.is_alive() and hasattr(self.process, "kill"):
-            self.process.kill()
+        try:
+            self.drain_messages()
+            if not self.started:
+                return False
+            if not self.process.is_alive():
+                self.process.join(timeout=0)
+                return False
+            self.cancel_requested = True
+            if not _terminate_windows_process_tree(self.process):
+                self.process.terminate()
             self.process.join(timeout=timeout_seconds)
-        self.terminated = True
-        self._cleanup_terminated_project()
-        return True
+            if self.process.is_alive() and hasattr(self.process, "kill"):
+                self.process.kill()
+                self.process.join(timeout=timeout_seconds)
+            self.terminated = True
+            self._cleanup_terminated_project()
+            return True
+        finally:
+            self._terminate_done.set()
+
+    def wait_for_terminate(self, timeout_seconds: float = 15.0) -> bool:
+        """Block until a requested terminate() (kill and project cleanup) has finished."""
+        return self._terminate_done.wait(timeout_seconds)
 
     def start(self) -> None:
         if self.started:
@@ -93,6 +106,7 @@ def _terminate_windows_process_tree(process: Any) -> bool:
             check=False,
             capture_output=True,
             timeout=5,
+            creationflags=NO_CONSOLE_WINDOW,
         )
     except (OSError, subprocess.SubprocessError):
         return False

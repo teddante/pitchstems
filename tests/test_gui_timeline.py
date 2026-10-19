@@ -1,4 +1,5 @@
 import os
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -51,9 +52,8 @@ def test_timeline_indexes_notes_and_filters_visible_tracks(tmp_path: Path) -> No
 
     assert set(view.notes_by_track) == {"bass", "piano"}
     assert [note.pitch for note in view._visible_notes_for_track("bass", 0.8, 1.3)] == [43, 47]
-    assert view.layout_geometry is not None
     assert set(view.track_geometries) == {"bass", "piano"}
-    assert view.track_geometries["bass"].y == view.layout_geometry.chord_height
+    assert view.track_geometries["bass"].y == view.chord_height
 
     view.set_visible_tracks({"piano"})
 
@@ -428,3 +428,33 @@ def test_timeline_render_policy_shows_labels_only_when_zoomed_and_sparse() -> No
     assert policy.dense_render is False
     assert policy.enable_tooltips is True
     assert policy.draw_note_labels is True
+
+
+def test_view_redraw_skips_scrolls_inside_drawn_margin(tmp_path: Path) -> None:
+    _app()
+    view = TimelineView()
+    view.resize(900, 420)
+    view.set_project(_project(tmp_path))
+    view.view_redraw_timer.stop()
+
+    view.request_view_redraw()
+
+    assert not view.view_redraw_timer.isActive()
+
+
+def test_replace_project_keeping_view_keeps_note_index_and_playhead(tmp_path: Path) -> None:
+    _app()
+    view = TimelineView()
+    view.resize(900, 420)
+    project = _project(tmp_path)
+    view.set_project(project)
+    view.set_position(1.0)
+    notes_by_track = view.notes_by_track
+    chord = ChordRegion(0.5, 1.0, "C", 1.0)
+
+    view.replace_project_keeping_view(replace(project, chords=[chord]), {"bass"}, chord, [chord])
+
+    assert view.notes_by_track is notes_by_track
+    assert view.position == 1.0
+    assert view.visible_tracks == {"bass"}
+    assert view.selected_chord == chord

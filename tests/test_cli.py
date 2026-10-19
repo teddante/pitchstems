@@ -26,7 +26,7 @@ def _capture_process_audio_file(captured: dict[str, object]):
     return fake_process_audio_file
 
 
-def test_cli_quality_reaches_pipeline_without_default_separation_options(
+def test_cli_defaults_leave_separation_options_to_the_pipeline(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -35,27 +35,42 @@ def test_cli_quality_reaches_pipeline_without_default_separation_options(
     captured: dict[str, object] = {}
 
     monkeypatch.setattr(cli, "process_audio_file", _capture_process_audio_file(captured))
-    monkeypatch.setattr(sys, "argv", ["pitchstems", str(source), "--quality", "song-6-stem"])
+    monkeypatch.setattr(sys, "argv", ["pitchstems", str(source)])
 
     assert cli.main() == 0
 
-    assert captured["quality"] == "song-6-stem"
     assert captured["separation_options"] is None
 
 
-def test_cli_explicit_model_builds_separation_options(monkeypatch, tmp_path: Path) -> None:
+def test_cli_stem_builds_separation_options(monkeypatch, tmp_path: Path) -> None:
     source = tmp_path / "song.wav"
     source.write_bytes(b"RIFF")
     captured: dict[str, object] = {}
 
     monkeypatch.setattr(cli, "process_audio_file", _capture_process_audio_file(captured))
-    monkeypatch.setattr(sys, "argv", ["pitchstems", str(source), "--model", "bs_roformer_sw"])
+    monkeypatch.setattr(sys, "argv", ["pitchstems", str(source), "--stem", "bass"])
 
     assert cli.main() == 0
 
     options = captured["separation_options"]
     assert isinstance(options, SeparationOptions)
     assert options.model_key == DEFAULT_MODEL_KEY
+    assert options.selected_stem == "bass"
+
+
+def test_cli_reports_pipeline_errors_without_traceback(monkeypatch, tmp_path: Path, capsys) -> None:
+    source = tmp_path / "song.wav"
+    source.write_bytes(b"RIFF")
+
+    def failing_process_audio_file(*_args, **_kwargs):
+        raise RuntimeError("Preflight failed: FFmpeg missing")
+
+    monkeypatch.setattr(cli, "process_audio_file", failing_process_audio_file)
+    monkeypatch.setattr(sys, "argv", ["pitchstems", str(source)])
+
+    assert cli.main() == 1
+
+    assert "Error: Preflight failed: FFmpeg missing" in capsys.readouterr().err
 
 
 def test_cli_normalizes_unbounded_midi_frequency_limits(monkeypatch, tmp_path: Path) -> None:

@@ -9,11 +9,12 @@ from pitchstems.gui_jobs import thread_is_alive
 from pitchstems.model_assets import model_asset_statuses
 from pitchstems.model_catalog import DEFAULT_MODEL_KEY, model_choice
 from pitchstems.separation import SeparationOptions
-from pitchstems.transcription import PERCUSSIVE_STEMS, MidiOptions, optional_frequency_limit
+from pitchstems.pipeline_models import is_percussive_stem
+from pitchstems.transcription import MidiOptions, optional_frequency_limit
 
 
 def default_midi_checked(stem_name: str) -> bool:
-    return stem_name.lower() not in PERCUSSIVE_STEMS
+    return not is_percussive_stem(stem_name)
 
 
 def device_label(device: str | None, cuda_available: bool) -> str:
@@ -284,7 +285,7 @@ def midi_stem_checkbox_state(
             enabled=enabled,
             tooltip="This stem is not being saved, so it cannot be analysed.",
         )
-    if stem_name.lower() == "drums":
+    if is_percussive_stem(stem_name):
         return MidiStemCheckboxState(
             checked=checked,
             enabled=enabled,

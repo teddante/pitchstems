@@ -7,6 +7,16 @@ from typing import Any
 from pitchstems.audio_clip import AudioClipRange
 from pitchstems.filename_safety import safe_stem_key
 
+# Stem names treated as unpitched: off by default for Basic Pitch, and written on
+# the General MIDI drum channel in the combined MIDI file.
+PERCUSSIVE_STEMS = frozenset(
+    {"drums", "drum", "percussion", "kick", "snare", "toms", "hh", "hats", "ride", "crash"}
+)
+
+
+def is_percussive_stem(stem_name: str) -> bool:
+    return stem_name.lower() in PERCUSSIVE_STEMS
+
 
 @dataclass(frozen=True)
 class StemResult:
