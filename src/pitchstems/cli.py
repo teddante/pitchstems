@@ -9,7 +9,7 @@ from pitchstems.pipeline import process_audio_file
 from pitchstems.separation import download_model, model_key_for_profile, profile_keys
 from pitchstems.separation import SeparationOptions
 from pitchstems.runtime_checks import format_setup_result, run_setup
-from pitchstems.transcription import MidiOptions, midi_option_spec, optional_frequency_limit
+from pitchstems.transcription import MIDI_OPTION_SPECS, MidiOptions, optional_frequency_limit
 
 
 def main() -> int:
@@ -45,83 +45,7 @@ def main() -> int:
         default="pitched",
         help="Choose which stems get Basic Pitch MIDI; use --no-midi to disable transcription.",
     )
-    onset_threshold = midi_option_spec("onset_threshold")
-    parser.add_argument(
-        onset_threshold.cli_flag,
-        type=float,
-        default=onset_threshold.default_value(),
-        help=onset_threshold.help,
-    )
-    frame_threshold = midi_option_spec("frame_threshold")
-    parser.add_argument(
-        frame_threshold.cli_flag,
-        type=float,
-        default=frame_threshold.default_value(),
-        help=frame_threshold.help,
-    )
-    minimum_note_length = midi_option_spec("minimum_note_length")
-    parser.add_argument(
-        minimum_note_length.cli_flag,
-        type=float,
-        default=minimum_note_length.default_value(),
-        help=minimum_note_length.help,
-    )
-    minimum_frequency = midi_option_spec("minimum_frequency")
-    parser.add_argument(
-        minimum_frequency.cli_flag,
-        type=float,
-        help=minimum_frequency.help,
-    )
-    maximum_frequency = midi_option_spec("maximum_frequency")
-    parser.add_argument(
-        maximum_frequency.cli_flag,
-        type=float,
-        help=maximum_frequency.help,
-    )
-    multiple_pitch_bends = midi_option_spec("multiple_pitch_bends")
-    parser.add_argument(
-        multiple_pitch_bends.cli_flag,
-        action="store_true",
-        help=multiple_pitch_bends.help,
-    )
-    melodia_trick = midi_option_spec("melodia_trick")
-    parser.add_argument(
-        melodia_trick.cli_flag,
-        action="store_true",
-        help=melodia_trick.help,
-    )
-    midi_tempo = midi_option_spec("midi_tempo")
-    parser.add_argument(
-        midi_tempo.cli_flag,
-        type=float,
-        default=midi_tempo.default_value(),
-        help=midi_tempo.help,
-    )
-    save_notes = midi_option_spec("save_notes")
-    parser.add_argument(
-        save_notes.cli_flag,
-        action="store_true",
-        help=save_notes.help,
-    )
-    save_model_outputs = midi_option_spec("save_model_outputs")
-    parser.add_argument(
-        save_model_outputs.cli_flag,
-        action="store_true",
-        help=save_model_outputs.help,
-    )
-    sonify_midi = midi_option_spec("sonify_midi")
-    parser.add_argument(
-        sonify_midi.cli_flag,
-        action="store_true",
-        help=sonify_midi.help,
-    )
-    sonification_samplerate = midi_option_spec("sonification_samplerate")
-    parser.add_argument(
-        sonification_samplerate.cli_flag,
-        type=int,
-        default=sonification_samplerate.default_value(),
-        help=sonification_samplerate.help,
-    )
+    _add_midi_option_arguments(parser)
     parser.add_argument("--zip", action="store_true", help="Also package generated stems and MIDI in a ZIP file.")
     parser.add_argument(
         "--setup",
@@ -191,6 +115,17 @@ def main() -> int:
     )
     print(pipeline_result.zip_path or pipeline_result.project_dir)
     return 0
+
+
+def _add_midi_option_arguments(parser: argparse.ArgumentParser) -> None:
+    for spec in MIDI_OPTION_SPECS:
+        default = spec.default_value()
+        if isinstance(default, bool):
+            # Flags flip the default, e.g. --no-melodia-trick or --multiple-pitch-bends.
+            parser.add_argument(spec.cli_flag, action="store_true", help=spec.help)
+        else:
+            value_type = int if isinstance(default, int) else float
+            parser.add_argument(spec.cli_flag, type=value_type, default=default, help=spec.help)
 
 
 def _bs_device(device: str) -> str | None:

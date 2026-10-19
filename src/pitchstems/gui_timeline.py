@@ -1218,8 +1218,10 @@ class TimelineView(QGraphicsView):
         self.unsetCursor()
         if (
             edited == original
-            or press_position is not None
-            and (event.pos() - press_position).manhattanLength() < 4
+            or (
+                press_position is not None
+                and (event.pos() - press_position).manhattanLength() < 4
+            )
         ):
             self.selected_chord = original
             return

@@ -155,7 +155,7 @@ def main() -> int:
             self.current_result: PipelineResult | None = None
             self.current_stems: list[StemResult] = []
             self.current_input_stem: str | None = None
-            self.settings = QSettings("PitchStems", "PitchStems")
+            self.settings = QSettings(APP_ORGANIZATION, APP_NAME)
             self.base_app_font = QApplication.font()
             self.ui_scale = normalized_ui_scale(self.settings.value("ui_scale", DEFAULT_UI_SCALE))
             self.recent_projects_menu = None

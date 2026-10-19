@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
+
+if TYPE_CHECKING:
+    from pitchstems.scale_analysis import ScaleCandidate
 
 
 SHARP_PITCH_NAMES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
@@ -308,18 +311,14 @@ def display_theory_note_names(
     return displayed
 
 
-def display_scale_candidate_label(candidate: object, preference: str | None) -> str:
+def display_scale_candidate_label(candidate: ScaleCandidate, preference: str | None) -> str:
     return scale_label(
-        getattr(candidate, "root"),
-        getattr(getattr(candidate, "scale"), "intervals"),
-        getattr(getattr(candidate, "scale"), "name"),
+        candidate.root,
+        candidate.scale.intervals,
+        candidate.scale.name,
         preference,
     )
 
 
-def display_scale_candidate_notes(candidate: object, preference: str | None) -> list[str]:
-    return spell_scale(
-        getattr(candidate, "root"),
-        getattr(getattr(candidate, "scale"), "intervals"),
-        preference,
-    )
+def display_scale_candidate_notes(candidate: ScaleCandidate, preference: str | None) -> list[str]:
+    return spell_scale(candidate.root, candidate.scale.intervals, preference)

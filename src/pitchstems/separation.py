@@ -200,9 +200,12 @@ def _redirect_output(log: Callable[[str], None] | None) -> Iterator[None]:
             self.buffer = ""
 
     writer = LogWriter()
-    with contextlib.redirect_stdout(writer), contextlib.redirect_stderr(writer):
-        yield
-    writer.flush()
+    try:
+        with contextlib.redirect_stdout(writer), contextlib.redirect_stderr(writer):
+            yield
+    finally:
+        # Keep the backend's last partial line even when it fails mid-run.
+        writer.flush()
 
 
 def _stem_name(path: Path, input_stem: str) -> str:

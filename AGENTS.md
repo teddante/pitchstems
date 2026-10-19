@@ -19,6 +19,8 @@ PitchStems is a solo-developer, local-first desktop app. Work quickly, keep the 
 - Prefer bounded evidence over broad dumps. Use targeted `rg`, small file slices, `git diff --stat`, and per-file diffs only when they answer the current question.
 - Keep command output short by default: cap search/list output, use concise test modes where available, and inspect failures before rerunning.
 - Match commands to the active shell. In this Windows repo, prefer PowerShell-native commands or small Python helpers over Bash syntax that will need retrying.
+- Python edit helpers on Windows: write with `newline="\n"` (plain `write_text` emits CRLF and fails the whitespace check).
+- Run `.\scripts\check.ps1` without `2>&1`; under Windows PowerShell 5.1 that turns harmless FFmpeg stderr in the GUI smoke into a failure.
 - For repeated audits, reuse or create a small bounded script/helper for import graphs, module size counts, and duplicate-signal scans instead of rebuilding fragile one-off shell pipelines.
 - When reviewing Codex threads or tool history, avoid including raw outputs unless needed; cap per-item output and do not re-ingest large inline images or base64 blobs after they have been summarized.
 - For long implementation turns, report progress by phase: context gathered, edits underway, verification, and result. Avoid one update per tiny hunk unless the user needs that granularity.

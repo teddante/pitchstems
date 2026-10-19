@@ -13,6 +13,7 @@ from pitchstems.atomic_files import atomic_replace, write_json_atomic
 from pitchstems.audio import normalize_to_wav
 from pitchstems.audio_clip import AudioClipRange
 from pitchstems.filename_safety import safe_file_stem
+from pitchstems.input_validation import validate_audio_input
 from pitchstems.midi import combine_midi_tracks
 from pitchstems.pipeline_models import MidiResult, PipelineResult, StemResult
 from pitchstems.runtime_checks import run_preflight
@@ -151,6 +152,9 @@ def process_audio_file(
     output_root = output_root.expanduser().resolve()
     if not input_path.exists():
         raise FileNotFoundError(input_path)
+    input_error = validate_audio_input(input_path)
+    if input_error:
+        raise ValueError(input_error)
 
     report = run_preflight(
         require_ml=True,
@@ -207,7 +211,6 @@ def process_audio_file(
 
         midi_files: list[MidiResult] = []
         combined_midi = None
-        zip_path = None
         if generate_midi and midi_policy != "none":
             midi_result = process_midi_from_stems(
                 project_dir=workspace.project_dir,
@@ -225,11 +228,9 @@ def process_audio_file(
             )
             midi_files = midi_result.midi_files
             combined_midi = midi_result.combined_midi
-            zip_path = workspace.zip_path if create_zip else None
-        else:
-            if log:
-                log("Skipping MIDI transcription.")
-            zip_path = workspace.zip_path if create_zip else None
+        elif log:
+            log("Skipping MIDI transcription.")
+        zip_path = workspace.zip_path if create_zip else None
 
         result = PipelineResult(
             project_dir=workspace.project_dir,
@@ -241,7 +242,7 @@ def process_audio_file(
             source_audio=project_source_audio,
             source_clip=source_clip,
         )
-        _save_pipeline_manifest(
+        save_project_manifest(
             result,
             separation_options=separation_options,
             midi_options=midi_options,
@@ -257,7 +258,7 @@ def process_audio_file(
             log(f"Done: {zip_path or workspace.project_dir}")
         return result
     except (PipelineCancelledError, KeyboardInterrupt):
-        _remove_new_project_dir(workspace.project_dir, output_root)
+        remove_new_project_dir(workspace.project_dir, output_root)
         raise
     except Exception as exc:
         if not project_manifest_written:
@@ -407,7 +408,7 @@ def _process_midi_from_stems_unlocked(
         source_clip=source_clip,
     )
     try:
-        _save_pipeline_manifest(
+        save_project_manifest(
             result,
             midi_options=midi_options,
             midi_stems=midi_stems,
@@ -438,29 +439,6 @@ def recover_interrupted_midi_update(project_dir: Path) -> bool:
             return False
         _recover_midi_transaction(workspace)
         return True
-
-
-def _save_pipeline_manifest(
-    result: PipelineResult,
-    *,
-    separation_options: SeparationOptions | None = None,
-    midi_options: MidiOptions | None = None,
-    midi_stems: set[str] | None = None,
-    generate_midi: bool,
-    midi_policy: str,
-    create_zip: bool,
-    generate_chord_suggestions: bool | None = None,
-) -> None:
-    save_project_manifest(
-        result,
-        separation_options=separation_options,
-        midi_options=midi_options,
-        midi_stems=midi_stems,
-        generate_midi=generate_midi,
-        midi_policy=midi_policy,
-        generate_chord_suggestions=generate_chord_suggestions,
-        create_zip=create_zip,
-    )
 
 
 def _package_pipeline_outputs(result: PipelineResult) -> Path | None:
@@ -725,14 +703,12 @@ def _cleanup_midi_transaction(workspace: _MidiWorkspace) -> None:
     workspace.transaction_path.unlink(missing_ok=True)
 
 
-def _reset_staging_dir(path: Path, project_dir: Path | None = None) -> None:
+def _reset_staging_dir(path: Path, project_dir: Path) -> None:
     _remove_staging_dir(path, project_dir)
     path.mkdir(parents=True, exist_ok=True)
 
 
-def _remove_staging_dir(path: Path, project_dir: Path | None = None) -> None:
-    if project_dir is None:
-        raise ValueError("project_dir is required for recursive staging cleanup")
+def _remove_staging_dir(path: Path, project_dir: Path) -> None:
     _remove_project_dir(path, project_dir, "staging directory")
 
 
@@ -744,7 +720,8 @@ def _remove_project_dir(path: Path, project_dir: Path, label: str) -> None:
         shutil.rmtree(path)
 
 
-def _remove_new_project_dir(project_dir: Path, output_root: Path) -> None:
+def remove_new_project_dir(project_dir: Path, output_root: Path) -> None:
+    """Delete a partially created project folder, refusing anything that is not one."""
     root = output_root.expanduser().resolve()
     target = project_dir.expanduser().resolve()
     if target == root:

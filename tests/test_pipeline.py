@@ -17,7 +17,6 @@ from pitchstems.pipeline import (
     _project_dir,
     _remove_export_stem_copies,
     _remove_staging_dir,
-    _save_pipeline_manifest,
     _safe_stem,
     _selected_midi_stem_keys,
     _zip_project_outputs,
@@ -26,7 +25,6 @@ from pitchstems.pipeline import (
 )
 from pitchstems.pipeline_models import MidiResult, PipelineResult, StemResult
 from pitchstems.project_store import save_project_manifest
-from pitchstems.separation import SeparationOptions
 from pitchstems.transcription import MidiOptions
 
 
@@ -342,51 +340,6 @@ def test_midi_rerun_result_preserves_existing_source_clip_metadata(tmp_path: Pat
     assert result.source_clip == clip
 
 
-def test_save_pipeline_manifest_passes_pipeline_options(monkeypatch, tmp_path: Path) -> None:
-    result = PipelineResult(
-        project_dir=tmp_path / "song.pitchstems",
-        normalized_audio=tmp_path / "song.pitchstems" / "work" / "song.wav",
-        stems=[],
-        midi_files=[],
-        combined_midi=None,
-        zip_path=None,
-    )
-    separation_options = SeparationOptions(device="cpu")
-    midi_options = MidiOptions(onset_threshold=0.42)
-    calls = []
-
-    def fake_save_project_manifest(saved_result, **kwargs):
-        calls.append((saved_result, kwargs))
-
-    monkeypatch.setattr(pipeline, "save_project_manifest", fake_save_project_manifest)
-
-    _save_pipeline_manifest(
-        result,
-        separation_options=separation_options,
-        midi_options=midi_options,
-        midi_stems={"bass"},
-        generate_midi=False,
-        midi_policy="none",
-        create_zip=False,
-        generate_chord_suggestions=False,
-    )
-
-    assert calls == [
-        (
-            result,
-            {
-                "separation_options": separation_options,
-                "midi_options": midi_options,
-                "midi_stems": {"bass"},
-                "generate_midi": False,
-                "midi_policy": "none",
-                "generate_chord_suggestions": False,
-                "create_zip": False,
-            },
-        )
-    ]
-
-
 def test_package_pipeline_outputs_skips_when_zip_is_not_requested(monkeypatch, tmp_path: Path) -> None:
     result = PipelineResult(
         project_dir=tmp_path / "song.pitchstems",
@@ -616,16 +569,6 @@ def test_remove_staging_dir_rejects_paths_outside_project(tmp_path: Path) -> Non
         _remove_staging_dir(outside_dir, project_dir)
 
     assert outside_dir.exists()
-
-
-def test_remove_staging_dir_requires_project_context(tmp_path: Path) -> None:
-    staging_dir = tmp_path / "midi.tmp"
-    staging_dir.mkdir()
-
-    with pytest.raises(ValueError, match="project_dir is required"):
-        _remove_staging_dir(staging_dir)
-
-    assert staging_dir.exists()
 
 
 def test_remove_staging_dir_rejects_non_project_workspace(tmp_path: Path) -> None:
@@ -1186,3 +1129,19 @@ def test_full_pipeline_keyboard_interrupt_removes_partial_new_project(
         process_audio_file(input_path, tmp_path / "out", generate_midi=False, create_zip=False)
 
     assert not list((tmp_path / "out").glob("*.pitchstems"))
+
+
+@pytest.mark.parametrize("name", ["notes.txt", "folder.wav"])
+def test_process_audio_file_rejects_non_audio_input_before_creating_project(
+    tmp_path: Path, name: str
+) -> None:
+    source = tmp_path / name
+    if name.startswith("folder"):
+        source.mkdir()
+    else:
+        source.write_text("not audio", encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        process_audio_file(source, tmp_path / "out")
+
+    assert not (tmp_path / "out").exists()

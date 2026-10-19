@@ -3,12 +3,13 @@ from __future__ import annotations
 import multiprocessing
 import os
 import queue
-import shutil
 import subprocess
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from pitchstems.pipeline import remove_new_project_dir
 
 
 @dataclass
@@ -73,16 +74,7 @@ class ProcessWorker:
         if self.cleanup_root is None or self.cleanup_project_dir is None:
             return
         try:
-            root = self.cleanup_root.expanduser().resolve()
-            target = self.cleanup_project_dir.expanduser().resolve()
-            if target == root or target.suffix != ".pitchstems":
-                return
-            target.relative_to(root)
-            if target.exists():
-                if target.is_symlink():
-                    self.cleanup_error = f"Refused to remove symlink project folder: {target}"
-                    return
-                shutil.rmtree(target)
+            remove_new_project_dir(self.cleanup_project_dir, self.cleanup_root)
         except Exception as exc:
             self.cleanup_error = str(exc)
 
