@@ -541,7 +541,7 @@ def _zip_project_outputs(
             if midi.path.is_file():
                 archive.write(midi.path, _safe_archive_path(Path("midi") / f"{midi.safe_key}.mid"))
         if combined_midi and combined_midi.is_file():
-            archive.write(combined_midi, Path("midi") / combined_midi.name)
+            archive.write(combined_midi, _safe_archive_path(Path("midi") / combined_midi.name))
     return zip_path
 
 

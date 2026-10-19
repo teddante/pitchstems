@@ -16,7 +16,6 @@ from pitchstems.app_identity import (
     app_icon_path,
 )
 from pitchstems.app_logging import app_logger, setup_app_logging
-from pitchstems.note_previews import chord_preview_notes
 from pitchstems.editor_models import ChordRegion, NoteEvent
 from pitchstems.chord_scoring import ChordScoringOptions
 from pitchstems.editor_project import EditorProject
@@ -25,14 +24,13 @@ from pitchstems.chord_naming import (
     chord_tones_for_label,
     display_chord_label,
 )
-from pitchstems.notation import midi_note_name
 from pitchstems.review_ranges import review_playback_loop_range
 from pitchstems.editor_loader import EditorLoadResult
 from pitchstems.gui_editor_state import EMPTY_EDITOR_SUMMARY
 from pitchstems.midi_preview import render_note_preview
-from pitchstems.note_previews import single_note_preview_notes
 from pitchstems.notation import (
     display_scale_candidate_label,
+    midi_note_name,
     display_scale_candidate_notes,
     display_theory_note_names,
     pitch_class_for_name,
@@ -40,7 +38,12 @@ from pitchstems.notation import (
     split_chord_label,
 )
 from pitchstems.pipeline_models import PipelineResult, StemResult
-from pitchstems.note_previews import SCALE_PREVIEW_PATTERNS, scale_preview_notes
+from pitchstems.note_previews import (
+    SCALE_PREVIEW_PATTERNS,
+    chord_preview_notes,
+    scale_preview_notes,
+    single_note_preview_notes,
+)
 from pitchstems.harmony_inspector import (
     apply_note_override,
     chord_analysis_track_names as inspector_chord_analysis_track_names,

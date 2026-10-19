@@ -88,3 +88,22 @@ def test_hf_download_uses_the_persistent_huggingface_cache(monkeypatch, tmp_path
 
     assert model_assets._hf_download(source) == downloaded
     assert captured == {"repo_id": "publisher/model", "filename": "model.bin"}
+
+
+def test_ensure_model_assets_links_instead_of_duplicating_download(monkeypatch, tmp_path: Path) -> None:
+    asset = model_assets.ModelAsset(
+        filename="tiny.bin",
+        size=4,
+        sha256="3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7",
+        sources=(model_assets.HuggingFaceAssetSource("good/repo", "tiny.bin", "good"),),
+    )
+    monkeypatch.setitem(model_assets.MODEL_ASSETS, DEFAULT_MODEL_KEY, (asset,))
+    downloaded = tmp_path / "hf-cache.bin"
+    downloaded.write_bytes(b"data")
+    monkeypatch.setattr(model_assets, "_hf_download", lambda _source: downloaded)
+
+    model_assets.ensure_model_assets(DEFAULT_MODEL_KEY, cache_root=tmp_path / "cache")
+
+    target = model_assets.model_asset_dir(DEFAULT_MODEL_KEY, cache_root=tmp_path / "cache") / "tiny.bin"
+    assert target.read_bytes() == b"data"
+    assert target.samefile(downloaded)

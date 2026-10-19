@@ -3,11 +3,11 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
-import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from pitchstems.atomic_files import atomic_replace
 from pitchstems.model_catalog import DEFAULT_MODEL_KEY, model_choice
 
 
@@ -178,23 +178,27 @@ def _download_asset(
             _log(log, f"Could not download {asset.filename} from {source.label}: {exc}")
             continue
 
-        part = target.with_name(
-            f".{target.name}.{os.getpid()}.{threading.get_ident()}.part"
-        )
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(downloaded, part)
-            part.replace(target)
+            with atomic_replace(target) as temporary:
+                _link_or_copy(downloaded, temporary)
         except OSError as exc:
             raise ModelAssetDownloadError(
                 f"Downloaded {asset.filename}, but could not cache it at {target}: {exc}"
             ) from exc
-        finally:
-            part.unlink(missing_ok=True)
         _log(log, f"Cached {asset.filename}: {target}")
         return ModelAssetStatus(asset.filename, target, True, "verified")
     joined = "\n".join(f"- {error}" for error in errors)
     raise ModelAssetDownloadError(f"Failed to download {asset.filename} from candidate sources:\n{joined}")
+
+
+def _link_or_copy(source: Path, target: Path) -> None:
+    # Hard-link the verified Hugging Face cache file when possible so the
+    # ~700 MB checkpoint is not stored twice on the same volume.
+    try:
+        target.hardlink_to(source.resolve())
+    except OSError:
+        shutil.copy2(source, target)
 
 
 def _hf_download(source: HuggingFaceAssetSource) -> Path:

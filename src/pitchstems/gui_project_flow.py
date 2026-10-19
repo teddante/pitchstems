@@ -14,7 +14,7 @@ from pitchstems.pipeline import recover_interrupted_midi_update
 from pitchstems.project_store import PROJECT_FILENAME, load_pipeline_result
 from pitchstems.recent_projects import (
     normalize_recent_project_paths,
-    recent_project_label as format_recent_project_label,
+    recent_project_label,
     remember_recent_project as remember_project_path,
     remove_recent_project as remove_project_path,
 )
@@ -51,10 +51,6 @@ def refresh_recent_projects_menu(window) -> None:
 
 def recent_project_paths(window) -> list[Path]:
     return normalize_recent_project_paths(window.settings.value("recent_projects", []))
-
-
-def recent_project_label(manifest_path: Path) -> str:
-    return format_recent_project_label(manifest_path)
 
 
 def remember_recent_project(window, project_dir: Path) -> None:
