@@ -9,7 +9,7 @@ from pitchstems.gui_editor_state import EMPTY_EDITOR_SUMMARY, flush_pending_edit
 from pitchstems.gui_helpers import blocked_signals, clear_layout
 from pitchstems.gui_import_clip import waveform_preview_for_path
 from pitchstems.gui_track_controls import reset_track_control_widgets
-from pitchstems.input_validation import validate_audio_input
+from pitchstems.input_validation import SUPPORTED_AUDIO_SUFFIXES, validate_audio_input
 from pitchstems.pipeline import recover_interrupted_midi_update
 from pitchstems.project_store import PROJECT_FILENAME, load_pipeline_result
 from pitchstems.recent_projects import (
@@ -87,7 +87,8 @@ def pick_audio(window) -> None:
         window,
         "Open audio",
         str(Path.home()),
-        "Audio files (*.wav *.mp3 *.flac *.m4a *.aac *.ogg);;All files (*.*)",
+        f"Audio files ({' '.join(f'*{suffix}' for suffix in sorted(SUPPORTED_AUDIO_SUFFIXES))});;"
+        "All files (*.*)",
     )
     if filename:
         window.set_audio_path(Path(filename))
@@ -96,7 +97,7 @@ def pick_audio(window) -> None:
 def set_audio_path(window, path: Path) -> None:
     error = validate_audio_input(path)
     if error:
-        window.drop_zone.reset_prompt()
+        window.drop_zone.show_error(error)
         if hasattr(window, "import_clip_picker"):
             window.import_clip_picker.reset_audio()
         window.append_log(error)

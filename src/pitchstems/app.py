@@ -26,7 +26,7 @@ from pitchstems.chord_naming import (
 from pitchstems.review_ranges import review_playback_loop_range
 from pitchstems.editor_loader import EditorLoadResult
 from pitchstems.gui_editor_state import EMPTY_EDITOR_SUMMARY
-from pitchstems.midi_preview import render_note_preview
+from pitchstems.midi_preview import preview_cache_dir, render_note_preview
 from pitchstems.notation import (
     display_scale_candidate_label,
     midi_note_name,
@@ -1149,7 +1149,7 @@ def main() -> int:
             duration: float = 1.6,
             status_ms: int = 3000,
         ) -> None:
-            """Render a one-shot preview into editor/<kind>/ and play it on the preview player."""
+            """Render a one-shot preview into the app cache and play it on the preview player."""
             if self.current_result is None:
                 return
             if not safe_qt_multimedia_call(
@@ -1158,7 +1158,7 @@ def main() -> int:
                 lambda: reset_player_source(self.chord_preview_player),
             ):
                 return
-            preview_dir = self.current_result.project_dir / "editor" / kind
+            preview_dir = preview_cache_dir() / kind
             preview = render_note_preview(name, notes, preview_dir, duration=duration)
             if not preview:
                 return

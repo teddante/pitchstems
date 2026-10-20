@@ -24,3 +24,14 @@ def test_setup_app_logging_is_repeatable_without_duplicate_handlers(tmp_path, mo
     logger = logging.getLogger("pitchstems")
     assert second_path == logs_dir() / "pitchstems.log"
     assert len(logger.handlers) == 1
+
+
+def test_app_folders_share_one_per_user_root(tmp_path, monkeypatch) -> None:
+    from pitchstems.midi_preview import preview_cache_dir
+    from pitchstems.model_assets import model_cache_dir
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+
+    assert logs_dir() == tmp_path / "PitchStems" / "logs"
+    assert model_cache_dir() == tmp_path / "PitchStems" / "bs-roformer-models"
+    assert preview_cache_dir() == tmp_path / "PitchStems" / "previews"

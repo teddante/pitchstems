@@ -99,3 +99,22 @@ def test_combine_midi_tracks_gives_each_stem_its_own_channel_and_one_tempo_track
     note_on = next(m for m in combined.tracks[1] if m.type == "note_on")
     assert note_on.time == 240
     assert sum(1 for m in combined.tracks[1] if m.type == "track_name") == 1
+
+
+def test_combine_midi_tracks_keeps_multi_track_stems_on_separate_channels(tmp_path: Path) -> None:
+    source = MidiFile(type=1)
+    for pitch in (60, 64):
+        track = MidiTrack()
+        track.append(Message("pitchwheel", pitch=100, time=0))
+        track.append(Message("note_on", note=pitch, velocity=90, time=0))
+        track.append(Message("note_off", note=pitch, velocity=0, time=240))
+        source.tracks.append(track)
+    path = tmp_path / "piano.mid"
+    source.save(path)
+
+    output = tmp_path / "combined.mid"
+    combine_midi_tracks([MidiResult("piano", path)], output)
+
+    combined = MidiFile(output)
+    channels = [{m.channel for m in track if hasattr(m, "channel")} for track in combined.tracks]
+    assert channels == [{0}, {1}]

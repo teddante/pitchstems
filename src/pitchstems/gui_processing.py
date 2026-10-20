@@ -33,6 +33,10 @@ class FullProcessRunRequest:
     def cleanup_root(self) -> Path | None:
         return self.output_root
 
+    @property
+    def recover_project_dir(self) -> Path | None:
+        return None
+
 
 @dataclass(frozen=True)
 class MidiProcessRunRequest:
@@ -47,6 +51,10 @@ class MidiProcessRunRequest:
     @property
     def cleanup_root(self) -> Path | None:
         return None
+
+    @property
+    def recover_project_dir(self) -> Path | None:
+        return self.result.project_dir
 
 
 WORKER_COMPLETION_MESSAGES = {
@@ -148,6 +156,7 @@ def start_processing_request(
 def start_process_job(window, token: int, target, process_request) -> None:
     process_worker = create_process_worker(target, (token, process_request))
     process_worker.cleanup_root = process_request.cleanup_root
+    process_worker.recover_project_dir = process_request.recover_project_dir
     if not window.worker_jobs.attach_process(token, process_worker):
         process_worker.terminate(timeout_seconds=0.5)
         return

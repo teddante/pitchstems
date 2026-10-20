@@ -20,7 +20,7 @@ def test_export_dialog_respects_default_selected_items(tmp_path: Path) -> None:
     manifest = tmp_path / "pitchstems.project.json"
     source = tmp_path / "audio" / "song.mp3"
     items = [
-        ExportItem("Project manifest", "Project", manifest, Path("pitchstems.project.json")),
+        ExportItem("Project manifest", "Source Audio", manifest, Path("pitchstems.project.json")),
         ExportItem("Source audio", "Source Audio", source, Path("audio/song.mp3"), default_selected=False),
     ]
 
@@ -32,7 +32,7 @@ def test_export_dialog_respects_default_selected_items(tmp_path: Path) -> None:
 def test_export_dialog_bulk_selection_controls(tmp_path: Path) -> None:
     _app()
     items = [
-        ExportItem("Project manifest", "Project", tmp_path / "pitchstems.project.json", Path("pitchstems.project.json")),
+        ExportItem("Project manifest", "Source Audio", tmp_path / "pitchstems.project.json", Path("pitchstems.project.json")),
         ExportItem("Stem", "Stems", tmp_path / "stem.wav", Path("stems/stem.wav")),
         ExportItem("Source audio", "Source Audio", tmp_path / "song.mp3", Path("audio/song.mp3"), default_selected=False),
     ]
@@ -60,7 +60,7 @@ def test_export_dialog_bulk_selection_controls(tmp_path: Path) -> None:
 def test_export_dialog_category_selection_controls(tmp_path: Path) -> None:
     _app()
     items = [
-        ExportItem("Project manifest", "Project", tmp_path / "pitchstems.project.json", Path("pitchstems.project.json")),
+        ExportItem("Project manifest", "Source Audio", tmp_path / "pitchstems.project.json", Path("pitchstems.project.json")),
         ExportItem("Bass", "Stems", tmp_path / "bass.wav", Path("stems/bass.wav")),
         ExportItem("Drums", "Stems", tmp_path / "drums.wav", Path("stems/drums.wav")),
         ExportItem("Bass MIDI", "MIDI", tmp_path / "bass.mid", Path("midi/bass.mid")),

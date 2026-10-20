@@ -300,6 +300,7 @@ def test_start_midi_processing_requests_no_zip_from_gui(monkeypatch, tmp_path: P
     assert process_workers[0].process.started is True
     assert window.worker_jobs.active_process is process_workers[0]
     assert process_workers[0].cleanup_root is None
+    assert process_workers[0].recover_project_dir == window.current_result.project_dir
     request = process_workers[0].args[1]
     assert process_workers[0].target is gui_processing.run_midi_stage_process
     assert request.cleanup_root is None

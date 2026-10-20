@@ -32,6 +32,10 @@ class _DropZone:
         self.path = None
         self.reset_count += 1
 
+    def show_error(self, error: str) -> None:
+        self.path = None
+        self.error = error
+
 
 class _Control:
     def __init__(self) -> None:
@@ -89,7 +93,7 @@ def test_set_audio_path_invalid_selection_clears_previous_audio_path(tmp_path: P
     set_audio_path(window, invalid)
 
     assert window.drop_zone.path is None
-    assert window.drop_zone.reset_count == 1
+    assert "Unsupported audio file type" in window.drop_zone.error
     assert window.reset_paths == []
     assert any("Unsupported audio file type" in message for message in window.logs)
 

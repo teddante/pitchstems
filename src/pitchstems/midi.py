@@ -17,8 +17,8 @@ MELODIC_CHANNELS = tuple(channel for channel in range(16) if channel != DRUM_CHA
 def combine_midi_tracks(midi_results: list[MidiResult], output_path: Path) -> Path | None:
     """Combine multiple MIDI files into one format-1 multitrack MIDI file.
 
-    Each stem gets its own MIDI channel (drums use General MIDI channel 10), so a
-    plain GM player does not play every stem with one shared instrument. Tempo,
+    Each stem track gets its own MIDI channel (drums use General MIDI channel 10),
+    so a plain GM player does not play every stem with one shared instrument. Tempo,
     time- and key-signature events are collected once into a leading conductor
     track instead of being repeated in every stem track.
     """
@@ -36,11 +36,7 @@ def combine_midi_tracks(midi_results: list[MidiResult], output_path: Path) -> Pa
         if ticks_per_beat is None:
             ticks_per_beat = source.ticks_per_beat
             combined.ticks_per_beat = ticks_per_beat
-        if is_percussive_stem(result.stem):
-            channel = DRUM_CHANNEL
-        else:
-            channel = MELODIC_CHANNELS[melodic_index % len(MELODIC_CHANNELS)]
-            melodic_index += 1
+        percussive = is_percussive_stem(result.stem)
         take_conductor = not conductor
         file_tracks: list[tuple[int, list[Any]]] = []
 
@@ -56,11 +52,21 @@ def combine_midi_tracks(midi_results: list[MidiResult], output_path: Path) -> Pa
                     continue
                 if message.is_meta and message.type in {"track_name", "end_of_track"}:
                     continue
-                if hasattr(message, "channel"):
-                    message = message.copy(channel=channel)
                 kept.append((tick, message))
             if not any(not message.is_meta for _tick, message in kept):
                 continue
+            # Basic Pitch writes one instrument per pitch with --multiple-pitch-bends,
+            # so each source track keeps its own channel; sharing one would apply
+            # every pitch bend to every note.
+            if percussive:
+                channel = DRUM_CHANNEL
+            else:
+                channel = MELODIC_CHANNELS[melodic_index % len(MELODIC_CHANNELS)]
+                melodic_index += 1
+            kept = [
+                (tick, message.copy(channel=channel) if hasattr(message, "channel") else message)
+                for tick, message in kept
+            ]
             file_tracks.append((index, _relative_messages(kept)))
 
         for index, messages in file_tracks:

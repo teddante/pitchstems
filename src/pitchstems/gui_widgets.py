@@ -60,6 +60,11 @@ class DropZone(QLabel):
             self.setText(f"Project\n{project_dir.name}")
             self.setToolTip(str(project_dir))
 
+    def show_error(self, error: str) -> None:
+        self.path = None
+        self.setText(error)
+        self.setToolTip(error)
+
     def reset_prompt(self) -> None:
         self.path = None
         self.setText("Drop an audio file here")
@@ -75,15 +80,16 @@ class DropZone(QLabel):
         if not urls or not urls[0].isLocalFile():
             return
         path = Path(urls[0].toLocalFile())
+        if self.on_path_changed:
+            # The window validates the drop and resets the clip picker and
+            # project state for both valid and invalid files.
+            self.on_path_changed(path)
+            return
         error = validate_audio_input(path)
         if error:
-            self.path = None
-            self.setText(error)
-            self.setToolTip(error)
+            self.show_error(error)
             return
         self.set_audio_file(path)
-        if self.on_path_changed:
-            self.on_path_changed(self.path)
 
 
 class _NoWheelMixin:

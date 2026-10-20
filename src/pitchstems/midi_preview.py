@@ -4,10 +4,16 @@ import wave
 from array import array
 from pathlib import Path
 
+from pitchstems.app_identity import app_data_dir
 from pitchstems.atomic_files import atomic_replace
 from pitchstems.editor_models import NoteEvent
 from pitchstems.filename_safety import safe_file_stem
 from pitchstems.midi_synth import MidiSynthEngine
+
+
+def preview_cache_dir() -> Path:
+    """Scratch folder for audition WAVs, kept out of the user's project folders."""
+    return app_data_dir() / "previews"
 
 
 def render_note_preview(

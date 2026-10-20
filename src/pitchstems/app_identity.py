@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import os
 import sys
 from importlib import resources
 from pathlib import Path
@@ -8,6 +9,14 @@ from pathlib import Path
 APP_NAME = "PitchStems"
 APP_ORGANIZATION = "PitchStems"
 WINDOWS_APP_USER_MODEL_ID = "PitchStems.PitchStems"
+
+
+def app_data_dir() -> Path:
+    """Per-user folder for PitchStems logs, model weights, and scratch previews."""
+    root = os.environ.get("LOCALAPPDATA")
+    if root:
+        return Path(root) / APP_NAME
+    return Path.home() / ".cache" / "pitchstems"
 
 
 def app_icon_path() -> Path | None:

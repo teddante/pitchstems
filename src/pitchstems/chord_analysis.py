@@ -231,9 +231,7 @@ def analyze_chord(
     pitches: list[int],
     required_pitch_classes: set[int] | None = None,
     excluded_pitch_classes: set[int] | None = None,
-    scoring_options: ChordScoringOptions | None = None,
 ) -> ChordAnalysis:
-    del scoring_options
     active_note_names = [midi_note_name(pitch) for pitch in sorted(set(pitches))]
     observed_pitch_classes = {pitch % 12 for pitch in pitches}
     effective_pitch_classes = set(observed_pitch_classes)

@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from pitchstems.pipeline import remove_new_project_dir
+from pitchstems.pipeline import recover_interrupted_midi_update, remove_new_project_dir
 from pitchstems.subprocess_flags import NO_CONSOLE_WINDOW
 
 
@@ -20,30 +20,41 @@ class ProcessWorker:
     terminated: bool = False
     cleanup_root: Path | None = None
     cleanup_project_dir: Path | None = None
+    # Existing project whose interrupted MIDI swap is rolled back after a kill.
+    recover_project_dir: Path | None = None
     cleanup_error: str | None = None
     started: bool = True
     # Set before the kill so the supervisor reports "cancelled", not a crash,
     # even when it notices the dead process before terminate() returns.
     cancel_requested: bool = False
     _terminate_done: threading.Event = field(default_factory=threading.Event, repr=False)
+    # Messages pulled off the queue by terminate() are kept here for the next
+    # drain_messages() call, so a cancel never swallows a RESULT or log line.
+    _buffered: list[object] = field(default_factory=list, repr=False)
+    _drain_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def is_alive(self) -> bool:
         return bool(self.process.is_alive())
 
     def drain_messages(self) -> list[object]:
-        drained: list[object] = []
+        with self._drain_lock:
+            self._buffer_queued_messages()
+            drained, self._buffered = self._buffered, []
+            return drained
+
+    def _buffer_queued_messages(self) -> None:
         while True:
             try:
                 message = self.messages.get_nowait()
             except (EOFError, OSError, queue.Empty):
-                return drained
-            if self._remember_internal_message(message):
-                continue
-            drained.append(message)
+                return
+            if not self._remember_internal_message(message):
+                self._buffered.append(message)
 
     def terminate(self, timeout_seconds: float = 2.0) -> bool:
         try:
-            self.drain_messages()
+            with self._drain_lock:
+                self._buffer_queued_messages()
             if not self.started:
                 return False
             if not self.process.is_alive():
@@ -84,10 +95,11 @@ class ProcessWorker:
         return False
 
     def _cleanup_terminated_project(self) -> None:
-        if self.cleanup_root is None or self.cleanup_project_dir is None:
-            return
         try:
-            remove_new_project_dir(self.cleanup_project_dir, self.cleanup_root)
+            if self.recover_project_dir is not None:
+                recover_interrupted_midi_update(self.recover_project_dir)
+            if self.cleanup_root is not None and self.cleanup_project_dir is not None:
+                remove_new_project_dir(self.cleanup_project_dir, self.cleanup_root)
         except Exception as exc:
             self.cleanup_error = str(exc)
 

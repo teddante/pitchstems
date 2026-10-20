@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import copy
 import json
 import threading
 from dataclasses import asdict, is_dataclass
@@ -311,50 +312,34 @@ def _pipeline_settings_manifest(
     return manifest_settings
 
 
-def _editor_state_manifest(
-    existing_editor: dict[str, Any],
-    *,
-    track_visibility: dict[str, bool] | None,
-    track_analysis_enabled: dict[str, bool] | None,
-    track_audio_enabled: dict[str, bool] | None,
-    track_audio_volume: dict[str, int] | None,
-    track_midi_enabled: dict[str, bool] | None,
-    track_midi_volume: dict[str, int] | None,
-    notation_spelling: str | None,
-    playhead_seconds: float | None,
-    chord_overrides: list[dict[str, Any]] | None,
-    chord_removals: list[dict[str, Any]] | None,
-) -> dict[str, Any]:
+# Editor-owned manifest fields and the value used when a project has none yet.
+EDITOR_STATE_DEFAULTS: dict[str, Any] = {
+    "track_visibility": {},
+    "track_analysis_enabled": {},
+    "track_audio_enabled": {},
+    "track_audio_volume": {},
+    "track_midi_enabled": {},
+    "track_midi_volume": {},
+    "notation_spelling": "auto",
+    "playhead_seconds": 0.0,
+    "chord_overrides": [],
+    "chord_removals": [],
+}
+
+
+def _editor_state_manifest(existing_editor: dict[str, Any], **updates: Any) -> dict[str, Any]:
     return {
-        "track_visibility": _manifest_field(track_visibility, existing_editor, "track_visibility", {}),
-        "track_analysis_enabled": _manifest_field(
-            track_analysis_enabled,
-            existing_editor,
-            "track_analysis_enabled",
-            {},
-        ),
-        "track_audio_enabled": _manifest_field(track_audio_enabled, existing_editor, "track_audio_enabled", {}),
-        "track_audio_volume": _manifest_field(track_audio_volume, existing_editor, "track_audio_volume", {}),
-        "track_midi_enabled": _manifest_field(track_midi_enabled, existing_editor, "track_midi_enabled", {}),
-        "track_midi_volume": _manifest_field(track_midi_volume, existing_editor, "track_midi_volume", {}),
-        "notation_spelling": _manifest_field(notation_spelling, existing_editor, "notation_spelling", "auto"),
-        "playhead_seconds": _manifest_field(playhead_seconds, existing_editor, "playhead_seconds", 0.0),
-        "chord_overrides": _manifest_field(chord_overrides, existing_editor, "chord_overrides", []),
-        "chord_removals": _manifest_field(chord_removals, existing_editor, "chord_removals", []),
+        field: _manifest_field(updates.get(field), existing_editor, field, copy.deepcopy(default))
+        for field, default in EDITOR_STATE_DEFAULTS.items()
     }
 
 
-def _project_manifest_envelope(
-    project_dir: Path,
-    *,
-    created_at: str | None = None,
-    updated_at: str | None = None,
-) -> dict[str, Any]:
+def _project_manifest_envelope(project_dir: Path, *, created_at: str | None = None) -> dict[str, Any]:
     return {
         "format": "pitchstems-project",
         "format_version": PROJECT_FORMAT_VERSION,
         "created_at": created_at or _now(),
-        "updated_at": updated_at or _now(),
+        "updated_at": _now(),
         "name": project_dir.name.removesuffix(".pitchstems"),
     }
 
@@ -557,16 +542,7 @@ def _migrate_legacy_to_v2(manifest: dict[str, Any]) -> dict[str, Any]:
     editor = migrated.get("editor")
     if not isinstance(editor, dict):
         editor = {}
-    editor.setdefault("track_visibility", {})
-    editor.setdefault("track_analysis_enabled", {})
-    editor.setdefault("track_audio_enabled", {})
-    editor.setdefault("track_audio_volume", {})
-    editor.setdefault("track_midi_enabled", {})
-    editor.setdefault("track_midi_volume", {})
-    editor.setdefault("notation_spelling", "auto")
-    editor.setdefault("playhead_seconds", 0.0)
-    editor.setdefault("chord_overrides", [])
-    editor.setdefault("chord_removals", [])
+    editor = {**copy.deepcopy(EDITOR_STATE_DEFAULTS), **editor}
     editor.pop("note_edits", None)
     migrated["editor"] = editor
     migrated["format_version"] = PROJECT_FORMAT_VERSION
@@ -585,7 +561,7 @@ def _dataclass_dict(value: Any) -> dict[str, Any]:
     if not is_dataclass(value):
         return {}
     data = asdict(cast(Any, value))
-    return {key: _jsonable(item) for key, item in data.items() if key != "choice"}
+    return {key: _jsonable(item) for key, item in data.items()}
 
 
 def _source_clip_manifest(

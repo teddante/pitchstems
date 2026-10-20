@@ -57,11 +57,12 @@ def chord_inputs(window, seconds: float) -> ChordInputs:
     source_notes = chord_analysis_notes(window)
     context = chord_context_key(window, seconds)
     required, excluded = chord_note_constraints(window.chord_note_overrides)
+    context_notes = _context_notes(window, source_notes, seconds)
     return ChordInputs(
         source_notes=source_notes,
         context=context,
-        base_weights=chord_base_pitch_weights(source_notes, context),
-        analysis_notes=filtered_chord_analysis_notes(source_notes, excluded),
+        base_weights=chord_base_pitch_weights(context_notes, context),
+        analysis_notes=filtered_chord_analysis_notes(context_notes, excluded),
         required=required,
         excluded=excluded,
     )
@@ -160,15 +161,38 @@ def refresh_current_harmony(window, seconds: float) -> None:
 
 
 def analysis_notes_overlapping_ranges(editor_project, notes, ranges: list[tuple[float, float]]):
-    overlapping_notes = set()
+    candidates = []
     for start, end in ranges:
-        overlapping_notes.update(editor_project.note_index.overlapping(start, end))
-    return [note for note in notes if note in overlapping_notes]
+        candidates.extend(editor_project.note_index.overlapping(start, end))
+    return _notes_in_order(notes, candidates)
 
 
 def analysis_notes_active_at(editor_project, notes, seconds: float):
-    active_notes = set(editor_project.note_index.active_at(seconds))
-    return [note for note in notes if note in active_notes]
+    return _notes_in_order(notes, editor_project.note_index.active_at(seconds))
+
+
+# Playback refreshes harmony several times a second, so subset lookups query the
+# note index and then keep only members of ``notes`` (by identity, in its order)
+# instead of hashing every note in the song on each refresh.
+_NOTE_POSITION_CACHE: list[tuple[list, dict[int, int]]] = []
+_NOTE_POSITION_CACHE_SIZE = 4
+
+
+def _notes_in_order(notes, candidates):
+    positions = _note_positions(notes)
+    found = {positions[id(note)]: note for note in candidates if id(note) in positions}
+    return [found[index] for index in sorted(found)]
+
+
+def _note_positions(notes) -> dict[int, int]:
+    for cached_notes, positions in _NOTE_POSITION_CACHE:
+        if cached_notes is notes:
+            return positions
+    positions = {id(note): index for index, note in enumerate(notes)}
+    # Holding ``notes`` keeps its ids from being reused while the entry is cached.
+    _NOTE_POSITION_CACHE.insert(0, (notes, positions))
+    del _NOTE_POSITION_CACHE[_NOTE_POSITION_CACHE_SIZE:]
+    return positions
 
 
 def chord_context_key(window, seconds: float):
@@ -264,11 +288,26 @@ def gap_empty_message(window) -> str:
     return "No chord-track gap selected or under the playhead."
 
 
+def _context_notes(window, source_notes, seconds: float):
+    """Only the source notes that can sound in the current review context."""
+    if window.editor_project is None:
+        return source_notes
+    ranges = list(current_review_target(window, seconds).ranges)
+    if ranges:
+        return analysis_notes_overlapping_ranges(window.editor_project, source_notes, ranges)
+    return analysis_notes_active_at(window.editor_project, source_notes, seconds)
+
+
 def chord_analysis_notes(window):
-    return selected_chord_analysis_notes(
-        window.editor_project,
-        selected_chord_analysis_tracks(window),
-    )
+    project = window.editor_project
+    tracks = selected_chord_analysis_tracks(window)
+    key = (frozenset(tracks) if tracks is not None else None,)
+    cached = getattr(window, "chord_analysis_notes_cache", None)
+    if cached is not None and cached[0] is project and cached[1] == key:
+        return cached[2]
+    notes = selected_chord_analysis_notes(project, tracks)
+    window.chord_analysis_notes_cache = (project, key, notes)
+    return notes
 
 
 def selected_chord_analysis_tracks(window) -> set[str] | None:

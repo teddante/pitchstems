@@ -16,6 +16,7 @@ from pitchstems import gui_editor_actions
 from pitchstems.pipeline_models import MidiResult, PipelineResult, StemResult
 from pitchstems.project_store import save_project_manifest
 from pitchstems.harmony_report import current_chord_analysis_report
+from pitchstems.midi_preview import preview_cache_dir
 
 
 def run_startup_smoke(window) -> None:
@@ -222,7 +223,7 @@ def run_project_smoke(window) -> None:
     _assert(window.save_editor_state(), "editor state save")
     window.preview_note_pitch(60, "smoke C4", "C4")
     _assert(
-        (window.current_result.project_dir / "editor" / "note-preview" / "smoke_C4.wav").exists(),
+        (preview_cache_dir() / "note-preview" / "smoke_C4.wav").exists(),
         "note preview renders through shared preview player",
     )
     _assert(window.statusBar().currentMessage() == "Playing note C4.", "note preview status")

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from pitchstems.app_identity import app_data_dir
 from pitchstems.atomic_files import atomic_replace
 from pitchstems.model_catalog import DEFAULT_MODEL_KEY, model_choice
 
@@ -85,10 +85,7 @@ MODEL_ASSETS = {
 
 
 def model_cache_dir() -> Path:
-    root = os.environ.get("LOCALAPPDATA")
-    if root:
-        return Path(root) / "PitchStems" / "bs-roformer-models"
-    return Path.home() / ".cache" / "pitchstems" / "bs-roformer-models"
+    return app_data_dir() / "bs-roformer-models"
 
 
 def model_asset_dir(model_key: str, cache_root: Path | None = None) -> Path:

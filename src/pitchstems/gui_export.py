@@ -189,7 +189,7 @@ class ExportSelectedFilesDialog:
         scroll_body = QWidget()
         scroll_layout = QVBoxLayout()
         scroll_layout.setSpacing(8)
-        for category in ("Project", "Source Audio", "Stems", "MIDI", "Combined MIDI", "Notes CSV"):
+        for category in ("Source Audio", "Stems", "MIDI", "Combined MIDI", "Notes CSV"):
             category_items = [item for item in items if item.category == category]
             if not category_items:
                 continue

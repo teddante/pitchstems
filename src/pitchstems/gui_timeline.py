@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from bisect import bisect_left, bisect_right
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -10,6 +9,7 @@ from PySide6.QtWidgets import QApplication, QGraphicsScene, QGraphicsView
 
 from pitchstems.editor_models import ChordRegion, NoteEvent
 from pitchstems.editor_project import EditorProject
+from pitchstems.editor_query import NoteIndex
 from pitchstems.notation import midi_note_name
 from pitchstems.gui_theme import TRACK_COLORS
 from pitchstems.gui_track_controls import TRACK_CONTROL_MIN_HEIGHT
@@ -75,9 +75,7 @@ class TimelineView(QGraphicsView):
         self.visible_tracks: set[str] = set()
         self._drawn_scene_rect = None
         self.track_geometries: dict[str, TimelineTrackGeometry] = {}
-        self.notes_by_track: dict[str, list] = {}
-        self.note_starts_by_track: dict[str, list[float]] = {}
-        self.max_note_duration_by_track: dict[str, float] = {}
+        self.notes_by_track: dict[str, NoteIndex] = {}
         self.pitch_ranges: dict[str, tuple[int, int]] = {}
         self.note_name_formatter = midi_note_name
         self.chord_label_formatter = lambda label: label
@@ -175,22 +173,16 @@ class TimelineView(QGraphicsView):
 
     def _index_project(self) -> None:
         self.notes_by_track = {}
-        self.note_starts_by_track = {}
-        self.max_note_duration_by_track = {}
         self.pitch_ranges = {}
         if self.project is None:
             return
+        grouped: dict[str, list[NoteEvent]] = {}
         for note in self.project.notes:
-            self.notes_by_track.setdefault(note.stem.lower(), []).append(note)
-        for track_key, notes in self.notes_by_track.items():
-            notes.sort(key=lambda note: (note.start, note.end, note.pitch))
-            self.note_starts_by_track[track_key] = [note.start for note in notes]
-            self.max_note_duration_by_track[track_key] = max(
-                (note.duration for note in notes),
-                default=0.0,
-            )
+            grouped.setdefault(note.stem.lower(), []).append(note)
+        self.notes_by_track = {track_key: NoteIndex(notes) for track_key, notes in grouped.items()}
         for track in self.project.tracks:
-            pitches = [note.pitch for note in self.notes_by_track.get(track.name.lower(), [])]
+            index = self.notes_by_track.get(track.name.lower())
+            pitches = [note.pitch for note in index.notes] if index is not None else []
             if pitches:
                 self.pitch_ranges[track.name.lower()] = (
                     max(0, min(pitches) - 2),
@@ -980,18 +972,10 @@ class TimelineView(QGraphicsView):
         return count
 
     def _visible_notes_for_track(self, track_key: str, visible_start: float, visible_end: float):
-        notes = self.notes_by_track.get(track_key, [])
-        starts = self.note_starts_by_track.get(track_key, [])
-        if not notes or not starts:
+        index = self.notes_by_track.get(track_key)
+        if index is None:
             return []
-        max_duration = self.max_note_duration_by_track.get(track_key, 0.0)
-        start_index = bisect_left(starts, max(0.0, visible_start - max_duration))
-        end_index = bisect_right(starts, visible_end)
-        return [
-            note
-            for note in notes[start_index:end_index]
-            if note.end >= visible_start and note.start <= visible_end
-        ]
+        return index.overlapping(max(0.0, visible_start), visible_end)
 
     def _make_sticky(self, item, x_offset: float) -> None:
         item.setZValue(20)

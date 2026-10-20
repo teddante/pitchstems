@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import faulthandler
 import logging
-import os
 import sys
 import threading
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from types import TracebackType
+
+from pitchstems.app_identity import app_data_dir
 
 
 _ORIGINAL_EXCEPTHOOK = sys.excepthook
@@ -16,10 +17,7 @@ _FAULT_STREAM = None
 
 
 def logs_dir() -> Path:
-    root = os.environ.get("LOCALAPPDATA")
-    if root:
-        return Path(root) / "PitchStems" / "logs"
-    return Path.home() / ".cache" / "pitchstems" / "logs"
+    return app_data_dir() / "logs"
 
 
 def setup_app_logging() -> Path:

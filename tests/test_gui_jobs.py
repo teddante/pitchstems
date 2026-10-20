@@ -71,6 +71,17 @@ def test_process_worker_terminate_joins_completed_process() -> None:
     assert not worker.terminated
 
 
+def test_process_worker_terminate_keeps_queued_messages_for_next_drain() -> None:
+    messages: queue.Queue[object] = queue.Queue()
+    messages.put(("RESULT", 1, "result"))
+    messages.put(("WORKER_LOG", 1, "done"))
+    worker = ProcessWorker(_FakeProcess(alive=False), messages)
+
+    assert worker.terminate() is False
+    assert worker.drain_messages() == [("RESULT", 1, "result"), ("WORKER_LOG", 1, "done")]
+    assert worker.drain_messages() == []
+
+
 def test_process_worker_terminate_removes_safe_new_project_dir(tmp_path: Path) -> None:
     process = _FakeProcess(alive=True)
     project_dir = tmp_path / "song.pitchstems"
@@ -86,6 +97,17 @@ def test_process_worker_terminate_removes_safe_new_project_dir(tmp_path: Path) -
     assert worker.terminate(timeout_seconds=0.25) is True
 
     assert not project_dir.exists()
+    assert worker.cleanup_error is None
+
+
+def test_process_worker_terminate_rolls_back_interrupted_midi_rerun(monkeypatch, tmp_path: Path) -> None:
+    recovered: list[Path] = []
+    monkeypatch.setattr(gui_jobs, "recover_interrupted_midi_update", recovered.append)
+    worker = ProcessWorker(_FakeProcess(alive=True), queue.Queue(), recover_project_dir=tmp_path)
+
+    assert worker.terminate(timeout_seconds=0.25) is True
+
+    assert recovered == [tmp_path]
     assert worker.cleanup_error is None
 
 

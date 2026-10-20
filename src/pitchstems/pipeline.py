@@ -213,6 +213,9 @@ def process_audio_file(
             )
             midi_files = midi_result.midi_files
             combined_midi = midi_result.combined_midi
+            # The MIDI stage saved a complete manifest; a later packaging error
+            # must not overwrite it with a "failed" one.
+            project_manifest_written = True
         elif log:
             log("Skipping MIDI transcription.")
         zip_path = workspace.zip_path if create_zip else None

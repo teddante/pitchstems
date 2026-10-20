@@ -9,11 +9,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping
 
-from pitchstems.filename_safety import safe_stem_key as safe_stem_key
 from pitchstems.model_assets import ensure_model_assets, model_asset_dir, model_cache_dir
 from pitchstems.model_catalog import DEFAULT_MODEL_KEY, ModelChoice, model_choice
 from pitchstems.pipeline_models import StemResult
-
 
 
 @dataclass(frozen=True)
@@ -83,7 +81,6 @@ def separate_stems(
 
     if log:
         log(f"Separation goal: {choice.best_for}")
-        log("Native backend: bs-roformer-infer")
         log(f"Model: {choice.label}")
         log(f"Model config: {config_path}")
         log(f"Model weights: {model_path}")
