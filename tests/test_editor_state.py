@@ -7,7 +7,6 @@ from pitchstems.editor_state import (
     editor_bool,
     editor_float,
     editor_int,
-    load_editor_state,
     parse_chord_overrides,
     parse_chord_removals,
     save_editor_state_snapshot,
@@ -156,7 +155,7 @@ def test_save_editor_state_snapshot_preserves_pipeline_fields(tmp_path: Path) ->
     assert manifest["settings"]["midi_policy"] == "all"
     assert manifest["editor"]["notation_spelling"] == "flat"
     assert manifest["editor"]["playhead_seconds"] == 12.25
-    assert load_editor_state(tmp_path)["track_audio_volume"] == {"bass": 67}
+    assert manifest["editor"]["track_audio_volume"] == {"bass": 67}
 
 
 class _Check:

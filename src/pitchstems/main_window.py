@@ -1,0 +1,1218 @@
+from __future__ import annotations
+
+import queue
+import threading
+import time
+from logging import Logger
+from pathlib import Path
+
+from PySide6.QtCore import QSettings, QTimer, Qt, QUrl
+from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
+from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QGridLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QMainWindow,
+    QProgressBar,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QSlider,
+    QSpinBox,
+    QTabWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
+from pitchstems.app_identity import APP_NAME, APP_ORGANIZATION, app_icon_path
+from pitchstems.chord_gap_analysis import ChordGapAnalysis
+from pitchstems.chord_scoring import ChordScoringOptions
+from pitchstems.editor_loader import EditorLoadResult
+from pitchstems.editor_models import ChordRegion, NoteEvent
+from pitchstems.editor_project import EditorProject
+from pitchstems.gui_editor_page import build_editor_page
+from pitchstems.gui_editor_state import EMPTY_EDITOR_SUMMARY
+from pitchstems.gui_helpers import blocked_signals, text_label, wrapping_list
+from pitchstems.gui_import_clip import (
+    ImportClipPicker,
+    can_clear_import_clip_selection,
+    can_play_import_clip_preview,
+    clip_status_text,
+    import_preview_range,
+)
+from pitchstems.gui_jobs import EditorLoadJobState, WorkerJobState, thread_is_alive
+from pitchstems.gui_pipeline_page import build_pipeline_page
+from pitchstems.gui_theme import (
+    DEFAULT_UI_SCALE,
+    normalized_ui_scale,
+)
+from pitchstems.gui_timeline import TimelineView
+from pitchstems.gui_track_controls import rebuild_track_controls, sync_track_control_panel
+from pitchstems.gui_transport import (
+    TransportController,
+    loop_playback_start,
+    reset_player_source,
+    safe_qt_multimedia_call,
+    start_player_source,
+)
+from pitchstems.gui_widgets import (
+    DropZone,
+    NoteMapPair,
+    NoWheelComboBox,
+    NoWheelDoubleSpinBox,
+    NoWheelSpinBox,
+)
+from pitchstems.midi_preview import preview_cache_dir, render_note_preview
+from pitchstems.note_previews import (
+    SCALE_PREVIEW_PATTERNS,
+    chord_preview_notes,
+    scale_preview_notes,
+    single_note_preview_notes,
+)
+from pitchstems.notation import (
+    pitch_class_for_name,
+    split_chord_label,
+)
+from pitchstems.pipeline_models import PipelineResult, StemResult
+from pitchstems.review_ranges import review_playback_loop_range
+from pitchstems.scale_analysis import TheoryAnalysis
+from pitchstems.time_format import format_time
+from pitchstems.transcription import midi_option_spec
+from pitchstems import (
+    gui_dialogs,
+    gui_editor_actions,
+    gui_editor_load,
+    gui_editor_state,
+    gui_export,
+    gui_harmony_flow,
+    gui_pipeline_state,
+    gui_processing,
+    gui_project_flow,
+    gui_transport_flow,
+    harmony_panel,
+)
+from pitchstems.harmony_inspector import (
+    apply_note_override,
+    chord_analysis_track_names as inspector_chord_analysis_track_names,
+)
+from pitchstems.gui_notation_display import NotationDisplayMixin
+from pitchstems.gui_window_shell import WindowShellMixin
+
+
+class MainWindow(WindowShellMixin, NotationDisplayMixin, QMainWindow):
+    def __init__(self, log_path: Path, logger: Logger) -> None:
+        super().__init__()
+        self.setWindowTitle("PitchStems")
+        icon_path = app_icon_path()
+        if icon_path is not None:
+            self.setWindowIcon(QIcon(str(icon_path)))
+        self.resize(1220, 780)
+        self.log_path = log_path
+        self.logger = logger
+        self.messages: queue.Queue[object] = queue.Queue()
+        self.worker: threading.Thread | None = None
+        self.worker_jobs = WorkerJobState()
+        self.editor_load_jobs = EditorLoadJobState()
+        self.close_after_worker = False
+        self.latest_output_dir: Path | None = None
+        self.current_result: PipelineResult | None = None
+        self.current_stems: list[StemResult] = []
+        self.current_input_stem: str | None = None
+        self.settings = QSettings(APP_ORGANIZATION, APP_NAME)
+        self.base_app_font = QApplication.font()
+        self.ui_scale = normalized_ui_scale(self.settings.value("ui_scale", DEFAULT_UI_SCALE))
+        self.recent_projects_menu = None
+        self.base_editor_project: EditorProject | None = None
+        self.editor_project: EditorProject | None = None
+        self.track_analysis_checks: dict[str, QCheckBox] = {}
+        self.track_audio_checks: dict[str, QCheckBox] = {}
+        self.track_audio_sliders: dict[str, QSlider] = {}
+        self.track_midi_checks: dict[str, QCheckBox] = {}
+        self.track_midi_sliders: dict[str, QSlider] = {}
+        self.transport = TransportController(
+            parent=self,
+            logger=self.logger,
+            track_audio_checks=self.track_audio_checks,
+            track_audio_sliders=self.track_audio_sliders,
+            track_midi_checks=self.track_midi_checks,
+            track_midi_sliders=self.track_midi_sliders,
+        )
+        self.export_worker: threading.Thread | None = None
+        self.export_cancel_event: threading.Event | None = None
+        self.close_after_export = False
+        self.waveform_token = 0
+        self.waveform_worker: threading.Thread | None = None
+        self.chord_detection_worker: threading.Thread | None = None
+        self.activity_depth = 0
+        self.manual_chords: list[ChordRegion] = []
+        self.removed_chord_ranges: list[tuple[float, float]] = []
+        self.chord_note_overrides: dict[int, str] = {}
+        self.theory_note_overrides: dict[int, str] = {}
+        self.chord_preview_range: tuple[int, int] = (48, 72)
+        self.scale_preview_range: tuple[int, int] = (60, 72)
+        self.chord_note_filter_context = None
+        self.current_chord_base_weights: dict[int, float] = {}
+        self.harmony_refresh_gate = gui_harmony_flow.HarmonyRefreshGate()
+        self.pending_harmony_seconds: float | None = None
+        self.current_theory_analysis: TheoryAnalysis | None = None
+        self.current_chord_gap_analysis: ChordGapAnalysis | None = None
+        self.current_gap_empty_message = "No chord-track gap selected or under the playhead."
+        self.updating_chord_note_filter = False
+
+        self._create_source_controls()
+
+        self._create_processing_controls()
+
+        pipeline_page = build_pipeline_page(self)
+        editor_page = build_editor_page(self)
+
+        self.main_tabs = QTabWidget()
+        self.main_tabs.addTab(pipeline_page, "Pipeline")
+        self.main_tabs.addTab(editor_page, "Editor")
+        self.main_tabs.tabBar().hide()
+        self.main_tabs.currentChanged.connect(self.sync_workspace_nav)
+
+        self.workspace_nav_buttons: dict[str, QPushButton] = {}
+        self.setCentralWidget(self.build_workspace_shell())
+        self.create_menus()
+        self.activity_label = QLabel("Ready")
+        self.activity_label.setMinimumWidth(180)
+        self.activity_bar = QProgressBar()
+        self.activity_bar.setRange(0, 1)
+        self.activity_bar.setValue(1)
+        self.activity_bar.setMinimumWidth(120)
+        self.activity_bar.setTextVisible(False)
+        self.statusBar().addPermanentWidget(self.activity_label)
+        self.statusBar().addPermanentWidget(self.activity_bar)
+        self.statusBar().showMessage(
+            "Timeline: Space plays/pauses; Alt+Left/Right steps chords; drag chord lane or Shift+drag to select chord-analysis range; Ctrl+drag adds another range; Esc clears selection; wheel scrolls, Ctrl+wheel zooms."
+        )
+        self.space_playback_shortcut = QShortcut(QKeySequence("Space"), self)
+        self.space_playback_shortcut.setContext(Qt.ApplicationShortcut)
+        self.space_playback_shortcut.activated.connect(self.toggle_playback_from_shortcut)
+        self.clear_selection_shortcut = QShortcut(QKeySequence("Esc"), self)
+        self.clear_selection_shortcut.setContext(Qt.ApplicationShortcut)
+        self.clear_selection_shortcut.activated.connect(self.clear_editor_selection)
+
+        self.run_full.clicked.connect(self.start_full_processing)
+        self.run_midi.clicked.connect(self.start_midi_processing)
+        self.repair_setup.clicked.connect(self.start_setup_repair)
+        self.export_button.clicked.connect(lambda: gui_export.export_selected_files(self))
+        self.cancel_button.clicked.connect(self.cancel_processing)
+        self.play_button.clicked.connect(lambda: gui_transport_flow.toggle_playback(self))
+        self.play_review_button.clicked.connect(
+            lambda: gui_editor_actions.play_editor_review_target(self)
+        )
+        self.previous_chord_button.clicked.connect(lambda: self.select_review_chord(-1))
+        self.next_chord_button.clicked.connect(lambda: self.select_review_chord(1))
+        self.stop_button.clicked.connect(self.stop_transport)
+        self.fit_song_button.clicked.connect(
+            lambda: gui_editor_actions.fit_editor_song_to_view(self)
+        )
+        self.fit_review_button.clicked.connect(
+            lambda: gui_editor_actions.fit_editor_review_to_view(self)
+        )
+        self.preview_chord_button.clicked.connect(self.preview_selected_chord)
+        self.use_chord_button.clicked.connect(self.assign_selected_chord_to_selection)
+        self.delete_chord_button.clicked.connect(lambda: gui_editor_state.delete_selected_chord(self))
+        self.reset_note_filter_button.clicked.connect(lambda: gui_harmony_flow.reset_chord_note_filter(self))
+        self.revert_chord_edits_button.clicked.connect(lambda: gui_editor_state.revert_all_chord_edits(self))
+        self.detect_chords_button.clicked.connect(lambda: gui_editor_state.generate_detected_chords(self))
+        self.inspect_chord_button.clicked.connect(lambda: gui_dialogs.inspect_current_chord_analysis(self))
+        self.inspect_theory_button.clicked.connect(lambda: gui_dialogs.inspect_current_theory_analysis(self))
+        self.preview_scale_button.clicked.connect(self.preview_selected_scale)
+        self.scale_chords_button.clicked.connect(lambda: gui_dialogs.show_selected_scale_chords(self))
+        self.scale_browser_button.clicked.connect(lambda: gui_dialogs.show_scale_browser(self))
+        self.note_map_colours.toggled.connect(self.refresh_note_map_colours)
+        self.chord_one_octave_button.clicked.connect(self.reset_chord_preview_to_one_octave)
+        self.theory_one_octave_button.clicked.connect(self.reset_scale_preview_to_one_octave)
+        self.use_gap_suggestion_button.clicked.connect(self.use_selected_gap_suggestion)
+        self.inspect_gap_suggestion_button.clicked.connect(lambda: gui_dialogs.inspect_current_gap_suggestions(self))
+        self.gap_suggestion_list.currentItemChanged.connect(
+            lambda *_args: harmony_panel.refresh_gap_suggestion_actions(self)
+        )
+        self.notation_spelling.currentIndexChanged.connect(self.handle_notation_spelling_changed)
+        self.note_filter_list.itemChanged.connect(lambda item: gui_harmony_flow.handle_chord_note_filter_changed(self, item))
+        self.min_note_evidence_slider.valueChanged.connect(self.handle_min_note_evidence_changed)
+        self.show_chromatic_scales.toggled.connect(
+            lambda _checked=False: self.set_theory_analysis(self.current_theory_analysis)
+        )
+        self.theory_list.currentItemChanged.connect(lambda *_args: harmony_panel.refresh_theory_preview_actions(self))
+        self.preview_bass_note.currentIndexChanged.connect(self.handle_preview_voicing_changed)
+        self.preview_top_note.currentIndexChanged.connect(self.handle_preview_voicing_changed)
+        self.chord_list.itemDoubleClicked.connect(self.preview_chord_item)
+        self.chord_list.currentItemChanged.connect(self.handle_chord_selection_changed)
+        self.timeline.verticalScrollBar().valueChanged.connect(self.sync_track_control_scroll)
+        self.playback_scroll.verticalScrollBar().valueChanged.connect(self.sync_timeline_scroll)
+        self.bs_device.currentIndexChanged.connect(lambda *_args: gui_pipeline_state.refresh_model_details(self))
+        self.generate_midi.toggled.connect(lambda *_args: gui_pipeline_state.refresh_midi_stem_checks(self))
+        self.generate_midi.toggled.connect(self.generate_chord_suggestions.setEnabled)
+        self.sonify_midi.toggled.connect(self.sonification_samplerate.setEnabled)
+
+        gui_pipeline_state.refresh_model_details(self)
+        self.drop_zone.setFocus()
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(lambda: gui_processing.flush_messages(self))
+        self.timer.start(100)
+
+        self.transport_timer = QTimer(self)
+        self.transport_timer.timeout.connect(lambda: gui_transport_flow.update_transport_position(self))
+        self.harmony_refresh_timer = QTimer(self)
+        self.harmony_refresh_timer.setSingleShot(True)
+        self.harmony_refresh_timer.timeout.connect(self.flush_deferred_harmony_refresh)
+        self.editor_save_timer = QTimer(self)
+        self.editor_save_timer.setSingleShot(True)
+        self.editor_save_timer.timeout.connect(self.save_editor_state)
+        self.apply_ui_scale(self.ui_scale, persist=False)
+
+    def _create_source_controls(self) -> None:
+        self.drop_zone = DropZone()
+        self.drop_zone.on_path_changed = self.set_audio_path
+        self.import_clip_player = QMediaPlayer(self)
+        self.import_clip_audio = QAudioOutput(self)
+        self.import_clip_player.setAudioOutput(self.import_clip_audio)
+        self.import_clip_audio.setVolume(0.8)
+        self.import_clip_timer = QTimer(self)
+        self.import_clip_timer.setInterval(80)
+        self.import_clip_timer.timeout.connect(self.poll_import_clip_preview)
+        self.import_clip_preview_end_seconds: float | None = None
+        self.import_clip_picker = ImportClipPicker()
+        self.import_clip_status = text_label("Whole file")
+        self.import_clip_play = QPushButton("Play")
+        self.import_clip_play.setEnabled(False)
+        self.import_clip_play.clicked.connect(self.play_import_clip_preview)
+        self.import_clip_stop = QPushButton("Stop")
+        self.import_clip_stop.setEnabled(False)
+        self.import_clip_stop.clicked.connect(self.stop_import_clip_preview)
+        self.import_clip_clear = QPushButton("Clear")
+        self.import_clip_clear.setEnabled(False)
+        self.import_clip_clear.clicked.connect(self.import_clip_picker.clear_selection)
+        self.import_clip_picker.on_range_changed = self.update_import_clip_status
+        self.output_dir = QLineEdit(str(Path.home() / "PitchStems Projects"))
+        self.output_dir.setReadOnly(True)
+
+        self.separation_status = text_label("Not run yet.")
+        self.midi_status = text_label("Run the full pipeline first, then MIDI can be rerun without separating again.")
+        self.workflow_note = text_label("Use Run separation + MIDI after changing separation/output settings. Use Rerun MIDI only after changing Basic Pitch settings or MIDI stem ticks.")
+
+        self.model_summary = QLabel()
+        self.model_summary.setWordWrap(True)
+        self.model_facts = text_label("", "detailText")
+        self.audio_prep = QLabel(
+            "Import prep: FFmpeg converts the dropped file to stereo 44.1 kHz PCM WAV for BS-RoFormer. "
+            "Basic Pitch then loads each separated WAV and resamples internally to mono 22.05 kHz."
+        )
+        self.audio_prep.setWordWrap(True)
+        self.audio_prep.setObjectName("helpText")
+        self.model_runtime = QLabel()
+        self.model_runtime.setWordWrap(True)
+        self.setup_status = text_label("")
+        self.repair_setup = QPushButton("Repair Setup")
+        self.model_backend_detail = text_label("")
+        self.processing_tabs = QTabWidget()
+        self.processing_tabs.setDocumentMode(True)
+
+        self.bs_device = NoWheelComboBox()
+        self.bs_device.addItem("Auto: CUDA if available", None)
+        self.bs_device.addItem("Force CUDA GPU", "cuda:0")
+        self.bs_device.addItem("Force CPU", "cpu")
+        self.bs_device_help = text_label("Official BS-RoFormer device setting. Model quality settings come from the downloaded YAML config.")
+
+    def _create_processing_controls(self) -> None:
+        self.stem = NoWheelComboBox()
+        self.stem.currentIndexChanged.connect(lambda *_args: gui_pipeline_state.refresh_midi_stem_checks(self))
+        self.generate_midi = QCheckBox("Generate MIDI with Basic Pitch")
+        self.generate_midi.setChecked(True)
+        self.generate_chord_suggestions = QCheckBox("Generate initial chord suggestions")
+        self.generate_chord_suggestions.setChecked(True)
+        self.generate_chord_suggestions.setToolTip(
+            "Populate the initial chord track from generated MIDI. Turn this off to start with an empty chord track and assign chords manually."
+        )
+        self.midi_stem_checks: dict[str, QCheckBox] = {}
+        self.midi_stems_layout = QGridLayout()
+        self.midi_stems_layout.setHorizontalSpacing(12)
+        self.midi_stems_layout.setVerticalSpacing(4)
+        self.midi_help = text_label("Tick the saved stems that Basic Pitch should analyse. Drums are off by default because Basic Pitch is for pitched notes.")
+        onset_threshold = midi_option_spec("onset_threshold")
+        self.onset_threshold = _double_spin(
+            0.0,
+            1.0,
+            onset_threshold.default_value(),
+            0.05,
+            2,
+        )
+        self.onset_threshold.setToolTip(onset_threshold.gui_tooltip())
+        frame_threshold = midi_option_spec("frame_threshold")
+        self.frame_threshold = _double_spin(
+            0.0,
+            1.0,
+            frame_threshold.default_value(),
+            0.05,
+            2,
+        )
+        self.frame_threshold.setToolTip(frame_threshold.gui_tooltip())
+        minimum_note_length = midi_option_spec("minimum_note_length")
+        self.minimum_note_length = _double_spin(
+            0.0,
+            1000.0,
+            minimum_note_length.default_value(),
+            10.0,
+            1,
+        )
+        self.minimum_note_length.setToolTip(minimum_note_length.gui_tooltip())
+        self.minimum_frequency = _frequency_spin("No lower limit")
+        self.minimum_frequency.setToolTip(midi_option_spec("minimum_frequency").gui_tooltip())
+        self.maximum_frequency = _frequency_spin("No upper limit")
+        self.maximum_frequency.setToolTip(midi_option_spec("maximum_frequency").gui_tooltip())
+        midi_tempo = midi_option_spec("midi_tempo")
+        self.midi_tempo = _double_spin(
+            20.0,
+            300.0,
+            midi_tempo.default_value(),
+            1.0,
+            1,
+        )
+        self.midi_tempo.setToolTip(midi_tempo.gui_tooltip())
+        melodia_trick = midi_option_spec("melodia_trick")
+        self.melodia_trick = QCheckBox(melodia_trick.checkbox_text())
+        self.melodia_trick.setChecked(melodia_trick.default_value())
+        self.melodia_trick.setToolTip(melodia_trick.gui_tooltip())
+        multiple_pitch_bends = midi_option_spec("multiple_pitch_bends")
+        self.multiple_pitch_bends = QCheckBox(multiple_pitch_bends.checkbox_text())
+        self.multiple_pitch_bends.setChecked(multiple_pitch_bends.default_value())
+        self.multiple_pitch_bends.setToolTip(multiple_pitch_bends.gui_tooltip())
+        save_notes = midi_option_spec("save_notes")
+        self.save_notes = QCheckBox(save_notes.checkbox_text())
+        self.save_notes.setChecked(save_notes.default_value())
+        save_model_outputs = midi_option_spec("save_model_outputs")
+        self.save_model_outputs = QCheckBox(save_model_outputs.checkbox_text())
+        self.save_model_outputs.setChecked(save_model_outputs.default_value())
+        self.save_model_outputs.setToolTip(save_model_outputs.gui_tooltip())
+        sonify_midi = midi_option_spec("sonify_midi")
+        self.sonify_midi = QCheckBox(sonify_midi.checkbox_text())
+        self.sonify_midi.setChecked(sonify_midi.default_value())
+        self.sonification_samplerate = NoWheelSpinBox()
+        self.sonification_samplerate.setRange(8000, 192000)
+        self.sonification_samplerate.setSingleStep(1000)
+        self.sonification_samplerate.setValue(
+            midi_option_spec("sonification_samplerate").default_value()
+        )
+        self.sonification_samplerate.setEnabled(False)
+
+        self.open_when_done = QCheckBox("Open output folder when finished")
+        self.open_when_done.setChecked(False)
+        self.export_button = QPushButton("Export...")
+        self.export_button.setEnabled(False)
+        self.export_action: QAction | None = None
+
+        self.run_full = QPushButton("Run separation + MIDI")
+        self.run_full.setObjectName("primaryAction")
+        self.run_midi = QPushButton("Rerun MIDI only")
+        self.run_midi.setEnabled(False)
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setEnabled(False)
+        self.log = QTextEdit()
+        self.log.setReadOnly(True)
+        self.editor_summary = text_label(EMPTY_EDITOR_SUMMARY)
+        self.editor_position = QLabel("00:00.000")
+        self.editor_position.setMinimumWidth(86)
+        self.current_chord = QLabel("Harmony: -")
+        self.current_chord.setMinimumWidth(220)
+        self.current_chord.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.current_chord.setStyleSheet("font-weight: 700; color: #4c1d95;")
+        self.chord_context = QLabel("Sample: -")
+        self.chord_context.setWordWrap(True)
+        self.chord_context.setMinimumHeight(64)
+        self.chord_context.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self.chord_context.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.chord_context.setObjectName("detailText")
+        self.note_filter_list = wrapping_list(96)
+        self.note_filter_list.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.note_filter_list.setToolTip("Optional corrections: Auto uses energy evidence, Exclude rejects chord names containing a note, Force requires chord names containing a note.")
+        self.note_filter_help = QLabel(
+            "Auto uses the MIDI energy evidence. Use Exclude or Force only when you want to correct the detector."
+        )
+        self.note_filter_help.setWordWrap(True)
+        self.note_filter_help.setObjectName("mutedText")
+        self.reset_note_filter_button = QPushButton("Reset Notes")
+        self.reset_note_filter_button.setToolTip("Clear forced include/exclude note choices for the current chord analysis.")
+        self.revert_chord_edits_button = QPushButton("Revert All Chord Edits")
+        self.revert_chord_edits_button.setEnabled(False)
+        self.revert_chord_edits_button.setToolTip(
+            "Discard manual chord moves, assignments, and deletions and restore detected chords."
+        )
+        self.detect_chords_button = QPushButton("Detect Chords")
+        self.detect_chords_button.setEnabled(False)
+        self.detect_chords_button.setToolTip(
+            "Generate automatic chord suggestions from the project's MIDI notes. Manual chord edits remain in place."
+        )
+        self.chord_detector_help = QLabel(
+            "Harmony comes from the selected Chord tracks: MIDI note energy feeds chord detection, then the chord track feeds key, scale, mode, and gap suggestions."
+        )
+        self.chord_detector_help.setWordWrap(True)
+        self.chord_detector_help.setObjectName("mutedText")
+        self.min_note_evidence_label = QLabel("Min note evidence: 0%")
+        self.min_note_evidence_label.setObjectName("detailText")
+        self.min_note_evidence_slider = QSlider(Qt.Horizontal)
+        self.min_note_evidence_slider.setRange(0, 100)
+        self.min_note_evidence_slider.setValue(0)
+        self.min_note_evidence_slider.setToolTip(
+            "Ignore note names below this normalized evidence level when naming chords. Raw evidence still appears in Inspect."
+        )
+        self.notation_spelling = NoWheelComboBox()
+        self.notation_spelling.addItem("Notation: Auto", "auto")
+        self.notation_spelling.addItem("Notation: Sharps", "sharp")
+        self.notation_spelling.addItem("Notation: Flats", "flat")
+        self.notation_spelling.setToolTip(
+            "Controls enharmonic spelling for displayed notes and chords. Auto follows the current key/chord context where possible."
+        )
+        self.note_map_colours = QCheckBox("Colours")
+        self.note_map_colours.setToolTip("Colour selected notes by their role/order in the current chord or scale.")
+        self.timeline = TimelineView()
+        self.timeline.set_note_name_formatter(self.display_note_name)
+        self.timeline.set_chord_label_formatter(self.display_chord)
+        self.timeline.on_position_changed = self.set_editor_position_seconds
+        self.timeline.on_selection_changed = lambda selection: gui_editor_actions.set_editor_selection(self, selection)
+        self.timeline.on_chord_edited = lambda original, edited: gui_editor_state.edit_timeline_chord(self, original, edited)
+        self.timeline.on_chord_deleted = lambda chord: gui_editor_state.delete_timeline_chord(self, chord)
+        self.timeline.on_chord_selected = lambda chord: gui_editor_state.show_timeline_chord_status(self, chord)
+        self.timeline.on_note_clicked = self.preview_timeline_note
+        self.timeline.on_redraw_started = self.begin_timeline_redraw
+        self.timeline.on_redraw_finished = self.finish_timeline_redraw
+        self.playback_controls = QVBoxLayout()
+        self.playback_controls.setSpacing(0)
+        self.playback_controls.setContentsMargins(0, 0, 0, 0)
+        self.playback_controls_widget = QWidget()
+        self.playback_controls_widget.setLayout(self.playback_controls)
+        self.playback_scroll = QScrollArea()
+        self.playback_scroll.setWidgetResizable(True)
+        self.playback_scroll.setWidget(self.playback_controls_widget)
+        self.playback_scroll.setMinimumWidth(270)
+        self.playback_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.playback_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.playback_scroll.setStyleSheet("QScrollArea { border: 1px solid #e2e8f0; background: #f8fafc; }")
+        self.track_visibility_checks: dict[str, QCheckBox] = {}
+        self.track_control_panels: dict[str, QWidget] = {}
+        self.track_control_detail_rows: dict[str, tuple[QWidget, QWidget, QWidget]] = {}
+        self.track_control_top_spacer: QWidget | None = None
+        self.track_control_bottom_spacer: QWidget | None = None
+        self.track_master_checks: dict[str, QCheckBox] = {}
+        self.updating_track_master_toggles = False
+        self.show_all_tracks_button: QPushButton | None = None
+        self.hidden_track_status: QLabel | None = None
+        self.track_note_counts: dict[str, int] = {}
+        self.editor_track_visibility: dict[str, bool] = {}
+        self.chord_list = wrapping_list(130)
+        self.theory_context = QLabel("Theory: -")
+        self.theory_context.setWordWrap(True)
+        self.theory_context.setMinimumHeight(54)
+        self.theory_context.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self.theory_context.setObjectName("detailText")
+        self.theory_list = wrapping_list(120)
+        self.show_chromatic_scales = QCheckBox("Chromatic")
+        self.show_chromatic_scales.setToolTip(
+            "Show complete chromatic scale candidates in the Theory Inspector list."
+        )
+        self.preview_scale_pattern = NoWheelComboBox()
+        for key, label in SCALE_PREVIEW_PATTERNS.items():
+            self.preview_scale_pattern.addItem(label, key)
+        self.preview_scale_pattern.setEnabled(False)
+        self.preview_scale_pattern.setToolTip("Pattern for playing the selected scale candidate.")
+        self.preview_scale_button = QPushButton("Play Scale")
+        self.preview_scale_button.setEnabled(False)
+        self.preview_scale_button.setToolTip("Play a short preview of the selected Theory Inspector scale.")
+        self.scale_chords_button = QPushButton("Scale Chords")
+        self.scale_chords_button.setEnabled(False)
+        self.scale_chords_button.setToolTip("Show recognised chord shapes whose notes fit inside the selected scale.")
+        self.scale_browser_button = QPushButton("Scale Browser")
+        self.scale_browser_button.setToolTip("Search the scale registry and inspect contained chord shapes.")
+        self.inspect_theory_button = QPushButton("Inspect Theory")
+        self.inspect_theory_button.setEnabled(False)
+        self.inspect_theory_button.setToolTip(
+            "Open a detailed report of the current scale, key, mode, and progression evidence."
+        )
+        self.gap_suggestion_list = wrapping_list(105)
+        self.use_gap_suggestion_button = QPushButton("Use")
+        self.use_gap_suggestion_button.setEnabled(False)
+        self.inspect_gap_suggestion_button = QPushButton("Inspect")
+        self.inspect_gap_suggestion_button.setEnabled(False)
+        self.chord_note_maps = NoteMapPair(
+            pitch_class_formatter=self.display_pitch_class_name,
+            on_note_clicked=self.preview_piano_note,
+            on_note_constraint_changed=self.handle_chord_piano_constraint_changed,
+            on_note_constraints_reset=lambda: gui_harmony_flow.reset_chord_note_filter(self),
+            on_preview_range_changed=self.handle_chord_preview_range_changed,
+            preview_range=self.chord_preview_range,
+            mode_tooltip="Choose how the selected harmony notes are mapped visually.",
+        )
+        self.chord_one_octave_button = QPushButton("1 Oct")
+        self.chord_one_octave_button.setToolTip("Reset the chord preview range to one octave around the chord root.")
+        self.theory_note_maps = NoteMapPair(
+            pitch_class_formatter=self.display_pitch_class_name,
+            on_note_clicked=self.preview_piano_note,
+            on_note_constraint_changed=self.handle_theory_piano_constraint_changed,
+            on_note_constraints_reset=self.reset_theory_note_filter,
+            on_preview_range_changed=self.handle_scale_preview_range_changed,
+            preview_range=self.scale_preview_range,
+            mode_tooltip="Choose how the selected scale notes are mapped visually.",
+        )
+        self.theory_note_maps.set_notes(None, [], "Theory scale", empty_message="No scale selected")
+        self.theory_one_octave_button = QPushButton("1 Oct")
+        self.theory_one_octave_button.setToolTip("Reset the scale preview range to one octave from the scale root.")
+        self.preview_bass_note = NoWheelComboBox()
+        self.preview_bass_note.addItem("Bass: Auto", None)
+        self.preview_bass_note.setEnabled(False)
+        self.preview_bass_note.setToolTip(
+            "Preview-only bass note. The Use button still writes the selected chord label."
+        )
+        self.preview_top_note = NoWheelComboBox()
+        self.preview_top_note.addItem("Top: Auto", None)
+        self.preview_top_note.setEnabled(False)
+        self.preview_top_note.setToolTip(
+            "Preview-only top note for auditioning close-position inversions."
+        )
+        self.preview_chord_button = QPushButton("Play Chord")
+        self.use_chord_button = QPushButton("Use for Selection")
+        self.delete_chord_button = QPushButton("Delete Chord")
+        self.inspect_chord_button = QPushButton("Inspect")
+        self.preview_chord_button.setEnabled(False)
+        self.use_chord_button.setEnabled(False)
+        self.delete_chord_button.setEnabled(False)
+        self.inspect_chord_button.setEnabled(False)
+        self.inspect_chord_button.setToolTip("Open a detailed report of the current harmony inputs, note weights, constraints, and chord candidate scoring.")
+        self.chord_preview_player = QMediaPlayer(self)
+        self.chord_preview_output = QAudioOutput(self)
+        self.chord_preview_output.setVolume(0.85)
+        self.chord_preview_player.setAudioOutput(self.chord_preview_output)
+        self.play_button = QPushButton("Play")
+        self.play_button.setObjectName("transportPrimary")
+        self.play_review_button = QPushButton("Play Review")
+        self.play_review_button.setEnabled(False)
+        self.previous_chord_button = QPushButton("Prev Chord")
+        self.previous_chord_button.setEnabled(False)
+        self.next_chord_button = QPushButton("Next Chord")
+        self.next_chord_button.setEnabled(False)
+        self.stop_button = QPushButton("Stop")
+        self.stop_button.setObjectName("transportIcon")
+        self.stop_button.setEnabled(False)
+        self.fit_song_button = QPushButton("Fit Song")
+        self.fit_song_button.setEnabled(False)
+        self.fit_review_button = QPushButton("Fit Review")
+        self.fit_review_button.setEnabled(False)
+
+    def closeEvent(self, event) -> None:
+        if not gui_processing.request_window_close(self):
+            event.ignore()
+            return
+        self.save_editor_state()
+        super().closeEvent(event)
+
+    # Thin slot adapters keep Qt connections and cross-module callbacks on MainWindow
+    # while the behavior lives in focused gui_* modules.
+
+    def toggle_playback_from_shortcut(self) -> None:
+        focused = QApplication.focusWidget()
+        interactive_widgets = (
+            QCheckBox,
+            QComboBox,
+            QDoubleSpinBox,
+            QLineEdit,
+            QListWidget,
+            QPushButton,
+            QSlider,
+            QSpinBox,
+            QTextEdit,
+        )
+        if isinstance(focused, interactive_widgets):
+            return
+        gui_transport_flow.toggle_playback(self)
+
+    def set_audio_path(self, path: Path) -> None:
+        gui_project_flow.set_audio_path(self, path)
+
+    def open_project_manifest(self, manifest_path: Path) -> None:
+        gui_project_flow.open_project_manifest(self, manifest_path)
+
+    def start_full_processing(self) -> None:
+        gui_processing.start_full_processing(self)
+
+    def start_midi_processing(self) -> None:
+        gui_processing.start_midi_processing(self)
+
+    def cancel_processing(self) -> bool:
+        return gui_processing.cancel_processing(self)
+
+    def start_setup_repair(self) -> None:
+        if thread_is_alive(getattr(self, "setup_worker", None)):
+            return
+        if self.worker_jobs.active_token is not None:
+            self.append_log("Wait for the current processing job before repairing setup.")
+            return
+        self.repair_setup.setEnabled(False)
+        self.setup_status.setText("Setup repair is running...")
+        self.append_log("Repairing PitchStems setup...")
+
+        def run_repair() -> None:
+            from pitchstems.runtime_checks import format_setup_result, run_setup
+
+            try:
+                result = run_setup(log=lambda message: self.messages.put(message))
+                self.messages.put(("SETUP_COMPLETE", format_setup_result(result)))
+            except Exception as exc:
+                self.messages.put(("SETUP_COMPLETE", f"Setup repair failed: {exc}"))
+
+        self.setup_worker = threading.Thread(target=run_repair, daemon=True)
+        self.setup_worker.start()
+
+    def finish_setup_repair(self, detail: str) -> None:
+        self.repair_setup.setEnabled(self.worker_jobs.active_token is None)
+        self.append_log(detail)
+        gui_pipeline_state.refresh_model_details(self)
+
+    def invalidate_worker_token(self) -> None:
+        gui_processing.invalidate_worker_token(self)
+
+    def flush_messages(self) -> None:
+        gui_processing.flush_messages(self)
+
+    def is_active_worker_token(self, token: int) -> bool:
+        return self.worker_jobs.is_active(token)
+
+    def append_log(self, message: str) -> None:
+        self.logger.info(message)
+        self.log.append(message)
+
+    def set_current_result(self, result: PipelineResult, open_output: bool = True) -> None:
+        gui_editor_load.set_current_result(self, result, open_output)
+
+    def start_editor_project_load(self, result: PipelineResult, token: int) -> None:
+        gui_editor_load.start_editor_project_load(self, result, token)
+
+    def finish_editor_project_load(self, token: int, loaded: EditorLoadResult) -> None:
+        gui_editor_load.finish_editor_project_load(self, token, loaded)
+
+    def finish_editor_project_load_failed(self, token: int, project_dir: Path, error: str) -> None:
+        gui_editor_load.finish_editor_project_load_failed(self, token, project_dir, error)
+
+    def finish_editor_load_activity(self, token: int, message: str) -> None:
+        gui_editor_load.finish_editor_load_activity(self, token, message)
+
+    def apply_manual_chords(self) -> None:
+        gui_editor_state.apply_manual_chords(self)
+
+    def refresh_editor_project_from_chord_edits(self, selected_chord: ChordRegion | None = None) -> None:
+        gui_editor_state.refresh_editor_project_from_chord_edits(self, selected_chord)
+
+    def refresh_detected_chord_list(self) -> None:
+        gui_editor_load.refresh_detected_chord_list(self)
+
+    def refresh_playback_controls(self, editor_state: dict) -> None:
+        rebuild_track_controls(self, editor_state)
+
+    def handle_midi_track_toggled(self, stem_name: str, checked: bool) -> None:
+        del stem_name, checked
+        self.refresh_playback_mix()
+        sync_track_control_panel(self)
+        self.save_editor_state()
+
+    def sync_track_control_scroll(self, value: int) -> None:
+        scrollbar = self.playback_scroll.verticalScrollBar()
+        if scrollbar.value() != value:
+            scrollbar.setValue(value)
+
+    def sync_timeline_scroll(self, value: int) -> None:
+        scrollbar = self.timeline.verticalScrollBar()
+        if scrollbar.value() != value:
+            scrollbar.setValue(value)
+
+    def prepare_transport_players(self, result: PipelineResult) -> None:
+        gui_transport_flow.prepare_transport_players(self, result)
+
+    def clear_transport_players(self) -> None:
+        self.transport.clear_players()
+
+    def refresh_playback_mix(self) -> None:
+        self.transport.refresh_mix()
+        self.transport.apply_midi_transport_state(self.timeline.position)
+
+    def midi_track_enabled(self, stem_name: str) -> bool:
+        return self.transport.midi_track_enabled(stem_name)
+
+    def play_transport(self) -> None:
+        gui_transport_flow.play_transport(self)
+
+    def pause_transport(self) -> None:
+        gui_transport_flow.pause_transport(self)
+
+    def stop_transport(self) -> None:
+        gui_transport_flow.stop_transport(self)
+
+    def handle_transport_end(self) -> None:
+        gui_transport_flow.finish_transport_at_end(self)
+
+    def seek_audio_players(self, seconds: float) -> None:
+        self.transport.seek(seconds)
+
+    def transport_master_player(self) -> QMediaPlayer | None:
+        return self.transport.master_player()
+
+    def resync_transport_players(self, master: QMediaPlayer | None = None) -> None:
+        self.transport.resync(master)
+
+    def loop_playback_start_seconds(self) -> float:
+        return loop_playback_start(self.timeline.position, self.loop_playback_range())
+
+    def loop_playback_range(self) -> tuple[float, float] | None:
+        return review_playback_loop_range(self.timeline.selection_ranges(), self.timeline.selected_chord)
+
+    def set_editor_position_seconds(
+        self,
+        seconds: float,
+        save: bool = True,
+        seek_players: bool = True,
+        force_harmony_refresh: bool = False,
+    ) -> None:
+        if self.editor_project is not None:
+            seconds = max(0.0, min(seconds, max(self.editor_project.duration, 0.0)))
+        self.editor_position.setText(format_time(seconds))
+        self.timeline.set_position(seconds)
+        self.refresh_current_harmony(seconds, force=force_harmony_refresh)
+        if seek_players:
+            self.seek_audio_players(seconds)
+        if save:
+            self.request_editor_state_save()
+
+    def clear_editor_selection(self) -> None:
+        self.timeline.clear_selection()
+        self.refresh_current_harmony(self.timeline.position, force=True)
+
+    def select_review_chord(self, direction: int) -> None:
+        gui_editor_actions.select_review_chord(self, direction)
+
+    def set_chord_context_text(self, text: str) -> None:
+        self.chord_context.setText(text)
+        self.chord_context.setToolTip(text)
+
+    def refresh_current_theory(self, source_notes: list[NoteEvent], seconds: float) -> None:
+        gui_harmony_flow.refresh_current_theory(self, source_notes, seconds)
+
+    def set_theory_analysis(self, analysis: TheoryAnalysis | None) -> None:
+        harmony_panel.set_theory_analysis(self, analysis)
+
+    def preview_selected_scale(self) -> None:
+        if self.current_result is None:
+            return
+        candidate = harmony_panel.selected_theory_scale_candidate(self)
+        if candidate is None:
+            return
+        pattern = self.preview_scale_pattern.currentData() or "up_down"
+        notes = scale_preview_notes(
+            candidate.label,
+            candidate.notes,
+            pattern,
+            low_pitch=self.scale_preview_range[0],
+            high_pitch=self.scale_preview_range[1],
+        )
+        self.play_note_preview(
+            "scale-preview",
+            f"{candidate.label} {pattern}",
+            notes,
+            f"Playing {candidate.label} scale preview ({self.preview_scale_pattern.currentText()}).",
+            duration=max((note.end for note in notes), default=0.0),
+        )
+
+    def preview_timeline_note(self, note: NoteEvent) -> None:
+        self.preview_note_pitch(
+            note.pitch,
+            f"{note.stem} {self.display_note_name(note.pitch)}",
+            f"{note.stem}: {self.display_note_name(note.pitch)}",
+        )
+
+    def preview_piano_note(self, pitch: int, note_name: str) -> None:
+        self.preview_note_pitch(pitch, f"piano {note_name}", note_name)
+
+    def preview_note_pitch(self, pitch: int, preview_name: str, display_name: str) -> None:
+        self.play_note_preview(
+            "note-preview",
+            preview_name,
+            single_note_preview_notes(pitch),
+            f"Playing note {display_name}.",
+            duration=0.65,
+            status_ms=1800,
+        )
+
+    def play_note_preview(
+        self,
+        kind: str,
+        name: str,
+        notes: list[NoteEvent],
+        status: str,
+        *,
+        duration: float = 1.6,
+        status_ms: int = 3000,
+    ) -> None:
+        """Render a one-shot preview into the app cache and play it on the preview player."""
+        if self.current_result is None:
+            return
+        if not safe_qt_multimedia_call(
+            self.logger,
+            f"{kind} reset failed",
+            lambda: reset_player_source(self.chord_preview_player),
+        ):
+            return
+        preview_dir = preview_cache_dir() / kind
+        preview = render_note_preview(name, notes, preview_dir, duration=duration)
+        if not preview:
+            return
+        if safe_qt_multimedia_call(
+            self.logger,
+            f"{kind} playback failed",
+            lambda: start_player_source(self.chord_preview_player, QUrl.fromLocalFile(str(preview))),
+        ):
+            self.statusBar().showMessage(status, status_ms)
+
+    def refresh_current_gap_suggestions(self, source_notes: list[NoteEvent]) -> None:
+        gui_harmony_flow.refresh_current_gap_suggestions(self, source_notes)
+
+    def set_gap_analysis(self, analysis: ChordGapAnalysis | None) -> None:
+        harmony_panel.set_gap_analysis(self, analysis)
+
+    def chord_min_note_floor(self) -> float:
+        return self.min_note_evidence_slider.value() / 100
+
+    def chord_scoring_options(self) -> ChordScoringOptions:
+        return ChordScoringOptions(weak_note_floor=self.chord_min_note_floor())
+
+    def handle_min_note_evidence_changed(self, value: int) -> None:
+        self.min_note_evidence_label.setText(f"Min note evidence: {value}%")
+        self.refresh_current_harmony(self.timeline.position, force=True)
+
+    def handle_notation_spelling_changed(self, *_args) -> None:
+        with self.timeline.deferred_redraw():
+            self.timeline.set_note_name_formatter(self.display_note_name)
+            self.timeline.set_chord_label_formatter(self.display_chord)
+        self.chord_note_maps.set_pitch_class_formatter(self.display_pitch_class_name)
+        self.theory_note_maps.set_pitch_class_formatter(self.display_pitch_class_name)
+        self.refresh_current_harmony(self.timeline.position, force=True)
+
+    def refresh_note_map_colours(self, *_args) -> None:
+        self.refresh_chord_keyboard()
+        harmony_panel.refresh_theory_preview_actions(self)
+
+    def refresh_current_harmony(self, seconds: float, force: bool = False) -> None:
+        if self.harmony_refresh_gate.should_refresh(time.monotonic(), force=force):
+            self.pending_harmony_seconds = None
+            self.harmony_refresh_timer.stop()
+            gui_harmony_flow.refresh_current_harmony(self, seconds)
+            return
+        self.pending_harmony_seconds = seconds
+        self.harmony_refresh_timer.start(
+            max(1, int(self.harmony_refresh_gate.min_interval_seconds * 1000))
+        )
+
+    def flush_deferred_harmony_refresh(self) -> None:
+        if self.pending_harmony_seconds is None:
+            return
+        seconds = self.pending_harmony_seconds
+        self.pending_harmony_seconds = None
+        self.refresh_current_harmony(seconds, force=True)
+
+    def chord_analysis_track_names(self) -> list[str]:
+        return inspector_chord_analysis_track_names(
+            self.editor_project,
+            gui_harmony_flow.selected_chord_analysis_tracks(self),
+        )
+
+    def handle_chord_piano_constraint_changed(self, pitch_class: int, state: str) -> None:
+        apply_note_override(self.chord_note_overrides, pitch_class, state)
+        gui_harmony_flow.populate_note_filter_list(self, self.current_chord_base_weights)
+        self.refresh_current_harmony(self.timeline.position, force=True)
+
+    def handle_theory_piano_constraint_changed(self, pitch_class: int, state: str) -> None:
+        apply_note_override(self.theory_note_overrides, pitch_class, state)
+        self.theory_note_maps.set_note_constraints(self.theory_note_overrides)
+        self.refresh_current_harmony(self.timeline.position, force=True)
+
+    def reset_theory_note_filter(self) -> None:
+        self.theory_note_overrides = {}
+        self.theory_note_maps.set_note_constraints(self.theory_note_overrides)
+        self.refresh_current_harmony(self.timeline.position, force=True)
+
+    def handle_chord_preview_range_changed(self, low_pitch: int, high_pitch: int) -> None:
+        self.chord_preview_range = (low_pitch, high_pitch)
+        self.refresh_chord_keyboard()
+
+    def handle_scale_preview_range_changed(self, low_pitch: int, high_pitch: int) -> None:
+        self.scale_preview_range = (low_pitch, high_pitch)
+        harmony_panel.refresh_theory_preview_actions(self)
+
+    def reset_chord_preview_to_one_octave(self) -> None:
+        root = self.selected_chord_root_pitch_class()
+        low = 48 + (root or 0)
+        while low > 60:
+            low -= 12
+        self.chord_preview_range = (low, low + 12)
+        self.chord_note_maps.set_preview_range(*self.chord_preview_range)
+        self.refresh_chord_keyboard()
+
+    def reset_scale_preview_to_one_octave(self) -> None:
+        candidate = harmony_panel.selected_theory_scale_candidate(self)
+        root = candidate.root if candidate is not None else 0
+        low = 60 + root
+        self.scale_preview_range = (low, low + 12)
+        self.theory_note_maps.set_preview_range(*self.scale_preview_range)
+        harmony_panel.refresh_theory_preview_actions(self)
+
+    def selected_chord_root_pitch_class(self) -> int | None:
+        track_chord = harmony_panel.active_chord_track_region(self)
+        if track_chord is not None:
+            parts = split_chord_label(track_chord.label)
+            return parts.root_pitch_class if parts is not None else None
+        item = self.chord_list.currentItem()
+        label = item.data(Qt.UserRole) if item is not None else None
+        parts = split_chord_label(label) if label else None
+        return parts.root_pitch_class if parts is not None else None
+
+    def use_selected_gap_suggestion(self) -> None:
+        if self.current_chord_gap_analysis is None:
+            return
+        item = self.gap_suggestion_list.currentItem()
+        if item is None or item.data(Qt.UserRole) is None:
+            return
+        suggestion = self.current_chord_gap_analysis.suggestions[int(item.data(Qt.UserRole))]
+        chord = ChordRegion(
+            start=suggestion.start,
+            end=suggestion.end,
+            label=suggestion.label,
+            confidence=suggestion.score,
+        )
+        self.insert_manual_chord(chord)
+        self.refresh_editor_project_from_chord_edits(chord)
+        self.statusBar().showMessage(
+            f"Filled gap with {self.display_chord(suggestion.label)}: "
+            f"{format_time(suggestion.start)} - {format_time(suggestion.end)}.",
+            5000,
+        )
+
+    def handle_chord_selection_changed(self, *_args) -> None:
+        self.refresh_chord_actions()
+        self.refresh_chord_keyboard()
+
+    def refresh_chord_keyboard(self) -> None:
+        harmony_panel.refresh_chord_keyboard(self)
+        self.refresh_preview_voicing_controls()
+
+    def refresh_preview_voicing_controls(self) -> None:
+        item = self.chord_list.currentItem()
+        note_names = item.data(Qt.UserRole + 2) if item is not None else []
+        note_names = list(dict.fromkeys(note_names or []))
+        self._set_preview_note_options(self.preview_bass_note, "Bass", note_names)
+        self._set_preview_note_options(self.preview_top_note, "Top", note_names)
+
+    def _set_preview_note_options(self, combo, label: str, note_names: list[str]) -> None:
+        previous = combo.currentData()
+        with blocked_signals(combo):
+            combo.clear()
+            combo.addItem(f"{label}: Auto", None)
+            for note_name in note_names:
+                combo.addItem(f"{label}: {note_name}", note_name)
+            index = combo.findData(previous)
+            combo.setCurrentIndex(index if index >= 0 else 0)
+            combo.setEnabled(bool(note_names))
+
+    def handle_preview_voicing_changed(self, *_args) -> None:
+        item = self.chord_list.currentItem()
+        label = item.data(Qt.UserRole) if item is not None else None
+        if not label:
+            return
+        self.refresh_chord_keyboard()
+        bass_name, top_name = self.preview_voicing()
+        details = []
+        if bass_name:
+            details.append(f"bass {bass_name}")
+        if top_name:
+            details.append(f"top {top_name}")
+        suffix = f" ({', '.join(details)})" if details else ""
+        self.statusBar().showMessage(
+            f"Preview voicing for {self.display_chord(label)}{suffix}.",
+            2500,
+        )
+
+    def preview_voicing(self) -> tuple[str | None, str | None]:
+        return self.preview_bass_note.currentData(), self.preview_top_note.currentData()
+
+    def preview_voicing_source_label(self) -> str:
+        low, high = self.chord_preview_range
+        return f"Preview {self.display_note_name(low)}-{self.display_note_name(high)}"
+
+    def preview_voicing_note_roles(self, label: str) -> dict[int, set[str]]:
+        if not label:
+            return {}
+        parts = split_chord_label(label)
+        bass_name = self.display_chord_bass(label)
+        roles: dict[int, set[str]] = {}
+        if parts is not None:
+            roles.setdefault(parts.root_pitch_class, set()).add("root")
+        bass_pitch_class = pitch_class_for_name(bass_name) if bass_name else None
+        if bass_pitch_class is not None:
+            roles.setdefault(bass_pitch_class, set()).add("bass")
+        return roles
+
+    def refresh_chord_actions(self) -> None:
+        harmony_panel.refresh_chord_actions(self)
+
+    def preview_selected_chord(self) -> None:
+        self.preview_chord_item(self.chord_list.currentItem())
+
+    def preview_chord_item(self, item) -> None:
+        if item is None or self.current_result is None:
+            return
+        label = item.data(Qt.UserRole)
+        note_names = item.data(Qt.UserRole + 2) or []
+        if not label or not note_names:
+            return
+        notes = chord_preview_notes(
+            label,
+            note_names,
+            low_pitch=self.chord_preview_range[0],
+            high_pitch=self.chord_preview_range[1],
+        )
+        low, high = self.chord_preview_range
+        self.play_note_preview(
+            "chord-preview",
+            "official-chord",
+            notes,
+            f"Playing preview {self.display_chord(label)} chord "
+            f"({self.display_note_name(low)}-{self.display_note_name(high)}).",
+        )
+
+    def assign_selected_chord_to_selection(self) -> None:
+        gui_editor_state.assign_selected_chord_to_selection(self)
+
+    def insert_manual_chord(self, chord: ChordRegion) -> None:
+        gui_editor_state.insert_manual_chord(self, chord)
+
+    def refresh_visible_tracks(self) -> None:
+        gui_editor_state.refresh_visible_tracks(self)
+
+    def show_all_timeline_tracks(self) -> None:
+        gui_editor_state.show_all_timeline_tracks(self)
+
+    def save_editor_state(self) -> bool:
+        return gui_editor_state.save_editor_state(self)
+
+    def request_editor_state_save(self) -> None:
+        gui_editor_state.request_editor_state_save(self)
+
+    def reset_stage_state(self, _path: Path | None = None) -> None:
+        gui_project_flow.reset_stage_state(self, _path)
+
+    def update_import_clip_status(self, clip_range=None, duration_seconds: float | None = None) -> None:
+        self.stop_import_clip_preview()
+        duration = self.import_clip_picker.duration_seconds if duration_seconds is None else duration_seconds
+        self.import_clip_status.setText(clip_status_text(clip_range, duration))
+        self.import_clip_play.setEnabled(
+            can_play_import_clip_preview(
+                self.import_clip_picker.path,
+                clip_range,
+                duration,
+                self.worker_jobs.active_token,
+            )
+        )
+        self.import_clip_clear.setEnabled(
+            can_clear_import_clip_selection(clip_range, self.worker_jobs.active_token)
+        )
+
+    def play_import_clip_preview(self) -> None:
+        path = self.import_clip_picker.path
+        bounds = import_preview_range(
+            self.import_clip_picker.selected_clip_range(),
+            self.import_clip_picker.duration_seconds,
+        )
+        if path is None or bounds is None:
+            self.append_log("Choose an audio file and range before preview playback.")
+            return
+        self.pause_transport()
+        start_seconds, end_seconds = bounds
+        self.import_clip_preview_end_seconds = end_seconds
+        source = QUrl.fromLocalFile(str(path))
+        safe_qt_multimedia_call(
+            self.logger,
+            "Import preview playback failed",
+            lambda: self._start_import_clip_player(source, start_seconds),
+        )
+        self.import_clip_play.setEnabled(False)
+        self.import_clip_stop.setEnabled(True)
+        self.import_clip_timer.start()
+
+    def _start_import_clip_player(self, source: QUrl, start_seconds: float) -> None:
+        self.import_clip_player.setSource(source)
+        self.import_clip_player.setPosition(int(start_seconds * 1000))
+        self.import_clip_player.play()
+
+    def stop_import_clip_preview(self) -> None:
+        self.import_clip_timer.stop()
+        safe_qt_multimedia_call(
+            self.logger,
+            "Import preview stop failed",
+            lambda: self.import_clip_player.pause(),
+        )
+        self.import_clip_preview_end_seconds = None
+        if hasattr(self, "import_clip_stop"):
+            self.import_clip_stop.setEnabled(False)
+        if hasattr(self, "import_clip_play"):
+            self.import_clip_play.setEnabled(
+                can_play_import_clip_preview(
+                    self.import_clip_picker.path,
+                    self.import_clip_picker.selected_clip_range(),
+                    self.import_clip_picker.duration_seconds,
+                    self.worker_jobs.active_token,
+                )
+            )
+
+    def poll_import_clip_preview(self) -> None:
+        end_seconds = self.import_clip_preview_end_seconds
+        if end_seconds is None:
+            self.stop_import_clip_preview()
+            return
+        if self.import_clip_player.position() >= int(end_seconds * 1000):
+            self.stop_import_clip_preview()
+
+    def set_processing_state(self, busy: bool) -> None:
+        gui_pipeline_state.set_processing_state(self, busy)
+
+    def selected_separation_options(self):
+        return gui_pipeline_state.selected_separation_options(self)
+
+    def selected_midi_options(self):
+        return gui_pipeline_state.selected_midi_options(self)
+
+    def selected_midi_stems(self) -> set[str]:
+        return gui_pipeline_state.selected_midi_stems(self)
+
+    def open_latest_output(self) -> None:
+        gui_project_flow.open_latest_output(self)
+
+    def open_folder_path(self, target: Path, label: str) -> None:
+        gui_project_flow.open_folder_path(self, target, label)
+
+def _double_spin(low: float, high: float, value: float, step: float, decimals: int) -> QDoubleSpinBox:
+    spin = NoWheelDoubleSpinBox()
+    spin.setRange(low, high)
+    spin.setValue(value)
+    spin.setSingleStep(step)
+    spin.setDecimals(decimals)
+    return spin
+
+def _frequency_spin(special: str) -> QDoubleSpinBox:
+    spin = _double_spin(0.0, 20000.0, 0.0, 10.0, 1)
+    spin.setSpecialValueText(special)
+    return spin

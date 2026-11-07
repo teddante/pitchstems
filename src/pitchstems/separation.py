@@ -7,7 +7,8 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterator, Mapping
+from typing import Any
+from collections.abc import Callable, Iterator, Mapping
 
 from pitchstems.model_assets import ensure_model_assets, model_asset_dir, model_cache_dir
 from pitchstems.model_catalog import DEFAULT_MODEL_KEY, ModelChoice, model_choice

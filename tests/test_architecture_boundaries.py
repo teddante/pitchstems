@@ -21,9 +21,11 @@ def test_result_model_consumers_use_neutral_model_module() -> None:
             if not isinstance(node, ast.ImportFrom) or node.module not in RESULT_MODEL_IMPORTS:
                 continue
             forbidden_names = RESULT_MODEL_IMPORTS[node.module]
-            for alias in node.names:
-                if alias.name in forbidden_names:
-                    offenders.append(f"{path.name}: {alias.name} from {node.module}")
+            offenders.extend(
+                f"{path.name}: {alias.name} from {node.module}"
+                for alias in node.names
+                if alias.name in forbidden_names
+            )
 
     assert offenders == []
 

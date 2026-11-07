@@ -38,8 +38,8 @@ def region_pitch_energy(notes: list[NoteEvent], start: float, end: float) -> Pit
 def ranges_pitch_energy(notes: list[NoteEvent], ranges: Iterable[tuple[float, float]]) -> PitchEnergy:
     """Summed overlap-weighted energy across several (possibly reversed) time ranges."""
     weighted = []
-    for start, end in ranges:
-        start, end = sorted((start, end))
+    for range_start, range_end in ranges:
+        start, end = sorted((range_start, range_end))
         if end - start <= 0:
             continue
         for note in notes:

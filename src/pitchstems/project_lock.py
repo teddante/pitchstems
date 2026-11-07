@@ -6,7 +6,8 @@ import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import BinaryIO, Iterator
+from typing import BinaryIO
+from collections.abc import Iterator
 
 MUTATION_LOCK_FILENAME = ".pitchstems.lock"
 MANIFEST_LOCK_FILENAME = ".pitchstems.manifest.lock"

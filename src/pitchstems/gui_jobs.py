@@ -100,7 +100,7 @@ class ProcessWorker:
                 recover_interrupted_midi_update(self.recover_project_dir)
             if self.cleanup_root is not None and self.cleanup_project_dir is not None:
                 remove_new_project_dir(self.cleanup_project_dir, self.cleanup_root)
-        except Exception as exc:
+        except (OSError, RuntimeError, ValueError) as exc:
             self.cleanup_error = str(exc)
 
 

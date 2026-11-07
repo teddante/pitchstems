@@ -6,6 +6,7 @@ from zipfile import ZipFile
 import pytest
 from mido import Message, MidiFile, MidiTrack
 
+import pitchstems.midi_transaction as midi_transaction
 import pitchstems.pipeline as pipeline
 from pitchstems.audio_clip import AudioClipRange
 from pitchstems.pipeline import (
@@ -845,7 +846,7 @@ def test_midi_transaction_recovery_restores_backups_and_removes_new_outputs(
     _write_file(workspace.backup_export_dir / "bass.mid", b"old-export")
     _write_file(workspace.export_dir / "bass.mid", b"new-export")
     new_only = _write_file(workspace.export_dir / "song_combined.mid", b"new-combined")
-    pipeline._write_midi_transaction(
+    midi_transaction._write_midi_transaction(
         workspace,
         "installed",
         {"bass.mid", "song_combined.mid"},
@@ -866,7 +867,7 @@ def test_committed_midi_transaction_recovery_keeps_new_outputs(tmp_path: Path) -
     workspace = _MidiWorkspace.from_project(tmp_path / "song.pitchstems", "song")
     new_midi = _write_file(workspace.midi_dir / "bass" / "new.mid", b"new")
     _write_file(workspace.backup_midi_dir / "bass" / "old.mid", b"old")
-    pipeline._write_midi_transaction(workspace, "committed", {"bass.mid"}, True)
+    midi_transaction._write_midi_transaction(workspace, "committed", {"bass.mid"}, True)
 
     pipeline._recover_midi_transaction(workspace)
 

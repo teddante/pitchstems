@@ -39,7 +39,7 @@ def note_colour_map(note_names: list[str], root_pitch_class: int | None = None) 
 def _dedupe_pitch_classes(pitch_classes: list[int]) -> list[int]:
     ordered: list[int] = []
     for pitch_class in pitch_classes:
-        pitch_class %= 12
-        if pitch_class not in ordered:
-            ordered.append(pitch_class)
+        normalized = pitch_class % 12
+        if normalized not in ordered:
+            ordered.append(normalized)
     return ordered

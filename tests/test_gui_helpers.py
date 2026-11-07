@@ -30,9 +30,8 @@ def test_blocked_signals_restores_previous_signal_state() -> None:
 def test_blocked_signals_restores_already_blocked_widget_after_exception() -> None:
     widget = _SignalWidget(blocked=True)
 
-    with pytest.raises(RuntimeError):
-        with blocked_signals(widget):
-            raise RuntimeError("failed update")
+    with pytest.raises(RuntimeError), blocked_signals(widget):
+        raise RuntimeError("failed update")
 
     assert widget.blocked is True
     assert widget.calls == [(True, True), (True, True)]

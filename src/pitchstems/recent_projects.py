@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path, PurePath
-from typing import Iterable
+from collections.abc import Iterable
 
 from pitchstems.project_store import PROJECT_FILENAME
 

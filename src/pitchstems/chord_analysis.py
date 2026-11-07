@@ -69,17 +69,20 @@ def detect_chords(notes: list[NoteEvent], minimum_region: float = 0.18) -> list[
     times = sorted(set(starts) | set(ends))
     atomic_regions: list[ChordRegion] = []
     active: list[NoteEvent] = []
-    analysis_cache: dict[tuple[int, ...], ChordAnalysis] = {}
+    analysis_cache: dict[tuple[frozenset[int], int | None], ChordAnalysis] = {}
     for start, end in pairwise(times):
         for note in ends.get(start, []):
             with contextlib.suppress(ValueError):
                 active.remove(note)
         active.extend(starts.get(start, []))
-        pitches = tuple(sorted(note.pitch for note in active))
-        analysis = analysis_cache.get(pitches)
+        pitches = sorted(note.pitch for note in active)
+        # The label and confidence depend only on the pitch classes and the lowest
+        # pitch's class, so octave doublings of one chord share a single analysis.
+        cache_key = (frozenset(pitch % 12 for pitch in pitches), pitches[0] % 12 if pitches else None)
+        analysis = analysis_cache.get(cache_key)
         if analysis is None:
-            analysis = analyze_chord(list(pitches))
-            analysis_cache[pitches] = analysis
+            analysis = analyze_chord(pitches)
+            analysis_cache[cache_key] = analysis
         if not analysis.label:
             continue
         if (

@@ -3,11 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import isfinite
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
+from collections.abc import Mapping
 
 from pitchstems.editor_models import ChordRegion
 from pitchstems.pipeline_models import PipelineResult
-from pitchstems.project_store import PROJECT_FILENAME, load_project_manifest, update_project_editor_state
+from pitchstems.project_store import update_project_editor_state
 
 
 @dataclass(frozen=True)
@@ -24,13 +25,9 @@ class EditorStateSnapshot:
     chord_removals: list[dict[str, float]]
 
 
-def load_editor_state(project_dir: Path) -> dict[str, Any]:
-    try:
-        manifest = load_project_manifest(project_dir / PROJECT_FILENAME)
-    except Exception:
-        return {}
+def editor_state_from_manifest(manifest: Mapping[str, Any]) -> dict[str, Any]:
     editor = manifest.get("editor", {})
-    return editor if isinstance(editor, dict) else {}
+    return dict(editor) if isinstance(editor, dict) else {}
 
 
 def parse_chord_overrides(editor_state: Mapping[str, Any]) -> list[ChordRegion]:

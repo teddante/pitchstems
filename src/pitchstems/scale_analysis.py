@@ -574,6 +574,8 @@ def _roman_quality_suffix(suffix: str, inversion: str = "") -> str:
         return _quality_suffix_without_seventh(suffix)
     if suffix.startswith("mMaj"):
         return f"Maj{suffix[4:]}"
+    if suffix.startswith("maj"):
+        return f"M{suffix[3:]}"
     if suffix.startswith("m"):
         return suffix[1:]
     return suffix

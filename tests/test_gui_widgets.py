@@ -10,7 +10,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtWidgets import QApplication
 
-from pitchstems.gui_widgets import DropZone, FretboardNoteMapWidget, PianoChordWidget
+from pitchstems.gui_fretboard_widget import FretboardNoteMapWidget
+from pitchstems.gui_piano_widget import PianoChordWidget
+from pitchstems.gui_widgets import DropZone
 
 
 def _app() -> QApplication:

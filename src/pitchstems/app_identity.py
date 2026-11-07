@@ -33,5 +33,5 @@ def apply_windows_app_identity() -> None:
         return
     try:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(WINDOWS_APP_USER_MODEL_ID)
-    except Exception:
+    except (AttributeError, OSError):
         return

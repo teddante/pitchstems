@@ -41,7 +41,7 @@ class TrackControlEditorState:
     midi_volume: dict
 
     @classmethod
-    def from_editor_state(cls, track_visibility: dict, editor_state: dict) -> "TrackControlEditorState":
+    def from_editor_state(cls, track_visibility: dict, editor_state: dict) -> TrackControlEditorState:
         return cls(
             track_visibility=track_visibility,
             analysis_enabled=editor_state.get("track_analysis_enabled", {}),

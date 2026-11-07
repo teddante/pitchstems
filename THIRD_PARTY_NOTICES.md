@@ -16,7 +16,8 @@ exact dependency and model versions you ship.
 | Hugging Face Hub / hf-xet | Verified model-asset download and transfer | Apache-2.0 according to installed package metadata. |
 | PySide6 / Qt for Python | Desktop GUI | LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only according to installed package metadata. Dynamic linking/install-time dependency is intentional. |
 | PyTorch | CUDA/CPU tensor runtime for separation | BSD-3-Clause according to installed package metadata. |
-| ONNX Runtime GPU | ONNX inference runtime for Basic Pitch | MIT according to installed package metadata. |
+| ONNX Runtime (`onnxruntime` CPU or `onnxruntime-gpu`) | ONNX inference runtime for Basic Pitch | MIT according to installed package metadata. |
+| setuptools | Provides `pkg_resources`, which resampy (pulled in by Basic Pitch) still imports | MIT according to installed package metadata. Pinned below 82 in the extras. |
 | mido | MIDI file handling | MIT according to installed package metadata. |
 | FFmpeg | Audio decoding/transcoding executable | External executable; users install it separately. FFmpeg builds may include components under multiple licenses depending on build options. |
 

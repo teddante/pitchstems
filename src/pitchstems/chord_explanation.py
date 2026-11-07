@@ -12,11 +12,11 @@ from pitchstems.chord_scoring import (
 )
 
 __all__ = [
-    "partial_harmony_note_order",
-    "partial_harmony_hints",
     "interval_names",
     "interval_quality_name",
     "ordered_pitch_classes",
+    "partial_harmony_hints",
+    "partial_harmony_note_order",
 ]
 
 

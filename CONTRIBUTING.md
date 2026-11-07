@@ -61,10 +61,8 @@ changing dependencies, and only after `.\scripts\check.ps1 -GuiSmoke -Build`
 and `python -m pip check` pass:
 
 ```powershell
-py -3.10 scripts
-efresh_constraints.py dev
-py -3.10 scripts
-efresh_constraints.py cpu
+py -3.10 scripts\refresh_constraints.py dev
+py -3.10 scripts\refresh_constraints.py cpu
 ```
 
 ### Real-audio smoke

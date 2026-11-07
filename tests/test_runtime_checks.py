@@ -21,6 +21,13 @@ def test_doctor_checks_onnxruntime_import_for_basic_pitch(monkeypatch) -> None:
         "onnxruntime_status",
         lambda: OnnxRuntimeStatus(installed=True, providers=["CUDAExecutionProvider"]),
     )
+    # The real Basic Pitch check builds an ONNX session (about 4 seconds); this test
+    # only covers the ONNX Runtime line, so keep the model load out of it.
+    monkeypatch.setattr(
+        runtime_checks,
+        "basic_pitch_check",
+        lambda: RuntimeCheck("Basic Pitch", True, "stubbed"),
+    )
 
     checks = runtime_checks.run_checks()
 
@@ -214,7 +221,7 @@ def test_command_check_reports_path_or_missing_command(monkeypatch) -> None:
     assert runtime_checks.command_check("FFmpeg", "ffmpeg") == RuntimeCheck("FFmpeg", True, "/bin/ffmpeg")
     missing = runtime_checks.command_check("NVIDIA driver", "nvidia-smi")
     assert not missing.ok
-    assert "`nvidia-smi` was not found on PATH" == missing.detail
+    assert missing.detail == "`nvidia-smi` was not found on PATH"
 
 
 def test_python_check_reports_running_version() -> None:

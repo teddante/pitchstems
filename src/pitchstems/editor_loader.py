@@ -5,7 +5,11 @@ from typing import Any
 
 from pitchstems.editor_models import ChordRegion
 from pitchstems.editor_project import EditorProject, build_editor_project
-from pitchstems.editor_state import load_editor_state, parse_chord_overrides, parse_chord_removals
+from pitchstems.editor_state import (
+    editor_state_from_manifest,
+    parse_chord_overrides,
+    parse_chord_removals,
+)
 from pitchstems.pipeline_models import PipelineResult
 from pitchstems.project_store import load_project_manifest
 
@@ -30,7 +34,7 @@ def build_editor_load_result(result: PipelineResult) -> EditorLoadResult:
         result,
         generate_chord_suggestions=generate_chord_suggestions,
     )
-    editor_state = load_editor_state(result.project_dir)
+    editor_state = editor_state_from_manifest(manifest)
     manual_chords = parse_chord_overrides(editor_state)
     removed_chord_ranges = parse_chord_removals(editor_state)
     editor_project = apply_chord_edits(base_project, manual_chords, removed_chord_ranges)

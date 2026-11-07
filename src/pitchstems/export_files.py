@@ -4,7 +4,7 @@ import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 from pitchstems.atomic_files import atomic_replace
 from pitchstems.filename_safety import safe_file_stem, slugify

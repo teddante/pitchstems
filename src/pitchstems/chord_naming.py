@@ -62,14 +62,21 @@ def chord_tones_for_label(label: str, spelling_preference: str | None = "auto") 
 
 
 def alternate_chord_names_for_label(label: str, bass: int | None = None) -> list[str]:
+    return list(_alternate_chord_names(label, bass))
+
+
+# Every analysis asks for aliases of each candidate label, so cache them per label
+# and bass. Returning a fresh list keeps callers from mutating the cached tuple.
+@lru_cache(maxsize=4096)
+def _alternate_chord_names(label: str, bass: int | None) -> tuple[str, ...]:
     pitch_classes = set(chord_pitch_classes_for_label(label))
     if not pitch_classes:
-        return []
-    return [
+        return ()
+    return tuple(
         alias
         for alias in exact_chord_names_for_pitch_classes(pitch_classes, bass)
         if alias != label
-    ]
+    )
 
 
 def exact_chord_names_for_pitch_classes(pitch_classes: set[int], bass: int | None = None) -> list[str]:

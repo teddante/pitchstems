@@ -4,7 +4,7 @@ import hashlib
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 from pitchstems.app_identity import app_data_dir
 from pitchstems.atomic_files import atomic_replace

@@ -3,7 +3,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from collections.abc import Iterator, Sequence
-from typing import Callable, Literal, Protocol
+from typing import Literal, Protocol
+from collections.abc import Callable
 
 from pitchstems.editor_models import ChordRegion
 

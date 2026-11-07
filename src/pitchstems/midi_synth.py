@@ -109,9 +109,9 @@ class MidiSynthEngine:
             # Notes that started before this window minus the longest note cannot overlap it.
             first = bisect_left(starts, buffer_start - self._max_duration_by_stem[stem])
             limit = bisect_right(starts, buffer_end)
-            for note in notes[first:limit]:
-                if note.end > buffer_start:
-                    sounding.append((note, volume, buffer_start))
+            sounding.extend(
+                (note, volume, buffer_start) for note in notes[first:limit] if note.end > buffer_start
+            )
         return sounding
 
 

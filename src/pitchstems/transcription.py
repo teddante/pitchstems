@@ -8,10 +8,9 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Callable, Iterator
+from collections.abc import Callable, Iterator
 
 from pitchstems.pipeline_models import MidiResult, is_percussive_stem
-
 
 
 @dataclass(frozen=True)

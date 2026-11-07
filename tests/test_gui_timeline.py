@@ -14,7 +14,8 @@ from PySide6.QtWidgets import QApplication
 
 from pitchstems.editor_models import ChordRegion, NoteEvent
 from pitchstems.editor_project import EditorProject, EditorTrack
-from pitchstems.gui_timeline import TimelineRenderPolicy, TimelineView
+from pitchstems.gui_timeline import TimelineView
+from pitchstems.gui_timeline_draw import TimelineRenderPolicy
 from pitchstems.gui_track_controls import TRACK_CONTROL_MIN_HEIGHT
 
 
@@ -104,10 +105,9 @@ def test_timeline_deferred_redraw_does_not_flush_after_error(tmp_path: Path) -> 
     redraws = []
     view.on_redraw_started = lambda: redraws.append("redraw")
 
-    with pytest.raises(RuntimeError):
-        with view.deferred_redraw():
-            view.set_project(_project(tmp_path))
-            raise RuntimeError("failed timeline update")
+    with pytest.raises(RuntimeError), view.deferred_redraw():
+        view.set_project(_project(tmp_path))
+        raise RuntimeError("failed timeline update")
 
     assert redraws == []
 

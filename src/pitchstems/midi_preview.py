@@ -29,7 +29,7 @@ def render_note_preview(
 
     engine = MidiSynthEngine(notes, duration, sample_rate)
     frame_count = max(1, int((duration + 0.15) * sample_rate))
-    samples = engine.render_samples(0.0, frame_count, {stem: 1.0 for stem in engine.stems})
+    samples = engine.render_samples(0.0, frame_count, dict.fromkeys(engine.stems, 1.0))
     peak = max((abs(sample) for sample in samples), default=0.0)
     if peak <= 0:
         return None

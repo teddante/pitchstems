@@ -116,7 +116,7 @@ def output_directory_check(output_root: Path) -> RuntimeCheck:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             handle.write("ok")
         return RuntimeCheck("Output directory", True, f"writable: {output_root}")
-    except Exception as exc:
+    except OSError as exc:
         return RuntimeCheck("Output directory", False, str(exc))
     finally:
         if probe is not None:
@@ -143,12 +143,13 @@ def _provider_detail(status: OnnxRuntimeStatus) -> str:
 
 
 def run_checks(require_gpu: bool = False) -> list[RuntimeCheck]:
+    onnx_status = onnxruntime_status()
     checks = [
         python_check(),
         ffmpeg_check(),
         module_check("PySide6 GUI", "PySide6"),
         basic_pitch_check(),
-        onnxruntime_check(onnxruntime_status()),
+        onnxruntime_check(onnx_status),
         module_check("BS-RoFormer native backend", "bs_roformer"),
         module_check("MIDI tools", "mido"),
     ]
@@ -156,7 +157,7 @@ def run_checks(require_gpu: bool = False) -> list[RuntimeCheck]:
         checks.extend(
             [
                 command_check("NVIDIA driver", "nvidia-smi"),
-                onnxruntime_cuda_check(onnxruntime_status()),
+                onnxruntime_cuda_check(onnx_status),
                 torch_cuda_check(torch_status()),
             ]
         )
